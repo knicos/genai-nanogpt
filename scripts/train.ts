@@ -6,8 +6,13 @@ import fs from 'fs';
 import path from 'path';
 // Note: This should come first due to reimporting issues with TensorFlow
 import * as tf from '@tensorflow/tfjs-node-gpu';
-import NanoGPT from '../lib/NanoGPTModel';
+import NanoGPT, { TrainingLogEntry } from '../lib/NanoGPTModel';
 import LayerTrainer from '../lib/LayerTrainer';
+import chalk from 'chalk';
+import dayjs from 'dayjs';
+import duration from 'dayjs/plugin/duration';
+
+dayjs.extend(duration);
 
 //tf.enableDebugMode();
 
@@ -56,7 +61,7 @@ const argv = yargs(hideBin(process.argv))
     .option('blockSteps', {
         type: 'number',
         description: 'Steps per block before moving to next block',
-        default: 50,
+        default: 800,
     })
     .option('vocabSize', {
         type: 'number',
@@ -131,6 +136,7 @@ async function train() {
         trainDataset,
         {
             epochs,
+            prompt: 'What a great movie. It',
             stepsPerEpoch: maxSteps,
             logInterval: 10,
             stepsPerLayer: blockSteps,
@@ -138,18 +144,25 @@ async function train() {
                 console.log(`Pass ${pass} completed`);
             },
             onLayerChange: async (layer, pass, valLoss) => {
-                console.log(`Layer ${layer} changed in pass ${pass}, Val Loss: ${valLoss?.toFixed(4)}`);
+                console.log(
+                    `\nLayer ${layer} changed in pass ${pass}, Val Loss: ${chalk.redBright(valLoss?.toFixed(4))}\n`
+                );
             },
             desiredLoss: loss,
-            onStep: async (step, loss) => {
-                console.log(`Step ${step}, Loss: ${loss.toFixed(4)}`);
-                //console.log(tf.memory());
-                if (step > 0 && step % autosave === 0) {
-                    console.log('Saving...');
+            onStep: async (log: TrainingLogEntry) => {
+                console.log(
+                    `${chalk.bold('Time')} ${dayjs.duration(log.time).asMinutes().toFixed(0)} minutes: ${chalk.bold(
+                        'Step'
+                    )} ${chalk.blueBright(log.step)}, ${chalk.bold('Loss:')} ${chalk.redBright(
+                        log.loss.toFixed(4)
+                    )}, ${chalk.bold('Example:')}\n${chalk.yellowBright(log.example || 'N/A')}`
+                );
+
+                if (log.step > 0 && log.step % autosave === 0) {
                     try {
                         const blob = await model.saveModel();
                         fs.writeFileSync('nanogpt_model.zip', Buffer.from(await blob.arrayBuffer()));
-                        console.log('Model Saved');
+                        console.log('\nModel Saved\n');
                     } catch (error) {
                         console.error('Autosave failed', error);
                     }

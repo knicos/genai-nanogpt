@@ -1,8 +1,8 @@
 import { ITokeniser } from './Tokeniser/type';
 import { generateText } from './generate';
-import NanoGPT from './NanoGPTModel';
+import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
-import GPTTrainer from './Trainer';
+import GPTTrainer, { TrainingOptions } from './Trainer';
 
 interface TrainingState {
     epoch: number;
@@ -17,26 +17,11 @@ interface TrainingState {
     validationLosses: number[];
 }
 
-interface TrainingOptions {
-    epochs: number;
-    stepsPerEpoch: number;
-    stepsPerDepth: number;
-    maxPasses: number;
-    desiredLoss: number;
-    logInterval: number;
-    onEpoch?: (e: number, loss: number, valLoss?: number) => Promise<void> | void;
-    onStep?: (s: number, loss: number) => Promise<void> | void;
-    onDepthChange?: (depth: number, pass: number, valLoss?: number) => Promise<void> | void;
-    onPassComplete?: (pass: number) => Promise<void> | void;
-}
-
 const DEFAULT_OPTIONS: TrainingOptions = {
     epochs: 1,
     stepsPerEpoch: 1000000,
     desiredLoss: 0.01,
     logInterval: 1,
-    stepsPerDepth: 400,
-    maxPasses: 3,
 };
 
 // Enhanced training utilities with Dataset API and memory leak fixes
@@ -51,7 +36,7 @@ export default class FullTrainer extends GPTTrainer {
         options: Partial<TrainingOptions>,
         validationDataset?: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }> {
-        const { epochs, stepsPerEpoch, desiredLoss, logInterval, onStep, onEpoch } = {
+        const { epochs, stepsPerEpoch, desiredLoss, logInterval, onStep, onEpoch, prompt } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
@@ -70,6 +55,8 @@ export default class FullTrainer extends GPTTrainer {
         };
 
         this.dummyPass();
+
+        const startTime = Date.now();
 
         for (state.epoch = 0; state.epoch < epochs; state.epoch++) {
             state.step = 0;
@@ -91,15 +78,22 @@ export default class FullTrainer extends GPTTrainer {
                     const batch = result.value;
 
                     this.trainBatch(state, batch);
+                    const entry: TrainingLogEntry = {
+                        epoch: state.epoch,
+                        loss: state.lastLoss,
+                        step: state.step,
+                        time: Date.now() - startTime,
+                        batchSize: batch.xs.shape[0],
+                    };
+                    this.model.log.push(entry);
 
                     if (state.step % logInterval === 0) {
                         if (onStep) {
-                            const loss = state.losses.slice(-logInterval).reduce((a, b) => a + b, 0) / logInterval;
-
-                            await onStep(state.step, loss);
-
-                            const text = await generateText(this.model, 'What a great movie. It', 100, 0.8, 10);
-                            console.log(`Example text: ${text}`);
+                            if (prompt) {
+                                const text = await generateText(this.model, prompt, 100, 0.8, 10);
+                                entry.example = text;
+                            }
+                            await onStep(entry);
                         }
                     }
                 }

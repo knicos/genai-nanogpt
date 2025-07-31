@@ -1,6 +1,6 @@
 import { ITokeniser } from './Tokeniser/type';
 import { DatasetBuilder } from './DatasetBuilder';
-import NanoGPT from './NanoGPTModel';
+import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
 
 export interface TrainingState {
@@ -23,11 +23,11 @@ export interface AdamConfig {
 export interface TrainingOptions {
     epochs: number;
     stepsPerEpoch: number;
-    maxPasses: number;
     desiredLoss: number;
     logInterval: number;
+    prompt?: string;
     onEpoch?: (e: number, loss: number, valLoss?: number) => Promise<void> | void;
-    onStep?: (s: number, loss: number) => Promise<void> | void;
+    onStep?: (log: TrainingLogEntry) => Promise<void> | void;
 }
 
 // Enhanced training utilities with Dataset API and memory leak fixes

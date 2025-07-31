@@ -20,6 +20,16 @@ function dummyPass(model: NanoGPT) {
     dummyInput.dispose(); // Dispose dummy input to free memory
 }
 
+export interface TrainingLogEntry {
+    epoch: number;
+    loss: number;
+    valLoss?: number;
+    step: number;
+    time: number;
+    example?: string;
+    batchSize: number;
+}
+
 // Main GPT model
 export default class NanoGPT {
     public readonly config: GPTConfig;
@@ -31,6 +41,7 @@ export default class NanoGPT {
     private lmHead: TF.layers.Layer; // Language model head
     public readonly tf: typeof TF;
     public readonly tokeniser: ITokeniser;
+    public log: TrainingLogEntry[] = []; // Training log
 
     constructor(tf: typeof TF, tokeniser: ITokeniser, config: Partial<GPTConfig> = {}) {
         this.tf = tf;
@@ -119,6 +130,7 @@ export default class NanoGPT {
                 binary: false,
             }
         );
+        zipFile.file('log.json', JSON.stringify(this.log), { binary: false });
         return zipFile.generateAsync({ type: 'blob' });
     }
 
@@ -171,6 +183,18 @@ export default class NanoGPT {
         dummyPass(model); // Initialize the model to set up weights and caches
         model.loadWeights(weights);
         dummyPass(model); // Run a dummy pass to ensure everything is initialized correctly
+
+        const logFile = await zipFile.file('log.json')?.async('string');
+        if (logFile) {
+            try {
+                const logData: TrainingLogEntry[] = JSON.parse(logFile);
+                model.log = logData;
+            } catch (error) {
+                console.error('Error parsing training log:', error);
+                throw new Error(`Failed to parse training log: ${error}`);
+            }
+        }
+
         return model;
     }
 

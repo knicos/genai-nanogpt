@@ -1,6 +1,6 @@
 import { ITokeniser } from './Tokeniser/type';
 import { generateText } from './generate';
-import NanoGPT from './NanoGPTModel';
+import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
 import GPTTrainer, { TrainingOptions, TrainingState } from './Trainer';
 
@@ -17,6 +17,11 @@ interface LayerTrainingState extends TrainingState {
     validationLosses: number[];
 }
 
+interface LayerTrainingLogEntry extends TrainingLogEntry {
+    pass: number;
+    layer: number;
+}
+
 interface AdamConfig {
     learningRate: number;
     beta1: number;
@@ -26,6 +31,7 @@ interface AdamConfig {
 
 interface LayerTrainingOptions extends TrainingOptions {
     stepsPerLayer: number;
+    maxPasses: number;
     onLayerChange?: (layer: number, pass: number, valLoss?: number) => Promise<void> | void;
     onPassComplete?: (pass: number) => Promise<void> | void;
 }
@@ -122,6 +128,7 @@ export default class LayerTrainer extends GPTTrainer {
             onPassComplete,
             onStep,
             onEpoch,
+            prompt,
         } = {
             ...DEFAULT_OPTIONS,
             ...options,
@@ -141,6 +148,8 @@ export default class LayerTrainer extends GPTTrainer {
         };
 
         this.dummyPass();
+
+        const startTime = Date.now();
 
         for (state.epoch = 0; state.epoch < epochs; state.epoch++) {
             state.step = 0;
@@ -166,14 +175,24 @@ export default class LayerTrainer extends GPTTrainer {
                     this.trainBatch(state, batch);
                     state.stepSinceLayerChange++;
 
+                    const entry: LayerTrainingLogEntry = {
+                        epoch: state.epoch,
+                        loss: state.lastLoss,
+                        step: state.step,
+                        time: Date.now() - startTime,
+                        batchSize: batch.xs.shape[0],
+                        pass: state.pass,
+                        layer: state.layerStep % this.model.config.nLayer,
+                    };
+                    this.model.log.push(entry);
+
                     if (state.step % logInterval === 0) {
                         if (onStep) {
-                            const loss = state.losses.slice(-logInterval).reduce((a, b) => a + b, 0) / logInterval;
-
-                            await onStep(state.step, loss);
-
-                            const text = await generateText(this.model, 'What a great movie. It', 100, 0.9, 10);
-                            console.log(`Example text: ${text}`);
+                            if (prompt) {
+                                const text = await generateText(this.model, prompt, 100, 0.8, 10);
+                                entry.example = text;
+                            }
+                            await onStep(entry);
                         }
                     }
 
@@ -182,6 +201,7 @@ export default class LayerTrainer extends GPTTrainer {
                         if (validationDataset) {
                             valLoss = await this.evaluateOnDataset(validationDataset, 5);
                             state.validationLosses.push(valLoss);
+                            entry.valLoss = valLoss;
                         }
 
                         state.layerStep++;
