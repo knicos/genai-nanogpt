@@ -48,10 +48,24 @@ const DEFAULT_OPTIONS: LayerTrainingOptions = {
 // Enhanced training utilities with Dataset API and memory leak fixes
 export default class LayerTrainer extends GPTTrainer {
     private trainingPattern: { skip: boolean[]; trainable: boolean[] }[] = [];
+    private startPass: number = 0;
+    private startLayer: number = 0;
 
     constructor(tf: typeof TF, model: NanoGPT, tokenizer: ITokeniser, learningRate: number = 3e-4) {
         super(tf, model, tokenizer, learningRate);
         this.generateTrainingPattern();
+
+        if (model.log.length > 0) {
+            const lastEntry = model.log[model.log.length - 1] as LayerTrainingLogEntry;
+            if (lastEntry.pass !== undefined && lastEntry.layer !== undefined) {
+                // Resume from last training state
+                this.startPass = lastEntry.pass;
+                this.startLayer = lastEntry.layer;
+                // TODO: How far through the layer? Move to next layer if needed
+
+                console.log(`Resuming training from pass ${this.startPass}, layer ${this.startLayer}`);
+            }
+        }
     }
 
     private generateTrainingPattern(): void {
@@ -154,13 +168,16 @@ export default class LayerTrainer extends GPTTrainer {
         for (state.epoch = 0; state.epoch < epochs; state.epoch++) {
             state.step = 0;
             state.epochLoss = 0;
-            state.pass = 0;
-            state.layerStep = 0;
+            state.pass = this.startPass;
+            state.layerStep = this.startLayer + this.startPass * this.model.config.nLayer;
             state.stepSinceLayerChange = 0;
+            this.startPass = 0;
+            this.startLayer = 0;
 
             const iterator = await dataset.iterator();
 
-            this.applyTrainingPattern(0);
+            this.applyTrainingPattern(state.layerStep % this.trainingPattern.length);
+            this.resetOptimizer(this.getAdamConfig(state.pass + 1));
 
             // Training loop with try-catch for better error handling
             try {
