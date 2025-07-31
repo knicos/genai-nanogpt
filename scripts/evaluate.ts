@@ -1,14 +1,13 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import loadTextData from '../../src/utilities/textLoader';
-import Tokeniser from '../../src/utilities/Tokeniser/NodeTokeniser';
+import loadTextData from '../lib/utilities/textLoader';
 import fs from 'fs';
 import path from 'path';
 // Note: This should come first due to reimporting issues with TensorFlow
 import * as tf from '@tensorflow/tfjs-node-gpu';
-import NanoGPT from '../../src/models/NanoGPT/NanoGPTModel';
+import NanoGPT from '../lib/NanoGPTModel';
 import chalk from 'chalk';
-import FullTrainer from '../../src/models/NanoGPT/FullTrainer';
+import FullTrainer from '../lib/FullTrainer';
 
 const argv = yargs(hideBin(process.argv))
     .option('batch', {
