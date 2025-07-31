@@ -1,0 +1,17 @@
+{
+    "parserOptions": {
+        "sourceType": "module",
+        "ecmaVersion": 2020,
+        "ecmaFeatures": {
+            "jsx": false
+        }
+    },
+    "env": {
+        "browser": true,
+        "node": true
+    },
+    "parser": "@typescript-eslint/parser",
+    "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
+    "plugins": ["@typescript-eslint"],
+    "ignorePatterns": ["dist/*"]
+}
