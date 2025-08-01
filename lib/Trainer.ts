@@ -14,7 +14,7 @@ export interface TrainingState {
 }
 
 export interface AdamConfig {
-    learningRate: number;
+    learningRateFactor: number;
     beta1: number;
     beta2: number;
     epsilon: number;
@@ -46,11 +46,14 @@ export default abstract class GPTTrainer {
         this.datasetBuilder = new DatasetBuilder(this.tf, tokenizer, model.config.blockSize);
     }
 
-    resetOptimizer(
-        config: AdamConfig = { learningRate: this.learningRate, beta1: 0.9, beta2: 0.999, epsilon: 1e-8 }
-    ): void {
+    resetOptimizer(config: AdamConfig = { learningRateFactor: 1, beta1: 0.9, beta2: 0.999, epsilon: 1e-8 }): void {
         this.optimizer.dispose();
-        this.optimizer = this.tf.train.adam(config.learningRate, config.beta1, config.beta2, config.epsilon);
+        this.optimizer = this.tf.train.adam(
+            config.learningRateFactor * this.learningRate,
+            config.beta1,
+            config.beta2,
+            config.epsilon
+        );
     }
 
     protected trainStep(batch: { xs: TF.Tensor; ys: TF.Tensor }, dummy = false): TF.Scalar {

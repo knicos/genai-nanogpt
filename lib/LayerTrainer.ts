@@ -3,6 +3,7 @@ import { generateText } from './generate';
 import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
 import GPTTrainer, { TrainingOptions, TrainingState } from './Trainer';
+import { schedule, LWSchedule } from './lwSchedule';
 
 interface LayerTrainingState extends TrainingState {
     epoch: number;
@@ -20,13 +21,6 @@ interface LayerTrainingState extends TrainingState {
 interface LayerTrainingLogEntry extends TrainingLogEntry {
     pass: number;
     layer: number;
-}
-
-interface AdamConfig {
-    learningRate: number;
-    beta1: number;
-    beta2: number;
-    epsilon: number;
 }
 
 interface LayerTrainingOptions extends TrainingOptions {
@@ -47,13 +41,14 @@ const DEFAULT_OPTIONS: LayerTrainingOptions = {
 
 // Enhanced training utilities with Dataset API and memory leak fixes
 export default class LayerTrainer extends GPTTrainer {
-    private trainingPattern: { skip: boolean[]; trainable: boolean[] }[] = [];
+    private trainingPattern: LWSchedule[] = [];
     private startPass: number = 0;
     private startLayer: number = 0;
 
     constructor(tf: typeof TF, model: NanoGPT, tokenizer: ITokeniser, learningRate: number = 3e-4) {
         super(tf, model, tokenizer, learningRate);
-        this.generateTrainingPattern();
+
+        this.trainingPattern = schedule[model.config.nLayer - 1] || [];
 
         if (model.log.length > 0) {
             const lastEntry = model.log[model.log.length - 1] as LayerTrainingLogEntry;
@@ -68,62 +63,13 @@ export default class LayerTrainer extends GPTTrainer {
         }
     }
 
-    private generateTrainingPattern(): void {
-        const nLayer = this.model.config.nLayer;
-        this.trainingPattern = [];
-        for (let i = 0; i < nLayer; i++) {
-            this.trainingPattern.push({
-                skip: new Array(nLayer).fill(false).map((_, j) => j < nLayer - i - 1),
-                trainable: new Array(nLayer).fill(true).map((_, j) => j === nLayer - i - 1),
-            });
-        }
-        for (let i = 0; i < 10; i++) {
-            this.trainingPattern.push({
-                skip: new Array(nLayer).fill(false),
-                trainable: new Array(nLayer).fill(true).map((_, j) => j === nLayer - (i % nLayer) - 1),
-            });
-        }
-
-        //console.log('Generated training pattern:', this.trainingPattern);
-    }
-
     private applyTrainingPattern(pass: number) {
-        const ix = pass % this.trainingPattern.length;
+        const ix = pass < this.trainingPattern.length ? pass : this.trainingPattern.length - 1;
         const pattern = this.trainingPattern[ix];
         this.model.setSkipMask(pattern.skip);
         this.model.setTrainableMask(pattern.trainable);
+        this.resetOptimizer(pattern.adam);
         console.log('Applied training pattern:', ix, pattern);
-    }
-
-    private getAdamConfig(passNumber: number): AdamConfig {
-        const baseRate = this.learningRate;
-
-        // Beta parameters for different passes
-        switch (passNumber) {
-            case 1:
-                return {
-                    learningRate: baseRate,
-                    beta1: 0.9, // Standard momentum
-                    beta2: 0.999, // Standard second moment
-                    epsilon: 1e-8,
-                };
-
-            case 2:
-                return {
-                    learningRate: baseRate / 3,
-                    beta1: 0.95, // Higher momentum for stability
-                    beta2: 0.999, // Keep second moment decay
-                    epsilon: 1e-8,
-                };
-
-            default: // 3rd pass and beyond
-                return {
-                    learningRate: baseRate / (passNumber * 2),
-                    beta1: 0.98, // Very high momentum for fine-tuning
-                    beta2: 0.9999, // Slower second moment decay
-                    epsilon: 1e-8,
-                };
-        }
     }
 
     // Train for multiple epochs using Dataset API - FIXED memory leaks
@@ -177,7 +123,6 @@ export default class LayerTrainer extends GPTTrainer {
             const iterator = await dataset.iterator();
 
             this.applyTrainingPattern(state.layerStep % this.trainingPattern.length);
-            this.resetOptimizer(this.getAdamConfig(state.pass + 1));
 
             // Training loop with try-catch for better error handling
             try {
@@ -238,7 +183,6 @@ export default class LayerTrainer extends GPTTrainer {
                         }
                         state.stepSinceLayerChange = 0;
                         this.applyTrainingPattern(state.layerStep % this.trainingPattern.length);
-                        this.resetOptimizer(this.getAdamConfig(state.pass + 1));
                     }
                 }
             } catch (error) {

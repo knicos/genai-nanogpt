@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 // Note: This should come first due to reimporting issues with TensorFlow
 import * as tf from '@tensorflow/tfjs-node-gpu';
-import NanoGPT from '../../src/models/NanoGPT/NanoGPTModel';
+import NanoGPT from '../lib/NanoGPTModel';
 import chalk from 'chalk';
 
 const argv = yargs(hideBin(process.argv))

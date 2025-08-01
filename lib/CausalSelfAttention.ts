@@ -11,8 +11,6 @@ export default class CausalSelfAttention {
     private bias: TF.Tensor;
     private tf: typeof TF;
     private divisor: TF.Tensor;
-    private one: TF.Tensor;
-    private smallest: TF.Tensor;
     private index: number;
     private _trainable: boolean = true;
 
@@ -45,8 +43,6 @@ export default class CausalSelfAttention {
 
         // Causal mask to ensure that attention is only applied to the left in the input sequence
         this.bias = this.tf.linalg.bandPart(this.tf.ones([config.blockSize, config.blockSize]), -1, 0);
-        this.one = this.tf.scalar(1);
-        this.smallest = this.tf.scalar(-1e9); // Smallest value for masking
         this.divisor = this.tf.scalar(Math.sqrt(config.nEmbed / config.nHead)); // Scaling factor for attention scores
     }
 

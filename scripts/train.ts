@@ -7,7 +7,7 @@ import path from 'path';
 // Note: This should come first due to reimporting issues with TensorFlow
 import * as tf from '@tensorflow/tfjs-node-gpu';
 import NanoGPT, { TrainingLogEntry } from '../lib/NanoGPTModel';
-import LayerTrainer from '../lib/LayerTrainer';
+import FullTrainer from '../lib/FullTrainer';
 import chalk from 'chalk';
 import dayjs from 'dayjs';
 import duration from 'dayjs/plugin/duration';
@@ -95,18 +95,18 @@ async function constructModel(modelPath?: string) {
     const tokeniser = new Tokeniser();
 
     const model = new NanoGPT(tf, tokeniser, {
-        vocabSize: 512,
-        blockSize: 64, // Context window size
+        vocabSize: 384,
+        blockSize: 128, // Context window size
         nLayer: 4,
         nHead: 4,
-        nEmbed: 256,
-        dropout: 0.1,
+        nEmbed: 128,
+        dropout: 0,
     });
     return model;
 }
 
 async function train() {
-    const { epochs, batch, data, maxSteps, loss, blockSteps, autosave, rate, model: modelName } = argv;
+    const { epochs, batch, data, maxSteps, loss, autosave, rate, model: modelName } = argv;
 
     if (data === '') {
         console.error('Error: --data option is required');
@@ -126,7 +126,7 @@ async function train() {
         tokeniser.train(textData, model.config.vocabSize);
     }
 
-    const trainer = new LayerTrainer(tf, model, tokeniser, rate);
+    const trainer = new FullTrainer(tf, model, tokeniser, rate);
 
     // Create training and validation datasets
     const { trainDataset, validationDataset } = await trainer.createTrainValidationSplit(textData, batch, 0.2);
@@ -139,15 +139,15 @@ async function train() {
             prompt: 'What a great movie. It',
             stepsPerEpoch: maxSteps,
             logInterval: 10,
-            stepsPerLayer: blockSteps,
-            onPassComplete: async (pass) => {
+            //stepsPerLayer: blockSteps,
+            /*onPassComplete: async (pass) => {
                 console.log(`Pass ${pass} completed`);
             },
             onLayerChange: async (layer, pass, valLoss) => {
                 console.log(
                     `\nLayer ${layer} changed in pass ${pass}, Val Loss: ${chalk.redBright(valLoss?.toFixed(4))}\n`
                 );
-            },
+            },*/
             desiredLoss: loss,
             onStep: async (log: TrainingLogEntry) => {
                 console.log(
