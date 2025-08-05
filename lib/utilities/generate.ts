@@ -1,4 +1,4 @@
-import NanoGPT from './NanoGPTModel';
+import NanoGPT from '../NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
 
 export async function generateText(
@@ -24,20 +24,22 @@ export async function generateText(
     // Tokenise the prompt
     const tokenisedPrompt = await model.tokeniser.tokenise([prompt], true);
 
-    const tokenArray = model.tf.tidy(() => {
-        let inputTensor: TF.Tensor = model.tf.tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length]);
+    const inputTensor = model.tf.tidy(() => {
+        let inputTensor: TF.Tensor = model.tf.tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
 
         // Generate text
         for (let i = 0; i < length; i++) {
             const generatedTokens = model.generate(inputTensor, temperature, topK);
             const oldInput = inputTensor;
-            inputTensor = model.tf.concat([inputTensor, generatedTokens.cast('float32')], 1);
+            inputTensor = model.tf.concat([inputTensor, generatedTokens], 1);
             oldInput.dispose();
             generatedTokens.dispose();
         }
 
-        return inputTensor.arraySync() as number[][];
+        return inputTensor;
     });
+
+    const tokenArray = (await inputTensor.array()) as number[][];
 
     const generatedTokens = tokenArray[0];
 

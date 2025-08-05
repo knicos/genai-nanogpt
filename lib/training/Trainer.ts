@@ -1,7 +1,9 @@
-import { ITokeniser } from './Tokeniser/type';
+import { ITokeniser } from '../tokeniser/type';
 import { DatasetBuilder } from './DatasetBuilder';
-import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
+import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
+import AdamExt from './AdamExt';
+import { NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
 
 export interface TrainingState {
     epoch: number;
@@ -33,43 +35,84 @@ export interface TrainingOptions {
 // Enhanced training utilities with Dataset API and memory leak fixes
 export default abstract class GPTTrainer {
     protected model: NanoGPT;
-    protected optimizer: TF.Optimizer;
+    protected optimizer!: AdamExt;
     protected datasetBuilder: DatasetBuilder;
     protected tf: typeof TF;
     protected learningRate: number;
 
-    constructor(tf: typeof TF, model: NanoGPT, tokenizer: ITokeniser, learningRate: number = 3e-4) {
+    constructor(tf: typeof TF, model: NanoGPT, tokenizer: ITokeniser, learningRate: number = 1e-3) {
         this.tf = tf;
         this.model = model;
         this.learningRate = learningRate;
-        this.optimizer = this.tf.train.adam(learningRate, 0.9, 0.999, 1e-8);
+        this.resetOptimizer();
         this.datasetBuilder = new DatasetBuilder(this.tf, tokenizer, model.config.blockSize);
     }
 
-    resetOptimizer(config: AdamConfig = { learningRateFactor: 1, beta1: 0.9, beta2: 0.999, epsilon: 1e-8 }): void {
-        this.optimizer.dispose();
-        this.optimizer = this.tf.train.adam(
+    getOptimizer(): AdamExt {
+        return this.optimizer;
+    }
+
+    resetOptimizer(config: AdamConfig = { learningRateFactor: 1, beta1: 0.9, beta2: 0.99, epsilon: 1e-8 }): void {
+        if (this.optimizer) this.optimizer.dispose();
+        const adam = new AdamExt(
             config.learningRateFactor * this.learningRate,
             config.beta1,
             config.beta2,
-            config.epsilon
+            config.epsilon,
+            {
+                warmupSteps: 100,
+                decaySteps: 20000,
+                minLearningRate: 1e-4,
+                weightDecay: 0,
+            }
         );
+        this.optimizer = adam;
     }
 
-    protected trainStep(batch: { xs: TF.Tensor; ys: TF.Tensor }, dummy = false): TF.Scalar {
+    private printGradients(grads: NamedVariableMap): void {
+        // Print all gradients
+        Object.keys(grads).forEach((varName) => {
+            const grad = grads[varName];
+            console.log(`${varName}:`);
+            console.log(`  Shape: ${grad.shape}`);
+            console.log(`  Mean: ${this.tf.mean(grad).dataSync()[0]}`);
+            console.log(`  Std: ${this.tf.moments(grad).variance.sqrt().dataSync()[0]}`);
+            console.log(`  Min: ${this.tf.min(grad).dataSync()[0]}`);
+            console.log(`  Max: ${this.tf.max(grad).dataSync()[0]}`);
+            console.log(`  Norm: ${this.tf.norm(grad).dataSync()[0]}`);
+        });
+    }
+
+    protected trainStep(batch: { xs: TF.Tensor; ys: TF.Tensor }, dummy = false, print = false): TF.Scalar {
         return this.tf.tidy(() => {
             const { xs, ys } = batch;
 
             const f = () => {
-                const { loss } = this.model.forward(xs, ys, true);
+                const { loss, logits } = this.model.forward(xs, ys, true);
+                //console.log('Logits', logits.toString());
+                logits.dispose();
                 return loss! as TF.Scalar;
             };
 
-            const { value: lossValue, grads } = this.optimizer.computeGradients(f);
+            //const vars = this.model.variables;
+            const { value: lossValue, grads } = this.tf.variableGrads(f);
 
             if (!dummy) {
+                // Clip gradients
+                /*const clippedGrads: { [variableName: string]: TF.Tensor } = {};
+                for (const variableName in grads) {
+                    clippedGrads[variableName] = this.tf.clipByValue(grads[variableName], -1.0, 1.0);
+                }*/
+
+                if (print) {
+                    console.log('-------');
+                    this.printGradients(grads as NamedVariableMap);
+                    console.log('-------');
+                }
+                //this.tf.dispose(grads);
                 // Apply gradients
-                this.optimizer.applyGradients(grads);
+                this.optimizer.applyGradients(grads as NamedVariableMap);
+                this.tf.dispose(grads);
             }
 
             return lossValue;
@@ -83,6 +126,7 @@ export default abstract class GPTTrainer {
 
         try {
             const l = this.trainStep({ xs: dummyBatch, ys: dummyTargets }, true);
+            l.dataSync(); // Ensure loss is computed
             l.dispose(); // Dispose loss to free memory
         } catch (error) {
             console.error('Error during dummy pass:', error);
@@ -92,19 +136,23 @@ export default abstract class GPTTrainer {
         }
     }
 
-    protected trainBatch(state: TrainingState, batch: { xs: TF.Tensor; ys: TF.Tensor }): number {
+    protected async trainBatch(state: TrainingState, batch: { xs: TF.Tensor; ys: TF.Tensor }): Promise<number> {
         try {
-            const lossScalar = this.trainStep(batch);
-            const data = lossScalar.arraySync();
-            lossScalar.dispose();
+            //console.log('Batch XS', batch.xs.toString());
+            const lossScalar = this.trainStep(batch, false, false);
             batch.xs.dispose();
             batch.ys.dispose();
-            state.epochLoss += data;
-            state.lastLoss = data;
-            state.losses.push(data);
+
             state.step++;
             state.totalSteps++;
-            return data;
+
+            return lossScalar.array().then((lossValue) => {
+                state.lastLoss = lossValue as number;
+                state.losses.push(state.lastLoss);
+                state.epochLoss += state.lastLoss;
+                lossScalar.dispose();
+                return state.lastLoss;
+            });
         } catch (error) {
             console.error(`Error processing batch at step ${state.step}:`, error);
             this.tf.dispose();
@@ -127,19 +175,15 @@ export default abstract class GPTTrainer {
         await dataset.take(maxBatches).forEachAsync(async (batch) => {
             const { xs, ys } = batch as { xs: TF.Tensor; ys: TF.Tensor };
 
-            // FIX 8: Manual tensor disposal for async operations
             const { loss, logits } = this.model.forward(xs, ys, false);
             const lossValue = loss!.arraySync();
             const batchLoss = lossValue as number;
 
-            // FIX 9: Dispose loss tensor immediately after use
             loss!.dispose();
             logits.dispose(); // Dispose logits if not needed
 
             totalLoss += batchLoss;
             batchCount++;
-
-            // Batch tensors are disposed by the dataset iterator
         });
 
         return totalLoss / batchCount;

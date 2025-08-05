@@ -11,10 +11,10 @@ describe('BPE Tokeniser Tests', () => {
 
         const tokens = bpe.tokenise(textData);
         expect(tokens).toEqual([
-            [' hello', ' world'],
-            [' this', ' is', ' a', ' test'],
-            [' hello', ' again'],
-            [' test', ' the', ' tokenizer'],
+            ['hello', ' world'],
+            ['this', ' is', ' a', ' test'],
+            ['hello', ' again'],
+            ['test', ' the', ' tokenizer'],
         ]);
     });
 
@@ -27,10 +27,10 @@ describe('BPE Tokeniser Tests', () => {
 
         const tokens = bpe.tokenise(textData);
         expect(tokens).toEqual([
-            [' ', 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd'],
-            [' ', 't', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' ', 't', 'e', 's', 't'],
-            [' ', 'h', 'e', 'l', 'l', 'o', ' ', 'a', 'g', 'a', 'i', 'n'],
-            [' ', 't', 'e', 's', 't', ' ', 't', 'h', 'e', ' ', 't', 'o', 'k', 'e', 'n', 'i', 'z', 'e', 'r'],
+            ['h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd'],
+            ['t', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' ', 't', 'e', 's', 't'],
+            ['h', 'e', 'l', 'l', 'o', ' ', 'a', 'g', 'a', 'i', 'n'],
+            ['t', 'e', 's', 't', ' ', 't', 'h', 'e', ' ', 't', 'o', 'k', 'e', 'n', 'i', 'z', 'e', 'r'],
         ]);
     });
 });

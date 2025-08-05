@@ -29,7 +29,7 @@ const argv = yargs(hideBin(process.argv))
         alias: 't',
         type: 'number',
         description: 'Temperature for sampling',
-        default: 0.8,
+        default: 1,
     })
     .parseSync();
 
@@ -58,19 +58,18 @@ async function generate() {
     const nanoGPT = await NanoGPT.loadModel(tf, modelBlob);
 
     const tokeniser = nanoGPT.tokeniser;
+
     process.stdout.write('\n\n');
     process.stdout.write(chalk.bold(prompt));
 
     // Tokenise the prompt
     const tokenisedPrompt = await tokeniser.tokenise([prompt], true);
-    let inputTensor: tf.Tensor = tf.tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length]);
+    let inputTensor: tf.Tensor = tf.tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
 
     // Generate text
     for (let i = 0; i < length; i++) {
-        const generatedTokens = nanoGPT.generate(inputTensor, temperature, 10);
+        const generatedTokens = nanoGPT.generate(inputTensor, temperature);
         const tokenArray = generatedTokens.arraySync() as number[][];
-        const casted = generatedTokens.cast('float32');
-        generatedTokens.dispose();
 
         const generatedText = await tokeniser.decode(tokenArray[0]);
         if (generatedText === '<eos>') break; // Stop if end of sequence token is generated
@@ -78,11 +77,11 @@ async function generate() {
 
         // Concatenate the new token to the input tensor for next iteration
 
-        const newInputTensor = tf.concat([inputTensor, casted], 1);
+        const newInputTensor = tf.concat([inputTensor, generatedTokens], 1);
 
         // Dispose of old tensors to prevent memory leaks
         inputTensor.dispose();
-        casted.dispose();
+        generatedTokens.dispose();
 
         inputTensor = newInputTensor;
     }

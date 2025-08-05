@@ -1,16 +1,17 @@
+// Note: This should come first due to reimporting issues with TensorFlow
+import * as tf from '@tensorflow/tfjs-node-gpu';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import loadTextData from '../lib/utilities/textLoader';
-import Tokeniser from '../lib/Tokeniser/NodeTokeniser';
+import CharTokeniser from '../lib/Tokeniser/CharTokeniser';
 import fs from 'fs';
 import path from 'path';
-// Note: This should come first due to reimporting issues with TensorFlow
-import * as tf from '@tensorflow/tfjs-node-gpu';
 import NanoGPT, { TrainingLogEntry } from '../lib/NanoGPTModel';
 import FullTrainer from '../lib/FullTrainer';
 import chalk from 'chalk';
 import dayjs from 'dayjs';
 import duration from 'dayjs/plugin/duration';
+import { ITokeniser } from '../lib/Tokeniser/type';
 
 dayjs.extend(duration);
 
@@ -33,7 +34,7 @@ const argv = yargs(hideBin(process.argv))
         alias: 'r',
         type: 'number',
         description: 'Learning rate for the optimizer',
-        default: 3e-4,
+        default: 1e-3,
     })
     .option('maxSteps', {
         type: 'number',
@@ -86,21 +87,24 @@ const argv = yargs(hideBin(process.argv))
     })
     .parseSync();
 
-async function constructModel(modelPath?: string) {
+async function constructModel(tokeniser: ITokeniser, modelPath?: string) {
     if (modelPath) {
         const modelBlob = fs.readFileSync(path.resolve(modelPath));
         console.log('Loading model from:', modelPath);
-        return NanoGPT.loadModel(tf, modelBlob);
+        const model = await NanoGPT.loadModel(tf, modelBlob);
+        if (model.tokeniser.vocabSize !== tokeniser.vocabSize) {
+            throw new Error('Model tokeniser vocab size does not match provided tokeniser');
+        }
+        return model;
     }
-    const tokeniser = new Tokeniser();
 
     const model = new NanoGPT(tf, tokeniser, {
-        vocabSize: 384,
+        vocabSize: tokeniser.vocabSize,
         blockSize: 128, // Context window size
         nLayer: 4,
-        nHead: 4,
-        nEmbed: 128,
-        dropout: 0,
+        nHead: 3,
+        nEmbed: 192,
+        dropout: 0.0,
     });
     return model;
 }
@@ -118,13 +122,13 @@ async function train() {
     const rawdata = fs.readFileSync(path.resolve(data), 'utf8');
     const textData = await loadTextData(rawdata);
 
-    // Initialize your model and trainer
-    const model = await constructModel(modelName);
-
-    const tokeniser = model.tokeniser;
+    const tokeniser = new CharTokeniser();
     if (!tokeniser.trained) {
-        tokeniser.train(textData, model.config.vocabSize);
+        await tokeniser.train(textData); // Train the tokeniser with a vocab size of 207
     }
+
+    // Initialize your model and trainer
+    const model = await constructModel(tokeniser, modelName);
 
     const trainer = new FullTrainer(tf, model, tokeniser, rate);
 
@@ -157,6 +161,7 @@ async function train() {
                         log.loss.toFixed(4)
                     )}, ${chalk.bold('Example:')}\n${chalk.yellowBright(log.example || 'N/A')}`
                 );
+                console.log('lr', trainer.getOptimizer().lr);
 
                 if (log.step > 0 && log.step % autosave === 0) {
                     try {

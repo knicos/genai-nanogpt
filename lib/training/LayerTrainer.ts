@@ -1,6 +1,6 @@
-import { ITokeniser } from './Tokeniser/type';
-import { generateText } from './generate';
-import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
+import { ITokeniser } from '../tokeniser/type';
+import { generateText } from '../utilities/generate';
+import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
 import GPTTrainer, { TrainingOptions, TrainingState } from './Trainer';
 import { schedule, LWSchedule } from './lwSchedule';
@@ -134,7 +134,7 @@ export default class LayerTrainer extends GPTTrainer {
                     if (result.done) break;
                     const batch = result.value;
 
-                    this.trainBatch(state, batch);
+                    const prom = this.trainBatch(state, batch);
                     state.stepSinceLayerChange++;
 
                     const entry: LayerTrainingLogEntry = {
@@ -149,6 +149,7 @@ export default class LayerTrainer extends GPTTrainer {
                     this.model.log.push(entry);
 
                     if (state.step % logInterval === 0) {
+                        await prom;
                         if (onStep) {
                             if (prompt) {
                                 const text = await generateText(this.model, prompt, 100, 0.8, 10);

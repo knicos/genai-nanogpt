@@ -1,5 +1,5 @@
 import type TF from '@tensorflow/tfjs';
-import { GPTConfig } from './config';
+import { GPTConfig } from '../config';
 
 // Multi-layer perceptron
 export default class MLP {
@@ -17,16 +17,33 @@ export default class MLP {
             units: 4 * config.nEmbed,
             activation: 'gelu',
             useBias: config.biasInLinear,
-            name: `mlp_hidden_${index}`,
+            kernelInitializer: this.tf.initializers.randomNormal({
+                mean: 0.0,
+                stddev: 0.02,
+            }),
+            biasInitializer: 'zeros',
+            name: `block_${index}_mlp_cFc`,
         });
 
         this.cProj = this.tf.layers.dense({
             units: config.nEmbed,
             useBias: config.biasInLinear,
-            name: `mlp_output_${index}`,
+            kernelInitializer: this.tf.initializers.randomNormal({
+                mean: 0.0,
+                stddev: 0.02 / Math.sqrt(2 * config.nLayer),
+            }),
+            biasInitializer: 'zeros',
+            name: `block_${index}_mlp_cProj`,
         });
 
         this.dropout = this.tf.layers.dropout({ rate: config.dropout });
+    }
+
+    get variables(): TF.Variable[] {
+        return [
+            ...this.cFc.trainableWeights.map((v) => v.read() as TF.Variable),
+            ...this.cProj.trainableWeights.map((v) => v.read() as TF.Variable),
+        ];
     }
 
     get trainable(): boolean {
@@ -53,7 +70,8 @@ export default class MLP {
         return this.tf.tidy(() => {
             const hidden = this.cFc.apply(x) as TF.Tensor;
             const projected = this.cProj.apply(hidden) as TF.Tensor;
-            return this.dropout.apply(projected, { training }) as TF.Tensor;
+            const output = this.dropout.apply(projected, { training }) as TF.Tensor;
+            return output;
         });
     }
 }

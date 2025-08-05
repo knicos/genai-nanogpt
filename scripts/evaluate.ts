@@ -7,7 +7,7 @@ import path from 'path';
 import * as tf from '@tensorflow/tfjs-node-gpu';
 import NanoGPT from '../lib/NanoGPTModel';
 import chalk from 'chalk';
-import FullTrainer from '../lib/FullTrainer';
+import FullTrainer from '../lib/training/FullTrainer';
 
 const argv = yargs(hideBin(process.argv))
     .option('batch', {

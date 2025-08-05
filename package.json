@@ -17,6 +17,7 @@
     "scripts": {
         "dev": "vite",
         "build": "tsc && vite build",
+        "build:script": "tsc -p scripts/tsconfig.json",
         "preview": "vite preview",
         "lint": "eslint",
         "test": "vitest",
@@ -24,7 +25,8 @@
         "coverage": "vitest run --coverage",
         "train": "tsx scripts/train.ts --epochs 2 --batch 64",
         "generate": "tsx scripts/generate.ts",
-        "evaluate": "tsx scripts/evaluate.ts"
+        "evaluate": "tsx scripts/evaluate.ts",
+        "debug": "tsx scripts/debug.ts"
     },
     "peerDependencies": {
         "@tensorflow/tfjs": "^4.20.0"

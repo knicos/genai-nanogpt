@@ -48,7 +48,7 @@ export default class NodeTokeniser extends EE<'trainStatus'> implements ITokenis
         return (await this.detokenise([tokens]))[0];
     }
 
-    public async getVocab(): Promise<string[]> {
+    public getVocab(): string[] {
         return this.bpe.getVocab();
     }
 

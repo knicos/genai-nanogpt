@@ -1,12 +1,14 @@
 import type TF from '@tensorflow/tfjs';
-import { PositionEmbedding } from '@tensorflow/tfjs-layers/dist/layers/nlp/modeling/position_embedding';
+//import { PositionEmbedding } from './NLP/position_embedding';
 import { defaultConfig, GPTConfig } from './config';
 
 import zip from 'jszip';
-import { exportWeights, importWeights, ITensorSpec, IWeightManifest } from './weights';
-import { ITokeniser } from './Tokeniser/type';
-import NodeTokeniser from './Tokeniser/NodeTokeniser';
-import Block from './TransformerBlock';
+import { exportWeights, importWeights, ITensorSpec, IWeightManifest } from './utilities/weights';
+import { ITokeniser } from './tokeniser/type';
+import CharTokeniser from './tokeniser/CharTokeniser';
+import Block from './layers/TransformerBlock';
+import TiedEmbeddingOutputLayer from './layers/TiedEmbedding';
+import LayerNorm from './layers/LayerNorm';
 
 function dummyPass(model: NanoGPT) {
     // Send a dummy input to initialize the model
@@ -33,12 +35,11 @@ export interface TrainingLogEntry {
 // Main GPT model
 export default class NanoGPT {
     public readonly config: GPTConfig;
-    private wte: TF.layers.Layer; // Token embeddings
-    private wpe: PositionEmbedding;
+    private wte: TiedEmbeddingOutputLayer; // Token embeddings
+    private wpe: TF.layers.Layer; // Position embeddings
     private drop: TF.layers.Layer; // Dropout
     private blocks: Block[];
-    private lnF: TF.layers.Layer; // Final layer norm
-    private lmHead: TF.layers.Layer; // Language model head
+    private lnF: LayerNorm; // Final layer norm
     public readonly tf: typeof TF;
     public readonly tokeniser: ITokeniser;
     public log: TrainingLogEntry[] = []; // Training log
@@ -49,15 +50,17 @@ export default class NanoGPT {
         this.tokeniser = tokeniser;
 
         // Token embeddings
-        this.wte = this.tf.layers.embedding({
-            inputDim: this.config.vocabSize,
-            outputDim: this.config.nEmbed,
+        this.wte = new TiedEmbeddingOutputLayer(tf, {
+            vocabSize: this.config.vocabSize,
+            embedDim: this.config.nEmbed,
             name: 'token_embedding',
         });
 
-        // Position embeddings
-        this.wpe = new PositionEmbedding({
-            sequenceLength: this.config.blockSize,
+        this.wpe = this.tf.layers.embedding({
+            inputDim: this.config.blockSize,
+            outputDim: this.config.nEmbed,
+            name: 'positional_embedding',
+            embeddingsInitializer: this.tf.initializers.randomNormal({ mean: 0.0, stddev: 0.02 }),
         });
 
         this.drop = this.tf.layers.dropout({ rate: this.config.dropout });
@@ -69,22 +72,16 @@ export default class NanoGPT {
         }
 
         // Final layer norm
-        this.lnF = this.tf.layers.layerNormalization({
-            axis: -1,
-            epsilon: 1e-5,
-            center: this.config.biasInLayerNorm,
-            scale: true,
-            name: 'final_layer_norm',
-        });
+        this.lnF = new LayerNorm(tf, [this.config.nEmbed], 1e-5, `final_layer_norm`);
+    }
 
-        // Language model head
-        this.lmHead = this.tf.layers.dense({
-            units: this.config.vocabSize,
-            useBias: false,
-            name: 'final_output',
-        });
-
-        //this.depth = 1; // Initialize depth to 1
+    get variables(): TF.Variable[] {
+        return [
+            ...this.wpe.trainableWeights.map((v) => v.read() as TF.Variable),
+            ...this.blocks.flatMap((b) => b.variables),
+            ...this.lnF.trainableWeights.map((v) => v as TF.Variable),
+            ...this.wte.variables,
+        ];
     }
 
     private saveWeights(): Map<string, TF.Tensor[]> {
@@ -95,7 +92,7 @@ export default class NanoGPT {
             this.blocks[i].saveWeights(map);
         }
         map.set('final_layer_norm', this.lnF.getWeights());
-        map.set('final_output', this.lmHead.getWeights());
+        //map.set('final_output', this.lmHead.getWeights());
         return map;
     }
 
@@ -106,7 +103,7 @@ export default class NanoGPT {
             this.blocks[i].loadWeights(weights);
         }
         this.lnF.setWeights(weights.get('final_layer_norm') || []);
-        this.lmHead.setWeights(weights.get('final_output') || []);
+        //this.lmHead.setWeights(weights.get('final_output') || []);
     }
 
     async saveModel(): Promise<Blob> {
@@ -160,7 +157,7 @@ export default class NanoGPT {
             merges: [string, string][];
         };
 
-        const tokeniser = new NodeTokeniser(tokeniserData.vocab, tokeniserData.merges);
+        const tokeniser = new CharTokeniser(tokeniserData.vocab);
 
         const weights = new Map<string, TF.Tensor[]>();
 
@@ -198,17 +195,20 @@ export default class NanoGPT {
         return model;
     }
 
-    private inputPhase(idx: TF.Tensor, training: boolean = false): TF.Tensor {
+    inputPhase(idx: TF.Tensor, training: boolean = false): TF.Tensor {
         return this.tf.tidy(() => {
+            const [, seqLen] = idx.shape;
             // Token and position embeddings
-            const tokEmb = this.wte.apply(idx) as TF.Tensor; // (b, t, n_embd)
-            const posEmb = this.wpe.apply(tokEmb) as TF.Tensor; // (b, t, n_embd)
+            const tokEmb = this.wte.embed(idx) as TF.Tensor; // (b, t, n_embd)
+            const posIndices = this.tf.range(0, seqLen, 1, 'int32');
+            const posEmb = this.wpe.apply(posIndices) as TF.Tensor; // (b, t, n_embd)
 
             // Add embeddings
             const embSum = tokEmb.add(posEmb);
 
             // Apply dropout
-            return this.drop.apply(embSum, { training }) as TF.Tensor;
+            const out = this.drop.apply(embSum, { training }) as TF.Tensor;
+            return out;
         });
     }
 
@@ -230,6 +230,15 @@ export default class NanoGPT {
         }
     }
 
+    set trainable(value: boolean) {
+        for (const block of this.blocks) {
+            block.trainable = value;
+        }
+        //this.wte.trainable = value;
+        this.wpe.trainable = value;
+        this.lnF.trainable = value;
+    }
+
     // Forward pass
     forward(idx: TF.Tensor, targets?: TF.Tensor, training: boolean = false): { logits: TF.Tensor; loss?: TF.Tensor } {
         if (idx.shape.length !== 2) {
@@ -238,6 +247,10 @@ export default class NanoGPT {
         if (idx.shape[1] > this.config.blockSize) {
             throw new Error(`Input sequence length ${idx.shape[1]} isn't block size ${this.config.blockSize}`);
         }
+        if (idx.dtype !== 'int32') {
+            throw new Error(`Input tensor must be of type int32, got ${idx.dtype}`);
+        }
+
         return this.tf.tidy(() => {
             const [, t] = idx.shape;
 
@@ -248,20 +261,6 @@ export default class NanoGPT {
             // Input phase
             let x = this.inputPhase(idx, training);
 
-            // const blockTensors: TF.Tensor[] = [x];
-
-            // Apply transformer blocks
-            /*for (let i = 0; i < this.blocks.length; i++) {
-                const input = blockTensors[i];
-                const out = this.blocks[i].call(input);
-                blockTensors.push(out);
-                x = out;
-            }
-            for (let i = blockTensors.length - 1; i > 1; i--) {
-                const input = blockTensors[i];
-                x = this.blocks[i - 2].call(input);
-            }*/
-
             for (const block of this.blocks) {
                 x = block.call(x) as TF.Tensor;
             }
@@ -270,28 +269,12 @@ export default class NanoGPT {
             x = this.lnF.apply(x) as TF.Tensor;
 
             // Language model head
-            const logits = this.lmHead.apply(x) as TF.Tensor;
+            const logits = this.wte.project(x) as TF.Tensor;
 
             let loss: TF.Tensor | undefined;
             if (targets) {
                 try {
-                    const batchSize = logits.shape[0];
-                    const seqLength = logits.shape[1]!;
-
-                    // Validate input shapes
-                    if (
-                        targets.shape.length !== 3 ||
-                        targets.shape[0] !== batchSize ||
-                        targets.shape[1] !== seqLength
-                    ) {
-                        throw new Error(
-                            `Invalid target shape: expected [${batchSize}, ${seqLength}], got [${targets.shape.join(
-                                ', '
-                            )}]`
-                        );
-                    }
-
-                    loss = this.tf.losses.softmaxCrossEntropy(targets, logits);
+                    loss = this.tf.losses.softmaxCrossEntropy(targets, logits, this.tf.Reduction.MEAN);
                 } catch (error) {
                     console.error('Error computing loss:', error);
                     throw new Error(`Loss computation failed: ${error}`);
@@ -331,15 +314,18 @@ export default class NanoGPT {
             let nextToken: TF.Tensor;
             if (topK) {
                 const { values: topKValues, indices: topKIndices } = this.tf.topk(scaledLogits, topK);
-                const topKProbs = this.tf.softmax(topKValues);
 
                 // Sample from top-k
-                const sampledIdx = this.tf.multinomial(topKProbs.squeeze([1]) as TF.Tensor1D, 1);
+                const sampledIdx = this.tf.multinomial(topKValues.squeeze([1]) as TF.Tensor1D, 1);
                 nextToken = this.tf.gather(topKIndices.squeeze([1]), sampledIdx, 1);
             } else {
                 // Sample from full distribution
-                const probs = this.tf.softmax(scaledLogits);
-                nextToken = this.tf.multinomial(probs.squeeze([1]) as TF.Tensor1D, 1);
+                /*const probs = this.tf.softmax(scaledLogits).squeeze();
+                const probsArray = probs.arraySync() as number[];
+                const tokenPairs = probsArray.map((prob, idx) => ({ token: idx, prob }));
+                tokenPairs.sort((a, b) => b.prob - a.prob); // Sort probabilities for debugging*/
+
+                nextToken = this.tf.multinomial(scaledLogits.squeeze([1]) as TF.Tensor1D, 1);
             }
 
             // Ensure nextToken has the right shape (batch_size, 1)

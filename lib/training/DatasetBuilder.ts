@@ -1,4 +1,4 @@
-import type { ITokeniser } from './Tokeniser/type';
+import type { ITokeniser } from '../tokeniser/type';
 import type TF from '@tensorflow/tfjs';
 
 // Training data utilities using TensorFlow.js Dataset API
@@ -21,21 +21,21 @@ export class DatasetBuilder {
         // Process ALL text into one token array first
         const tokenisedTexts = await Promise.all(textData.map((text) => this.tokenizer.encode(text)));
         // Flatten and add EOS token
-        const allTokens = tokenisedTexts.map((t) => [...t, this.tokenizer.eosToken]).flat();
+        const hasEOS = this.tokenizer.eosToken >= 0;
+        const allTokens = tokenisedTexts.map((t) => (hasEOS ? [...t, this.tokenizer.eosToken] : t)).flat();
 
         // Use generator to avoid storing all sequences in memory
         const generator = function* (this: DatasetBuilder) {
-            for (let i = 0; i < allTokens.length - this.blockSize; i++) {
+            while (true) {
+                const i = Math.floor(Math.random() * (allTokens.length - this.blockSize - 1));
                 const xs = allTokens.slice(i, i + this.blockSize);
                 const ys = allTokens.slice(i + 1, i + this.blockSize + 1);
-
                 yield { xs, ys };
             }
         }.bind(this);
 
         return this.tf.data
             .generator(generator)
-            .shuffle(200) // Reasonable shuffle buffer
             .batch(batchSize)
             .map((batch) => {
                 // Only needed to convert from float32 to int32

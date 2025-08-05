@@ -18,6 +18,6 @@ export const defaultConfig: GPTConfig = {
     nHead: 12, // Number of attention heads
     nEmbed: 768, // Embedding dimension
     dropout: 0.0, // Dropout probability
-    biasInLinear: true,
-    biasInLayerNorm: true,
+    biasInLinear: false,
+    biasInLayerNorm: false,
 };

@@ -4,7 +4,7 @@ export interface ITokeniser extends EE<'trainStatus'> {
     train(text: string[], vocabSize: number): Promise<number>;
     tokenise(text: string[], numeric?: boolean): Promise<string[][] | number[][]>;
     detokenise(tokens: string[][] | number[][]): Promise<string[]>;
-    getVocab(): Promise<string[]>;
+    getVocab(): string[];
     getMerges(): Promise<[string, string][]>;
     destroy(): void;
     encode(text: string): Promise<number[]>;

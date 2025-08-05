@@ -119,7 +119,7 @@ export default class BPE {
     }
 
     public train(text: string[], vocabSize: number, onUpdate?: (progress: number, vocabSize: number) => void): void {
-        const pretokens = text.map((t) => parseTokens(t)).flat(1);
+        const pretokens = text.map((t) => parseTokens(t, true)).flat(1);
         const preTokenSet = new Set<string>(pretokens);
 
         this.vocab = new Set();
@@ -187,7 +187,7 @@ export default class BPE {
 
     private tokeniseStrings(text: string[]): string[][] {
         return text.map((t) => {
-            const pretokens = parseTokens(t);
+            const pretokens = parseTokens(t, true);
             const tokens = pretokens
                 .map((token) => {
                     if (this.pretokenMap.has(token)) {

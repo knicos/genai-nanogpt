@@ -1,7 +1,7 @@
 import { describe, it } from 'vitest';
 import NodeTokeniser from './NodeTokeniser';
 
-describe('BPE Tokeniser Tests', () => {
+describe('NodeTokeniser Tests', () => {
     it('can decode tokens back to text', async ({ expect }) => {
         const bpe = new NodeTokeniser();
 

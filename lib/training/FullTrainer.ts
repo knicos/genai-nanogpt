@@ -1,6 +1,6 @@
-import { ITokeniser } from './Tokeniser/type';
-import { generateText } from './generate';
-import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
+import { ITokeniser } from '../tokeniser/type';
+import { generateText } from '../utilities/generate';
+import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
 import GPTTrainer, { TrainingOptions } from './Trainer';
 
@@ -55,6 +55,7 @@ export default class FullTrainer extends GPTTrainer {
         };
 
         this.dummyPass();
+        this.model.trainable = true;
 
         const startTime = Date.now();
 
@@ -77,7 +78,8 @@ export default class FullTrainer extends GPTTrainer {
                     if (result.done) break;
                     const batch = result.value;
 
-                    this.trainBatch(state, batch);
+                    const lossPromise = this.trainBatch(state, batch);
+
                     const entry: TrainingLogEntry = {
                         epoch: state.epoch,
                         loss: state.lastLoss,
@@ -88,9 +90,10 @@ export default class FullTrainer extends GPTTrainer {
                     this.model.log.push(entry);
 
                     if (state.step % logInterval === 0) {
+                        await lossPromise;
                         if (onStep) {
                             if (prompt) {
-                                const text = await generateText(this.model, prompt, 100, 0.8, 10);
+                                const text = await generateText(this.model, prompt, 100, 0.8);
                                 entry.example = text;
                             }
                             await onStep(entry);
