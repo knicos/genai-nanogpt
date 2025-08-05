@@ -93,7 +93,7 @@ export default class FullTrainer extends GPTTrainer {
                         await lossPromise;
                         if (onStep) {
                             if (prompt) {
-                                const text = await generateText(this.model, prompt, 100, 0.8);
+                                const text = await generateText(this.tokenizer, this.model, prompt, 100, 0.8);
                                 entry.example = text;
                             }
                             await onStep(entry);

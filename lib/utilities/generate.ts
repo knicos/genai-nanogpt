@@ -1,7 +1,9 @@
+import { ITokeniser } from '@base/tokeniser/type';
 import NanoGPT from '../NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
 
 export async function generateText(
+    tokeniser: ITokeniser,
     model: NanoGPT,
     prompt: string,
     length: number,
@@ -22,7 +24,7 @@ export async function generateText(
     }
 
     // Tokenise the prompt
-    const tokenisedPrompt = await model.tokeniser.tokenise([prompt], true);
+    const tokenisedPrompt = await tokeniser.tokenise([prompt], true);
 
     const inputTensor = model.tf.tidy(() => {
         let inputTensor: TF.Tensor = model.tf.tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
@@ -44,13 +46,13 @@ export async function generateText(
     const generatedTokens = tokenArray[0];
 
     // Remove anything after the first end-of-sequence token
-    const endIndex = generatedTokens.indexOf(model.tokeniser.eosToken);
+    const endIndex = generatedTokens.indexOf(tokeniser.eosToken);
     if (endIndex !== -1) {
         generatedTokens.splice(endIndex);
     }
 
     // Decode the generated tokens back to text
-    const generatedText = await model.tokeniser.decode(generatedTokens);
+    const generatedText = await tokeniser.decode(generatedTokens);
 
     return generatedText;
 }

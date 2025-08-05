@@ -3,15 +3,16 @@ import * as tf from '@tensorflow/tfjs-node-gpu';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import loadTextData from '../lib/utilities/textLoader';
-import CharTokeniser from '../lib/Tokeniser/CharTokeniser';
+import CharTokeniser from '../lib/tokeniser/CharTokeniser';
 import fs from 'fs';
 import path from 'path';
-import NanoGPT, { TrainingLogEntry } from '../lib/NanoGPTModel';
-import FullTrainer from '../lib/FullTrainer';
+import { TrainingLogEntry } from '../lib/NanoGPTModel';
+import FullTrainer from '../lib/training/FullTrainer';
 import chalk from 'chalk';
 import dayjs from 'dayjs';
 import duration from 'dayjs/plugin/duration';
-import { ITokeniser } from '../lib/Tokeniser/type';
+import { ITokeniser } from '../lib/tokeniser/type';
+import TeachableLLM from '../lib/TeachableLLM';
 
 dayjs.extend(duration);
 
@@ -87,18 +88,18 @@ const argv = yargs(hideBin(process.argv))
     })
     .parseSync();
 
-async function constructModel(tokeniser: ITokeniser, modelPath?: string) {
+async function constructModel(tokeniser: ITokeniser, modelPath?: string): Promise<TeachableLLM> {
     if (modelPath) {
         const modelBlob = fs.readFileSync(path.resolve(modelPath));
         console.log('Loading model from:', modelPath);
-        const model = await NanoGPT.loadModel(tf, modelBlob);
+        const model = await TeachableLLM.loadModel(tf, modelBlob);
         if (model.tokeniser.vocabSize !== tokeniser.vocabSize) {
             throw new Error('Model tokeniser vocab size does not match provided tokeniser');
         }
         return model;
     }
 
-    const model = new NanoGPT(tf, tokeniser, {
+    const model = TeachableLLM.create(tf, {
         vocabSize: tokeniser.vocabSize,
         blockSize: 128, // Context window size
         nLayer: 4,
@@ -130,7 +131,7 @@ async function train() {
     // Initialize your model and trainer
     const model = await constructModel(tokeniser, modelName);
 
-    const trainer = new FullTrainer(tf, model, tokeniser, rate);
+    const trainer = new FullTrainer(tf, model.model, tokeniser, rate);
 
     // Create training and validation datasets
     const { trainDataset, validationDataset } = await trainer.createTrainValidationSplit(textData, batch, 0.2);

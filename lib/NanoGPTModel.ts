@@ -1,26 +1,9 @@
 import type TF from '@tensorflow/tfjs';
 //import { PositionEmbedding } from './NLP/position_embedding';
 import { defaultConfig, GPTConfig } from './config';
-
-import zip from 'jszip';
-import { exportWeights, importWeights, ITensorSpec, IWeightManifest } from './utilities/weights';
-import { ITokeniser } from './tokeniser/type';
-import CharTokeniser from './tokeniser/CharTokeniser';
 import Block from './layers/TransformerBlock';
 import TiedEmbeddingOutputLayer from './layers/TiedEmbedding';
 import LayerNorm from './layers/LayerNorm';
-
-function dummyPass(model: NanoGPT) {
-    // Send a dummy input to initialize the model
-    const tf = model.tf;
-    const dummyInput = tf.zeros([1, model.config.blockSize], 'int32');
-    const { logits, loss } = model.forward(dummyInput, undefined, false); // Initialize weights
-    logits.dispose(); // Dispose logits to free memory
-    if (loss) {
-        loss.dispose(); // Dispose loss if it was computed
-    }
-    dummyInput.dispose(); // Dispose dummy input to free memory
-}
 
 export interface TrainingLogEntry {
     epoch: number;
@@ -41,13 +24,11 @@ export default class NanoGPT {
     private blocks: Block[];
     private lnF: LayerNorm; // Final layer norm
     public readonly tf: typeof TF;
-    public readonly tokeniser: ITokeniser;
     public log: TrainingLogEntry[] = []; // Training log
 
-    constructor(tf: typeof TF, tokeniser: ITokeniser, config: Partial<GPTConfig> = {}) {
+    constructor(tf: typeof TF, config: Partial<GPTConfig> = {}) {
         this.tf = tf;
         this.config = { ...defaultConfig, ...config };
-        this.tokeniser = tokeniser;
 
         // Token embeddings
         this.wte = new TiedEmbeddingOutputLayer(tf, {
@@ -84,7 +65,7 @@ export default class NanoGPT {
         ];
     }
 
-    private saveWeights(): Map<string, TF.Tensor[]> {
+    public saveWeights(): Map<string, TF.Tensor[]> {
         const map = new Map<string, TF.Tensor[]>();
         map.set('token_embedding', this.wte.getWeights());
         map.set('positional_embedding', this.wpe.getWeights());
@@ -92,121 +73,28 @@ export default class NanoGPT {
             this.blocks[i].saveWeights(map);
         }
         map.set('final_layer_norm', this.lnF.getWeights());
-        //map.set('final_output', this.lmHead.getWeights());
         return map;
     }
 
-    private loadWeights(weights: Map<string, TF.Tensor[]>): void {
+    public loadWeights(weights: Map<string, TF.Tensor[]>): void {
         this.wte.setWeights(weights.get('token_embedding') || []);
         this.wpe.setWeights(weights.get('positional_embedding') || []);
         for (let i = 0; i < this.blocks.length; i++) {
             this.blocks[i].loadWeights(weights);
         }
         this.lnF.setWeights(weights.get('final_layer_norm') || []);
-        //this.lmHead.setWeights(weights.get('final_output') || []);
     }
 
-    async saveModel(): Promise<Blob> {
-        const weights = this.saveWeights();
-        const zipFile = new zip();
-
-        const spec: Record<string, ITensorSpec[]> = {};
-
-        for (const [name, tensorList] of weights) {
-            const data = await exportWeights(tensorList);
-            spec[name] = data.spec;
-            zipFile.file(`${name}.bin`, data.data.buffer, { binary: true });
-        }
-        zipFile.file('manifest.json', JSON.stringify({ weightSpec: spec, config: this.config }), {
-            binary: false,
-        });
-        zipFile.file(
-            'tokeniser.json',
-            JSON.stringify({ vocab: await this.tokeniser.getVocab(), merges: await this.tokeniser.getMerges() }),
-            {
-                binary: false,
-            }
-        );
-        zipFile.file('log.json', JSON.stringify(this.log), { binary: false });
-        return zipFile.generateAsync({ type: 'blob' });
-    }
-
-    static async loadModel(tf: typeof TF, blob: Blob | Buffer): Promise<NanoGPT> {
-        const zipFile = await zip.loadAsync(blob);
-        const manifests = new Map<string, IWeightManifest>();
-
-        const manifestFile = await zipFile.file('manifest.json')?.async('string');
-        if (!manifestFile) {
-            throw new Error('Manifest file not found in the zip archive');
-        }
-        const manifest = JSON.parse(manifestFile) as {
-            weightSpec: Record<string, ITensorSpec[]>;
-            config: GPTConfig;
-            vocab: string[];
-        };
-        for (const [name, specs] of Object.entries(manifest.weightSpec)) {
-            manifests.set(name, { spec: specs, data: new Float32Array() });
-        }
-
-        const tokeniserFile = await zipFile.file('tokeniser.json')?.async('string');
-        if (!tokeniserFile) {
-            throw new Error('Tokeniser file not found in the zip archive');
-        }
-        const tokeniserData = JSON.parse(tokeniserFile) as {
-            vocab: string[];
-            merges: [string, string][];
-        };
-
-        const tokeniser = new CharTokeniser(tokeniserData.vocab);
-
-        const weights = new Map<string, TF.Tensor[]>();
-
-        for (const fileName of Object.keys(zipFile.files)) {
-            if (fileName.endsWith('.bin')) {
-                const name = fileName.replace('.bin', '');
-                const data = await zipFile.file(fileName)!.async('arraybuffer');
-                const floatData = new Float32Array(data);
-                const entry = manifests.get(name) || { spec: [], data: new Float32Array() };
-                entry.data = floatData;
-                manifests.set(name, entry);
-
-                const tensors = await importWeights(entry, tf);
-                weights.set(name, tensors);
-            }
-        }
-
-        const model = new NanoGPT(tf, tokeniser, manifest.config);
-
-        dummyPass(model); // Initialize the model to set up weights and caches
-        model.loadWeights(weights);
-        dummyPass(model); // Run a dummy pass to ensure everything is initialized correctly
-
-        const logFile = await zipFile.file('log.json')?.async('string');
-        if (logFile) {
-            try {
-                const logData: TrainingLogEntry[] = JSON.parse(logFile);
-                model.log = logData;
-            } catch (error) {
-                console.error('Error parsing training log:', error);
-                throw new Error(`Failed to parse training log: ${error}`);
-            }
-        }
-
-        return model;
-    }
-
-    inputPhase(idx: TF.Tensor, training: boolean = false): TF.Tensor {
+    private inputPhase(idx: TF.Tensor, training: boolean = false): TF.Tensor {
         return this.tf.tidy(() => {
             const [, seqLen] = idx.shape;
-            // Token and position embeddings
+
             const tokEmb = this.wte.embed(idx) as TF.Tensor; // (b, t, n_embd)
             const posIndices = this.tf.range(0, seqLen, 1, 'int32');
             const posEmb = this.wpe.apply(posIndices) as TF.Tensor; // (b, t, n_embd)
 
-            // Add embeddings
             const embSum = tokEmb.add(posEmb);
 
-            // Apply dropout
             const out = this.drop.apply(embSum, { training }) as TF.Tensor;
             return out;
         });
@@ -234,12 +122,11 @@ export default class NanoGPT {
         for (const block of this.blocks) {
             block.trainable = value;
         }
-        //this.wte.trainable = value;
+
         this.wpe.trainable = value;
         this.lnF.trainable = value;
     }
 
-    // Forward pass
     forward(idx: TF.Tensor, targets?: TF.Tensor, training: boolean = false): { logits: TF.Tensor; loss?: TF.Tensor } {
         if (idx.shape.length !== 2) {
             throw new Error(`Invalid input shape: expected [batch_size, sequence_length], got ${idx.shape}`);
@@ -258,17 +145,14 @@ export default class NanoGPT {
                 throw new Error(`Cannot forward sequence of length ${t}, block size is only ${this.config.blockSize}`);
             }
 
-            // Input phase
             let x = this.inputPhase(idx, training);
 
             for (const block of this.blocks) {
                 x = block.call(x) as TF.Tensor;
             }
 
-            // Final layer norm
             x = this.lnF.apply(x) as TF.Tensor;
 
-            // Language model head
             const logits = this.wte.project(x) as TF.Tensor;
 
             let loss: TF.Tensor | undefined;
@@ -285,7 +169,6 @@ export default class NanoGPT {
         });
     }
 
-    // Generate next token
     generate(idx: TF.Tensor, temperature: number = 1.0, topK?: number): TF.Tensor {
         return this.tf.tidy(() => {
             const currentIdx = idx;

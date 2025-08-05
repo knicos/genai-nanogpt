@@ -40,7 +40,7 @@ export default abstract class GPTTrainer {
     protected tf: typeof TF;
     protected learningRate: number;
 
-    constructor(tf: typeof TF, model: NanoGPT, tokenizer: ITokeniser, learningRate: number = 1e-3) {
+    constructor(tf: typeof TF, model: NanoGPT, protected tokenizer: ITokeniser, learningRate: number = 1e-3) {
         this.tf = tf;
         this.model = model;
         this.learningRate = learningRate;

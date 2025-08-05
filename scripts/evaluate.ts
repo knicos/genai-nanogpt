@@ -5,9 +5,9 @@ import fs from 'fs';
 import path from 'path';
 // Note: This should come first due to reimporting issues with TensorFlow
 import * as tf from '@tensorflow/tfjs-node-gpu';
-import NanoGPT from '../lib/NanoGPTModel';
 import chalk from 'chalk';
 import FullTrainer from '../lib/training/FullTrainer';
+import TeachableLLM from '../lib/TeachableLLM';
 
 const argv = yargs(hideBin(process.argv))
     .option('batch', {
@@ -47,7 +47,7 @@ async function evaluate() {
 
     // Load the trained model
     const modelBlob = fs.readFileSync(path.resolve(model));
-    const nanoGPT = await NanoGPT.loadModel(tf, modelBlob);
+    const nanoGPT = await TeachableLLM.loadModel(tf, modelBlob);
     const tokeniser = nanoGPT.tokeniser;
 
     console.log(`Layers: ${nanoGPT.config.nLayer}`);
@@ -58,7 +58,7 @@ async function evaluate() {
     // Load and prepare the validation dataset
     const rawdata = fs.readFileSync(path.resolve(data), 'utf8');
     const textData = await loadTextData(rawdata);
-    const trainer = new FullTrainer(tf, nanoGPT, tokeniser);
+    const trainer = new FullTrainer(tf, nanoGPT.model, tokeniser);
     const splitIndex = Math.floor(textData.length * (1 - 0.1));
     const dataset = await trainer.createDataset(textData.slice(splitIndex), batch);
 

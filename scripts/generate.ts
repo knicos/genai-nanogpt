@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 // Note: This should come first due to reimporting issues with TensorFlow
 import * as tf from '@tensorflow/tfjs-node-gpu';
-import NanoGPT from '../lib/NanoGPTModel';
+import TeachableLLM from '../lib/TeachableLLM';
 import chalk from 'chalk';
 
 const argv = yargs(hideBin(process.argv))
@@ -54,8 +54,8 @@ async function generate() {
     }
 
     // Load the trained model
-    const modelBlob = fs.readFileSync(path.resolve(model));
-    const nanoGPT = await NanoGPT.loadModel(tf, modelBlob);
+    const modelBlob = model.startsWith('http') ? model : fs.readFileSync(path.resolve(model));
+    const nanoGPT = await TeachableLLM.loadModel(tf, modelBlob);
 
     const tokeniser = nanoGPT.tokeniser;
 
@@ -68,7 +68,7 @@ async function generate() {
 
     // Generate text
     for (let i = 0; i < length; i++) {
-        const generatedTokens = nanoGPT.generate(inputTensor, temperature);
+        const generatedTokens = nanoGPT.model.generate(inputTensor, temperature);
         const tokenArray = generatedTokens.arraySync() as number[][];
 
         const generatedText = await tokeniser.decode(tokenArray[0]);
