@@ -7,7 +7,6 @@ import CharTokeniser from '../lib/tokeniser/CharTokeniser';
 import fs from 'fs';
 import path from 'path';
 import { TrainingLogEntry } from '../lib/NanoGPTModel';
-import FullTrainer from '../lib/training/FullTrainer';
 import chalk from 'chalk';
 import dayjs from 'dayjs';
 import duration from 'dayjs/plugin/duration';
@@ -99,8 +98,7 @@ async function constructModel(tokeniser: ITokeniser, modelPath?: string): Promis
         return model;
     }
 
-    const model = TeachableLLM.create(tf, {
-        vocabSize: tokeniser.vocabSize,
+    const model = TeachableLLM.create(tf, tokeniser, {
         blockSize: 128, // Context window size
         nLayer: 4,
         nHead: 3,
@@ -119,75 +117,51 @@ async function train() {
         return;
     }
 
-    // Load your data here
     const rawdata = fs.readFileSync(path.resolve(data), 'utf8');
     const textData = await loadTextData(rawdata);
 
     const tokeniser = new CharTokeniser();
-    if (!tokeniser.trained) {
-        await tokeniser.train(textData); // Train the tokeniser with a vocab size of 207
-    }
+    await tokeniser.train(textData);
 
-    // Initialize your model and trainer
     const model = await constructModel(tokeniser, modelName);
 
-    const trainer = new FullTrainer(tf, model.model, tokeniser, rate);
+    const trainer = model.trainer();
 
-    // Create training and validation datasets
-    const { trainDataset, validationDataset } = await trainer.createTrainValidationSplit(textData, batch, 0.2);
+    trainer.on('log', async (log: TrainingLogEntry) => {
+        console.log(
+            `${chalk.bold('Time')} ${dayjs.duration(log.time).asMinutes().toFixed(0)} minutes: ${chalk.bold(
+                'Step'
+            )} ${chalk.blueBright(log.step)}, ${chalk.bold('Loss:')} ${chalk.redBright(
+                log.loss.toFixed(4)
+            )}, ${chalk.bold('Example:')}\n${chalk.yellowBright(log.example || 'N/A')}`
+        );
 
-    // Start training
-    const { losses, validationLosses } = await trainer.trainOnDataset(
-        trainDataset,
-        {
-            epochs,
-            prompt: 'What a great movie. It',
-            stepsPerEpoch: maxSteps,
-            logInterval: 10,
-            //stepsPerLayer: blockSteps,
-            /*onPassComplete: async (pass) => {
-                console.log(`Pass ${pass} completed`);
-            },
-            onLayerChange: async (layer, pass, valLoss) => {
-                console.log(
-                    `\nLayer ${layer} changed in pass ${pass}, Val Loss: ${chalk.redBright(valLoss?.toFixed(4))}\n`
-                );
-            },*/
-            desiredLoss: loss,
-            onStep: async (log: TrainingLogEntry) => {
-                console.log(
-                    `${chalk.bold('Time')} ${dayjs.duration(log.time).asMinutes().toFixed(0)} minutes: ${chalk.bold(
-                        'Step'
-                    )} ${chalk.blueBright(log.step)}, ${chalk.bold('Loss:')} ${chalk.redBright(
-                        log.loss.toFixed(4)
-                    )}, ${chalk.bold('Example:')}\n${chalk.yellowBright(log.example || 'N/A')}`
-                );
-                console.log('lr', trainer.getOptimizer().lr);
+        if (log.step > 0 && log.step % autosave === 0) {
+            try {
+                const blob = await model.saveModel();
+                fs.writeFileSync('nanogpt_model.zip', Buffer.from(await blob.arrayBuffer()));
+                console.log('\nModel Saved\n');
+            } catch (error) {
+                console.error('Autosave failed', error);
+            }
+        }
+    });
 
-                if (log.step > 0 && log.step % autosave === 0) {
-                    try {
-                        const blob = await model.saveModel();
-                        fs.writeFileSync('nanogpt_model.zip', Buffer.from(await blob.arrayBuffer()));
-                        console.log('\nModel Saved\n');
-                    } catch (error) {
-                        console.error('Autosave failed', error);
-                    }
-                }
-            },
-            onEpoch: (epoch, loss, valLoss) => {
-                console.log(`Epoch ${epoch + 1}, Loss: ${loss.toFixed(4)}, Val Loss: ${valLoss?.toFixed(4)}`);
-            },
-        }, // epochs
-        validationDataset
-    );
+    await trainer.train(textData, {
+        epochs,
+        prompt: 'What a great movie. It',
+        maxSteps,
+        logInterval: 10,
+        validationSplit: 0.2,
+        desiredLoss: loss,
+        batchSize: batch,
+        learningRate: rate,
+    });
 
     // Save the model after training
     const modelBlob = await model.saveModel();
     fs.writeFileSync('nanogpt_model.zip', Buffer.from(await modelBlob.arrayBuffer()));
-
     console.log('Training completed!');
-    console.log(`Final training loss: ${losses[losses.length - 1]?.toFixed(4)}`);
-    console.log(`Final validation loss: ${validationLosses[validationLosses.length - 1]?.toFixed(4)}`);
 }
 
 train().catch((error) => {

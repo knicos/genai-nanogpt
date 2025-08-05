@@ -1,10 +1,11 @@
 import type TF from '@tensorflow/tfjs';
 import { defaultConfig, GPTConfig } from './config';
 import { ITokeniser } from './tokeniser/type';
-import CharTokeniser from './tokeniser/CharTokeniser';
 import NanoGPT from './NanoGPTModel';
 import { saveModel } from './utilities/save';
 import { loadModel } from './utilities/load';
+import Generator, { IGenerateOptions } from './Generator';
+import Trainer, { ITrainerOptions } from './Trainer';
 
 export default class TeachableLLM {
     public readonly config: GPTConfig;
@@ -28,10 +29,10 @@ export default class TeachableLLM {
         return new TeachableLLM(tf, tokeniser, model);
     }
 
-    static create(tf: typeof TF, config: Partial<GPTConfig> = {}) {
+    static create(tf: typeof TF, tokeniser: ITokeniser, config: Partial<GPTConfig> = {}) {
         const fullConfig = { ...defaultConfig, ...config };
+        fullConfig.vocabSize = tokeniser.vocabSize;
         const model = new NanoGPT(tf, fullConfig);
-        const tokeniser = new CharTokeniser();
         return new TeachableLLM(tf, tokeniser, model);
     }
 
@@ -39,7 +40,19 @@ export default class TeachableLLM {
         return this.model.getNumParams();
     }
 
-    // Train
+    trainer() {
+        return new Trainer(this.model, this.tokeniser);
+    }
 
-    // Generate
+    train(text: string[], options?: ITrainerOptions): Promise<void> {
+        return this.trainer().train(text, options);
+    }
+
+    generator(): Generator {
+        return new Generator(this.model, this.tokeniser);
+    }
+
+    generateText(prompt?: string, options?: IGenerateOptions): Promise<string> {
+        return this.generator().generate(prompt, options);
+    }
 }

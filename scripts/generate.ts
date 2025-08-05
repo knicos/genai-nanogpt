@@ -57,38 +57,20 @@ async function generate() {
     const modelBlob = model.startsWith('http') ? model : fs.readFileSync(path.resolve(model));
     const nanoGPT = await TeachableLLM.loadModel(tf, modelBlob);
 
-    const tokeniser = nanoGPT.tokeniser;
-
     process.stdout.write('\n\n');
     process.stdout.write(chalk.bold(prompt));
 
-    // Tokenise the prompt
-    const tokenisedPrompt = await tokeniser.tokenise([prompt], true);
-    let inputTensor: tf.Tensor = tf.tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
+    const generator = nanoGPT.generator();
 
-    // Generate text
-    for (let i = 0; i < length; i++) {
-        const generatedTokens = nanoGPT.model.generate(inputTensor, temperature);
-        const tokenArray = generatedTokens.arraySync() as number[][];
-
-        const generatedText = await tokeniser.decode(tokenArray[0]);
-        if (generatedText === '<eos>') break; // Stop if end of sequence token is generated
-        process.stdout.write(chalk.yellowBright(generatedText));
-
-        // Concatenate the new token to the input tensor for next iteration
-
-        const newInputTensor = tf.concat([inputTensor, generatedTokens], 1);
-
-        // Dispose of old tensors to prevent memory leaks
-        inputTensor.dispose();
-        generatedTokens.dispose();
-
-        inputTensor = newInputTensor;
-    }
+    generator.on('tokens', (tokens: number[], text: string) => {
+        process.stdout.write(chalk.yellowBright(text));
+    });
+    await generator.generate(prompt, {
+        maxLength: 500,
+        temperature,
+    });
 
     process.stdout.write('\n\n');
-
-    inputTensor.dispose();
 }
 
 generate().catch((error) => {
