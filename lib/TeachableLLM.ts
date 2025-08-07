@@ -8,6 +8,7 @@ import Generator, { IGenerateOptions } from './Generator';
 import Trainer, { ITrainerOptions } from './Trainer';
 import EE from 'eventemitter3';
 import { dummyPassAsync } from './utilities/dummy';
+import { CharTokeniser } from './main';
 
 type TeachableLLMStatus = 'warmup' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 
@@ -56,9 +57,9 @@ export default class TeachableLLM extends EE<'status' | 'error'> {
         return teachableLLM;
     }
 
-    static create(tf: typeof TF, tokeniser: ITokeniser, config: Partial<GPTConfig> = {}) {
+    static create(tf: typeof TF, config: Partial<GPTConfig> = {}) {
         const fullConfig = { ...defaultConfig, ...config };
-        fullConfig.vocabSize = tokeniser.vocabSize;
+        const tokeniser = new CharTokeniser(fullConfig.vocabSize);
         const model = new NanoGPT(tf, fullConfig);
         return new TeachableLLM(tf, tokeniser, model);
     }

@@ -7,11 +7,15 @@ export default class NodeTokeniser extends EE<'trainStatus'> implements ITokenis
     public eosToken = 0;
     private bpe = new BPE();
 
-    constructor(vocab?: string[], merges?: [string, string][]) {
+    constructor(vocabSize: number);
+    constructor(vocab: string[], merges: [string, string][]);
+    constructor(vocabOrSize: string[] | number, merges?: [string, string][]) {
         super();
-        if (vocab) {
-            this.bpe = new BPE(vocab, merges);
-            this.vocabSize = vocab.length;
+        if (Array.isArray(vocabOrSize)) {
+            this.bpe = new BPE(vocabOrSize, merges);
+            this.vocabSize = vocabOrSize.length;
+        } else {
+            this.vocabSize = vocabOrSize;
         }
     }
 
@@ -21,8 +25,8 @@ export default class NodeTokeniser extends EE<'trainStatus'> implements ITokenis
 
     public destroy() {}
 
-    public async train(text: string[], vocabSize: number): Promise<number> {
-        this.bpe.train(text, vocabSize);
+    public async train(text: string[]): Promise<number> {
+        this.bpe.train(text, this.vocabSize);
         this.vocabSize = this.bpe.getVocab().length;
         return this.vocabSize;
     }
