@@ -6,18 +6,35 @@ import { saveModel } from './utilities/save';
 import { loadModel } from './utilities/load';
 import Generator, { IGenerateOptions } from './Generator';
 import Trainer, { ITrainerOptions } from './Trainer';
+import EE from 'eventemitter3';
+import { dummyPassAsync } from './utilities/dummy';
 
-export default class TeachableLLM {
+type TeachableLLMStatus = 'warmup' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
+
+export default class TeachableLLM extends EE<'status' | 'error'> {
     public readonly config: GPTConfig;
     public readonly model: NanoGPT;
     public readonly tf: typeof TF;
     public readonly tokeniser: ITokeniser;
+    private _status: TeachableLLMStatus = 'loading';
 
     constructor(tf: typeof TF, tokeniser: ITokeniser, model: NanoGPT) {
+        super();
         this.tf = tf;
         this.config = model.config;
         this.tokeniser = tokeniser;
         this.model = model;
+    }
+
+    get status(): TeachableLLMStatus {
+        return this._status;
+    }
+
+    private setStatus(status: TeachableLLMStatus) {
+        if (this._status !== status) {
+            this._status = status;
+            this.emit('status', status);
+        }
     }
 
     saveModel(): Promise<Blob> {
@@ -26,7 +43,17 @@ export default class TeachableLLM {
 
     static async loadModel(tf: typeof TF, data: Blob | Buffer | string): Promise<TeachableLLM> {
         const { model, tokeniser } = await loadModel(tf, data);
-        return new TeachableLLM(tf, tokeniser, model);
+        const teachableLLM = new TeachableLLM(tf, tokeniser, model);
+        teachableLLM.setStatus('warmup');
+        dummyPassAsync(model)
+            .then(() => {
+                teachableLLM.setStatus('ready');
+            })
+            .catch((err) => {
+                teachableLLM.setStatus('error');
+                teachableLLM.emit('error', err);
+            });
+        return teachableLLM;
     }
 
     static create(tf: typeof TF, tokeniser: ITokeniser, config: Partial<GPTConfig> = {}) {
@@ -41,7 +68,10 @@ export default class TeachableLLM {
     }
 
     trainer() {
-        return new Trainer(this.model, this.tokeniser);
+        const trainer = new Trainer(this.model, this.tokeniser);
+        trainer.on('start', () => this.setStatus('training'));
+        trainer.on('stop', () => this.setStatus('ready'));
+        return trainer;
     }
 
     train(text: string[], options?: ITrainerOptions): Promise<void> {
@@ -49,7 +79,10 @@ export default class TeachableLLM {
     }
 
     generator(): Generator {
-        return new Generator(this.model, this.tokeniser);
+        const generator = new Generator(this.model, this.tokeniser);
+        generator.on('start', () => this.setStatus('busy'));
+        generator.on('stop', () => this.setStatus('ready'));
+        return generator;
     }
 
     generateText(prompt?: string, options?: IGenerateOptions): Promise<string> {

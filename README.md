@@ -1,20 +1,28 @@
-# Introduction 
-TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
+# GenAI NanoGPT
 
-# Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
-2.	Software dependencies
-3.	Latest releases
-4.	API references
+Developed as a part of the Finnish Generation AI research project. This is an implementation of [NanoGPT](https://github.com/karpathy/nanoGPT) for Tensorflow.js. It allows GPT models to be training and loaded within a web browser and exposes some XAI functionality.
 
-# Build and Test
-TODO: Describe and show how to build your code and run the tests. 
+Work in progress...
 
-# Contribute
-TODO: Explain how other users and developers can contribute to make your code better. 
+# Install
 
-If you want to learn more about creating good readme files then refer the following [guidelines](https://docs.microsoft.com/en-us/azure/devops/repos/git/create-a-readme?view=azure-devops). You can also seek inspiration from the below readme files:
-- [ASP.NET Core](https://github.com/aspnet/Home)
-- [Visual Studio Code](https://github.com/Microsoft/vscode)
-- [Chakra Core](https://github.com/Microsoft/ChakraCore)
+```
+npm install @genai-fi/nanogpt
+```
+
+# Usage
+
+```
+import { TeachableLLM, CharTokeniser } from '@genai-fi/nanogpt';
+import * as tf from '@tensorflow/tfjs';
+
+const tokeniser = new CharTokeniser();
+const model = TeachableLLM.create(tf, tokeniser, {
+    vocabSize: 200,
+    blockSize: 128,
+    nLayer: 4,
+    nHead: 3,
+    nEmbed: 192,
+    dropout: 0.0,
+});
+```

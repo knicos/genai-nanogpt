@@ -5,18 +5,7 @@ import CharTokeniser from '../tokeniser/CharTokeniser';
 import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import { ITokeniser } from '@base/tokeniser/type';
 import { GPTConfig } from '../config';
-
-function dummyPass(model: NanoGPT) {
-    // Send a dummy input to initialize the model
-    const tf = model.tf;
-    const dummyInput = tf.zeros([1, model.config.blockSize], 'int32');
-    const { logits, loss } = model.forward(dummyInput, undefined, false);
-    logits.dispose();
-    if (loss) {
-        loss.dispose();
-    }
-    dummyInput.dispose();
-}
+import { dummyPassAsync } from './dummy';
 
 async function loadURL(url: string): Promise<ArrayBuffer> {
     const response = await fetch(url);
@@ -77,9 +66,8 @@ export async function loadModel(
 
     const model = new NanoGPT(tf, manifest.config);
 
-    dummyPass(model); // Initialize the model to set up weights and caches
+    await dummyPassAsync(model); // Initialize the model to set up weights and caches
     model.loadWeights(weights);
-    dummyPass(model); // Run a dummy pass to ensure everything is initialized correctly
 
     const logFile = await zipFile.file('log.json')?.async('string');
     if (logFile) {
