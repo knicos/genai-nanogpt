@@ -15,6 +15,13 @@ export interface TrainingLogEntry {
     batchSize: number;
 }
 
+export interface GenerateOptions {
+    temperature?: number;
+    topK?: number;
+    usePadding?: boolean;
+    includeAttention?: boolean;
+}
+
 // Main GPT model
 export default class NanoGPT {
     public readonly config: GPTConfig;
@@ -127,7 +134,7 @@ export default class NanoGPT {
         this.lnF.trainable = value;
     }
 
-    forward(idx: TF.Tensor, targets?: TF.Tensor, training: boolean = false): { logits: TF.Tensor; loss?: TF.Tensor } {
+    private validateInput(idx: TF.Tensor): void {
         if (idx.shape.length !== 2) {
             throw new Error(`Invalid input shape: expected [batch_size, sequence_length], got ${idx.shape}`);
         }
@@ -137,39 +144,69 @@ export default class NanoGPT {
         if (idx.dtype !== 'int32') {
             throw new Error(`Input tensor must be of type int32, got ${idx.dtype}`);
         }
+    }
+
+    private calculateLoss(logits: TF.Tensor, targets: TF.Tensor): TF.Tensor {
+        try {
+            return this.tf.losses.softmaxCrossEntropy(targets, logits, this.tf.Reduction.MEAN);
+        } catch (error) {
+            console.error('Error computing loss:', error);
+            throw new Error(`Loss computation failed: ${error}`);
+        }
+    }
+
+    forward(
+        idx: TF.Tensor,
+        targets?: TF.Tensor,
+        training = false,
+        includeAttention = false
+    ): { logits: TF.Tensor; loss?: TF.Tensor; attention?: TF.Tensor } {
+        this.validateInput(idx);
 
         return this.tf.tidy(() => {
-            const [, t] = idx.shape;
-
-            if (t > this.config.blockSize) {
-                throw new Error(`Cannot forward sequence of length ${t}, block size is only ${this.config.blockSize}`);
-            }
-
+            // Token and position embeddings
             let x = this.inputPhase(idx, training);
 
-            for (const block of this.blocks) {
-                x = block.call(x) as TF.Tensor;
+            let attentionAccum: TF.Tensor | undefined;
+            if (includeAttention) {
+                attentionAccum = this.tf.zeros([x.shape[0], x.shape[1]!, x.shape[1]!]);
             }
 
+            // Transformer blocks
+            for (const block of this.blocks) {
+                const { output, attention } = block.call(x, training, includeAttention);
+                x = output;
+                if (attention && attentionAccum) {
+                    // TODO: Only keep the last token's attention
+                    attentionAccum = attentionAccum.add(attention);
+                }
+            }
+
+            if (attentionAccum) {
+                attentionAccum = attentionAccum.div(this.blocks.length);
+            }
+
+            // Final layer norm
             x = this.lnF.apply(x) as TF.Tensor;
 
+            // Embedding to logits
             const logits = this.wte.project(x) as TF.Tensor;
 
             let loss: TF.Tensor | undefined;
             if (targets) {
-                try {
-                    loss = this.tf.losses.softmaxCrossEntropy(targets, logits, this.tf.Reduction.MEAN);
-                } catch (error) {
-                    console.error('Error computing loss:', error);
-                    throw new Error(`Loss computation failed: ${error}`);
-                }
+                loss = this.calculateLoss(logits, targets);
             }
 
-            return { logits, loss };
+            return { logits, loss, attention: includeAttention ? attentionAccum : undefined };
         });
     }
 
-    generate(idx: TF.Tensor, temperature: number = 1.0, topK?: number, usePadding: boolean = false): TF.Tensor {
+    generate(idx: TF.Tensor, options?: GenerateOptions): { output: TF.Tensor; attention?: TF.Tensor } {
+        const temperature = options?.temperature ?? 1.0;
+        const topK = options?.topK;
+        const usePadding = options?.usePadding ?? false;
+        const includeAttention = options?.includeAttention ?? false;
+
         return this.tf.tidy(() => {
             const currentIdx = idx;
 
@@ -192,11 +229,14 @@ export default class NanoGPT {
                       ])
                     : cropIdx;
 
-            const { logits } = this.forward(padIdx, undefined, false);
+            const { logits, attention } = this.forward(padIdx, undefined, false, includeAttention);
 
             // Focus only on the last time step
             const lastTimeStep = logits.shape[1]! - 1 - padding;
             const lastLogits = logits.slice([0, lastTimeStep, 0], [logits.shape[0], 1, logits.shape[2]!]); // (b, 1, vocab_size)
+            const lastAttention = attention
+                ? attention.slice([0, lastTimeStep, 0], [attention.shape[0], 1, attention.shape[2]!])
+                : undefined;
 
             const scaledLogits = lastLogits.div(temperature);
 
@@ -215,7 +255,7 @@ export default class NanoGPT {
             }
 
             nextToken = nextToken.reshape([1, 1]);
-            return nextToken;
+            return { output: nextToken, attention: lastAttention?.squeeze([1]) };
         });
     }
 

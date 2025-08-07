@@ -83,59 +83,75 @@ export default class CausalSelfAttention {
         this.cProj.setWeights(weights.get(`block_${this.index}_cProj`) || []);
     }
 
-    call(x: TF.Tensor, training = false): TF.Tensor {
+    private getAttentionScores(q: TF.Tensor, k: TF.Tensor, training: boolean): TF.Tensor {
+        const T = q.shape[2]!; // Sequence length
+
+        // Causal self-attention
+        const attUnscaled = this.tf.matMul(q, k, false, true); // (B, nh, T, T)
+        const att = attUnscaled.mul(this.divisor); // Scale by sqrt(d_k)
+
+        // Apply causal mask
+        const mask = this.maskInf.slice([0, 0], [T, T]);
+        const maskedAtt = att.add(mask);
+
+        const attSoftmax = this.tf.softmax(maskedAtt, -1); // (B, nh, T, T)
+        return this.attnDropout.apply(attSoftmax, { training }) as TF.Tensor;
+    }
+
+    private getQKV(x: TF.Tensor): [TF.Tensor, TF.Tensor, TF.Tensor] {
+        const [B, T, C] = x.shape; // batch size, sequence length, embedding dimensionality
+
+        // Calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        const qkv = this.cAttn.apply(x) as TF.Tensor; // (B, T, 3*C)
+        //x.dispose();
+        const [q, k, v] = this.tf.split(qkv, 3, -1); // Each is (B, T, C)
+        qkv.dispose();
+
+        // Reshape for multi-head attention
+        const headDim = C / this.config.nHead;
+
+        const qReshaped = this.tf.reshape(q, [B, T, this.config.nHead, headDim]);
+        q.dispose();
+        const qT = qReshaped.transpose([0, 2, 1, 3]); // (B, nh, T, hs)
+        qReshaped.dispose();
+
+        const kReshaped = this.tf.reshape(k, [B, T, this.config.nHead, headDim]);
+        k.dispose();
+        const kT = kReshaped.transpose([0, 2, 1, 3]); // (B, nh, T, hs)
+        kReshaped.dispose();
+
+        const vReshaped = this.tf.reshape(v, [B, T, this.config.nHead, headDim]);
+        v.dispose();
+        const vT = vReshaped.transpose([0, 2, 1, 3]); // (B, nh, T, hs)
+        vReshaped.dispose();
+        return [qT, kT, vT];
+    }
+
+    private getOutputProjection(x: TF.Tensor, training: boolean): TF.Tensor {
+        const B = x.shape[0]!; // batch size
+        const T = x.shape[2]!; // sequence length
+        const C = this.config.nEmbed; // embedding dimensionality
+
+        // Re-assemble all head outputs side by side
+        const yTransposed = x.transpose([0, 2, 1, 3]); // (B, T, nh, hs)
+        const yReshaped = this.tf.reshape(yTransposed, [B, T, C]); // (B, T, C)
+
+        // Output projection
+        const output = this.cProj.apply(yReshaped) as TF.Tensor;
+        const finalOutput = this.residDropout.apply(output, { training }) as TF.Tensor;
+        return finalOutput;
+    }
+
+    call(x: TF.Tensor, training = false, includeAttention = false): { output: TF.Tensor; attention?: TF.Tensor } {
         return this.tf.tidy(() => {
-            const [B, T, C] = x.shape; // batch size, sequence length, embedding dimensionality
-
-            // Calculate query, key, values for all heads in batch and move head forward to be the batch dim
-            const qkv = this.cAttn.apply(x) as TF.Tensor; // (B, T, 3*C)
-            //x.dispose();
-            const [q, k, v] = this.tf.split(qkv, 3, -1); // Each is (B, T, C)
-            qkv.dispose();
-
-            // Reshape for multi-head attention
-            const headDim = C / this.config.nHead;
-
-            const qReshaped = this.tf.reshape(q, [B, T, this.config.nHead, headDim]);
-            q.dispose();
-            const qT = qReshaped.transpose([0, 2, 1, 3]); // (B, nh, T, hs)
-            qReshaped.dispose();
-
-            const kReshaped = this.tf.reshape(k, [B, T, this.config.nHead, headDim]);
-            k.dispose();
-            const kT = kReshaped.transpose([0, 2, 1, 3]); // (B, nh, T, hs)
-            kReshaped.dispose();
-
-            const vReshaped = this.tf.reshape(v, [B, T, this.config.nHead, headDim]);
-            v.dispose();
-            const vT = vReshaped.transpose([0, 2, 1, 3]); // (B, nh, T, hs)
-            vReshaped.dispose();
-
-            // Causal self-attention
-            const attUnscaled = this.tf.matMul(qT, kT, false, true); // (B, nh, T, T)
-            const att = attUnscaled.mul(this.divisor); // Scale by sqrt(d_k)
-
-            // Apply causal mask
-            const mask = this.maskInf.slice([0, 0], [T, T]);
-            const maskedAtt = att.add(mask);
-
-            const attSoftmax = this.tf.softmax(maskedAtt, -1); // (B, nh, T, T)
-            const attDropped = this.attnDropout.apply(attSoftmax, { training }) as TF.Tensor;
-
-            // TODO: Export the attention scores
-            //console.log('Attention', attSoftmax.toString());
+            const [q, k, v] = this.getQKV(x);
+            const attScores = this.getAttentionScores(q, k, training); // (B, nh, T, T)
 
             // Attention applied to values
-            const y = this.tf.matMul(attDropped, vT); // (B, nh, T, hs)
+            const y = this.tf.matMul(attScores, v); // (B, nh, T, hs)
 
-            // Re-assemble all head outputs side by side
-            const yTransposed = y.transpose([0, 2, 1, 3]); // (B, T, nh, hs)
-            const yReshaped = this.tf.reshape(yTransposed, [B, T, C]); // (B, T, C)
-
-            // Output projection
-            const output = this.cProj.apply(yReshaped) as TF.Tensor;
-            const finalOutput = this.residDropout.apply(output, { training }) as TF.Tensor;
-            return finalOutput;
+            const output = this.getOutputProjection(y, training); // (B, T, C)
+            return { output, attention: includeAttention ? attScores.mean(1) : undefined };
         });
     }
 }

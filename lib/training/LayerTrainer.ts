@@ -152,7 +152,10 @@ export default class LayerTrainer extends GPTTrainer {
                         await prom;
                         if (onStep) {
                             if (prompt) {
-                                const text = await generateText(this.tokenizer, this.model, prompt, 100, 0.8, 10);
+                                const text = await generateText(this.tokenizer, this.model, prompt, 100, {
+                                    temperature: 0.8,
+                                    topK: 10,
+                                });
                                 entry.example = text;
                             }
                             await onStep(entry);

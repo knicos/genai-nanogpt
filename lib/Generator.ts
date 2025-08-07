@@ -6,6 +6,9 @@ import EE from 'eventemitter3';
 export interface IGenerateOptions {
     maxLength?: number; /// Maximum length of the generated text
     temperature?: number; /// Controls randomness in generation (default: 1.0)
+    topK?: number; /// Limits the number of tokens to consider at each step (default: undefined)
+    usePadding?: boolean; /// Whether to use padding in the input tensor (default: false)
+    includeAttention?: boolean; /// Whether to include attention in the output (default: false)
 }
 
 const TOKEN_BLOCK_COUNT = 4; // Number of tokens to generate loop
@@ -15,20 +18,40 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         super();
     }
 
-    private generateBlockOfTokens(inputTensor: TF.Tensor, options?: IGenerateOptions): TF.Tensor {
+    private generateBlockOfTokens(
+        inputTensor: TF.Tensor,
+        options?: IGenerateOptions
+    ): { output: TF.Tensor; attention?: TF.Tensor } {
         const temperature = options?.temperature ?? 1.0;
+        const topK = options?.topK;
+        const usePadding = options?.usePadding ?? options?.includeAttention ?? false;
+        const includeAttention = options?.includeAttention ?? false;
 
         let tensor = inputTensor;
+        let attention: TF.Tensor | undefined;
+
         // Generate text
         for (let i = 0; i < TOKEN_BLOCK_COUNT; i++) {
-            const generatedTokens = this.model.generate(tensor, temperature, undefined, true);
+            const { output: generatedTokens, attention: newAttention } = this.model.generate(tensor, {
+                temperature,
+                topK,
+                usePadding,
+                includeAttention,
+            });
             const oldInput = tensor;
             tensor = this.model.tf.concat([tensor, generatedTokens], 1);
+            if (attention && newAttention) {
+                const oldAttention = attention;
+                attention = this.model.tf.concat([attention, newAttention], 0);
+                oldAttention.dispose();
+            } else if (newAttention) {
+                attention = newAttention;
+            }
             oldInput.dispose();
             generatedTokens.dispose();
         }
 
-        return tensor;
+        return { output: tensor, attention };
     }
 
     public async generate(prompt?: string, options?: IGenerateOptions): Promise<string> {
@@ -42,7 +65,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
         // Loop in the model to generate text until eos or max length
         while (true) {
-            const output = this.generateBlockOfTokens(inputTensor, options);
+            const { output, attention } = this.generateBlockOfTokens(inputTensor, options);
             const oldInput = inputTensor;
             inputTensor = output;
 
@@ -67,7 +90,16 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
             const newText = await this.tokeniser.decode(newTokensArray);
             outputText += newText;
-            this.emit('tokens', newTokensArray, newText);
+
+            if (attention) {
+                let attentionArray = (await attention.array()) as number[][];
+                if (attentionArray.length > newTokensArray.length) {
+                    attentionArray = attentionArray.slice(0, newTokensArray.length);
+                }
+                this.emit('tokens', newTokensArray, newText, attentionArray);
+            } else {
+                this.emit('tokens', newTokensArray, newText);
+            }
 
             oldInput.dispose();
             newTokens.dispose();

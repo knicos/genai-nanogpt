@@ -1,5 +1,5 @@
 import { ITokeniser } from '@base/tokeniser/type';
-import NanoGPT from '../NanoGPTModel';
+import NanoGPT, { GenerateOptions } from '../NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
 
 export async function generateText(
@@ -7,17 +7,10 @@ export async function generateText(
     model: NanoGPT,
     prompt: string,
     length: number,
-    temperature: number = 1.0,
-    topK?: number
+    options: GenerateOptions
 ): Promise<string> {
     if (length <= 0) {
         throw new Error('Length must be a positive integer');
-    }
-    if (temperature <= 0) {
-        throw new Error('Temperature must be a positive number');
-    }
-    if (topK !== undefined && topK <= 0) {
-        throw new Error('topK must be a positive integer or undefined');
     }
     if (prompt.length === 0) {
         throw new Error('Prompt cannot be an empty string');
@@ -31,7 +24,7 @@ export async function generateText(
 
         // Generate text
         for (let i = 0; i < length; i++) {
-            const generatedTokens = model.generate(inputTensor, temperature, topK);
+            const { output: generatedTokens } = model.generate(inputTensor, options);
             const oldInput = inputTensor;
             inputTensor = model.tf.concat([inputTensor, generatedTokens], 1);
             oldInput.dispose();

@@ -74,22 +74,25 @@ export default class Block {
         this.ln2.setWeights(weights.get(`block_${this.index}_ln2`) || []);
     }
 
-    call(x: TF.Tensor, training = false): TF.Tensor {
+    private getMLPOutput(x: TF.Tensor, training: boolean): TF.Tensor {
+        const norm = this.ln2.apply(x) as TF.Tensor;
+        const mlpOut = this.mlp.call(norm, training);
+        const residual = x.add(mlpOut);
+        return residual;
+    }
+
+    call(x: TF.Tensor, training = false, includeAttention = false): { output: TF.Tensor; attention?: TF.Tensor } {
         return this.tf.tidy(() => {
             if (this.skipped) {
-                return x; // Skip this block if marked as skipped
+                return { output: x }; // Skip this block if marked as skipped
             }
 
             // Pre-normalization residual connections
             const norm1 = this.ln1.apply(x) as TF.Tensor;
-            const attnOut = this.attn.call(norm1, training);
-            const residual1 = x.add(attnOut);
+            const attnOut = this.attn.call(norm1, training, includeAttention);
+            const residual1 = x.add(attnOut.output);
 
-            const norm2 = this.ln2.apply(residual1) as TF.Tensor;
-            const mlpOut = this.mlp.call(norm2, training);
-            const residual2 = residual1.add(mlpOut);
-
-            return residual2;
+            return { output: this.getMLPOutput(residual1, training), attention: attnOut.attention };
         });
     }
 }

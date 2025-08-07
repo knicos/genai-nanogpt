@@ -1,10 +1,16 @@
-import { describe, it } from 'vitest';
+import { afterEach, describe, it } from 'vitest';
 import Generator from './Generator';
 import NanoGPT from './NanoGPTModel';
 import CharTokeniser from './tokeniser/CharTokeniser';
 import * as tf from '@tensorflow/tfjs';
 
+const CHARS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't'];
+
 describe('Generator', () => {
+    afterEach(() => {
+        tf.disposeVariables();
+    });
+
     it('should generate text based on a prompt', async ({ expect }) => {
         const model = new NanoGPT(tf, {
             vocabSize: 20, // Example vocab size
@@ -14,28 +20,7 @@ describe('Generator', () => {
             blockSize: 32, // Example block size
             dropout: 0.1, // Example dropout rate
         });
-        const tokeniser = new CharTokeniser([
-            'a',
-            'b',
-            'c',
-            'd',
-            'e',
-            'f',
-            'g',
-            'h',
-            'i',
-            'j',
-            'k',
-            'l',
-            'm',
-            'n',
-            'o',
-            'p',
-            'q',
-            'r',
-            's',
-            't',
-        ]);
+        const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
 
         const prompt = 'abcde';
@@ -44,5 +29,58 @@ describe('Generator', () => {
         expect(typeof output).toBe('string');
         expect(output.length).toBeGreaterThan(prompt.length);
         expect(output).toContain(prompt);
+    });
+
+    it('should emit tokens during generation', async ({ expect }) => {
+        const model = new NanoGPT(tf, {
+            vocabSize: 20,
+            nEmbed: 64,
+            nLayer: 1,
+            nHead: 2,
+            blockSize: 32,
+            dropout: 0.1,
+        });
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const emittedTokens: number[][] = [];
+        generator.on('tokens', (tokens) => {
+            emittedTokens.push(tokens);
+        });
+
+        const prompt = 'abcde';
+        await generator.generate(prompt, { maxLength: 10 });
+
+        expect(emittedTokens.length).toBeGreaterThan(0);
+        expect(emittedTokens[0].length).toBeGreaterThan(0);
+    });
+
+    it('should emit tokens with attention when requested', async ({ expect }) => {
+        const model = new NanoGPT(tf, {
+            vocabSize: 20,
+            nEmbed: 64,
+            nLayer: 1,
+            nHead: 2,
+            blockSize: 32,
+            dropout: 0.1,
+        });
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const emittedAttention: number[][][] = [];
+        const emittedTokens: number[][] = [];
+        generator.on('tokens', (tokens, _1, attention) => {
+            emittedTokens.push(tokens);
+            if (attention) {
+                emittedAttention.push(attention);
+            }
+        });
+
+        const prompt = 'abcde';
+        await generator.generate(prompt, { maxLength: 10, includeAttention: true });
+
+        expect(emittedAttention).toHaveLength(emittedTokens.length);
+        expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
+        expect(emittedAttention[0][0]).toHaveLength(model.config.blockSize);
     });
 });
