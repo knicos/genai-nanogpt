@@ -4,8 +4,8 @@ import { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 
 export interface IGenerateOptions {
-    maxLength?: number; // Maximum length of the generated text
-    temperature?: number; // Controls randomness in generation (default: 1.0)
+    maxLength?: number; /// Maximum length of the generated text
+    temperature?: number; /// Controls randomness in generation (default: 1.0)
 }
 
 const TOKEN_BLOCK_COUNT = 4; // Number of tokens to generate loop
@@ -21,7 +21,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         let tensor = inputTensor;
         // Generate text
         for (let i = 0; i < TOKEN_BLOCK_COUNT; i++) {
-            const generatedTokens = this.model.generate(tensor, temperature);
+            const generatedTokens = this.model.generate(tensor, temperature, undefined, true);
             const oldInput = tensor;
             tensor = this.model.tf.concat([tensor, generatedTokens], 1);
             oldInput.dispose();

@@ -169,7 +169,7 @@ export default class NanoGPT {
         });
     }
 
-    generate(idx: TF.Tensor, temperature: number = 1.0, topK?: number): TF.Tensor {
+    generate(idx: TF.Tensor, temperature: number = 1.0, topK?: number, usePadding: boolean = false): TF.Tensor {
         return this.tf.tidy(() => {
             const currentIdx = idx;
 
@@ -182,27 +182,30 @@ export default class NanoGPT {
                           [0, seqLen - this.config.blockSize],
                           [currentIdx.shape[0], this.config.blockSize]
                       );
+            const padding = usePadding ? this.config.blockSize - cropIdx.shape[1]! : 0;
+            // In some cases padding is faster
+            const padIdx =
+                padding > 0
+                    ? this.tf.pad(cropIdx, [
+                          [0, 0],
+                          [0, padding],
+                      ])
+                    : cropIdx;
 
-            // Get predictions
-            const { logits } = this.forward(cropIdx, undefined, false);
+            const { logits } = this.forward(padIdx, undefined, false);
 
             // Focus only on the last time step
-            const lastTimeStep = logits.shape[1]! - 1;
+            const lastTimeStep = logits.shape[1]! - 1 - padding;
             const lastLogits = logits.slice([0, lastTimeStep, 0], [logits.shape[0], 1, logits.shape[2]!]); // (b, 1, vocab_size)
 
-            // Apply temperature
             const scaledLogits = lastLogits.div(temperature);
 
-            // Optionally apply top-k filtering
             let nextToken: TF.Tensor;
             if (topK) {
                 const { values: topKValues, indices: topKIndices } = this.tf.topk(scaledLogits, topK);
-
-                // Sample from top-k
                 const sampledIdx = this.tf.multinomial(topKValues.squeeze([1]) as TF.Tensor1D, 1);
                 nextToken = this.tf.gather(topKIndices.squeeze([1]), sampledIdx, 1);
             } else {
-                // Sample from full distribution
                 /*const probs = this.tf.softmax(scaledLogits).squeeze();
                 const probsArray = probs.arraySync() as number[];
                 const tokenPairs = probsArray.map((prob, idx) => ({ token: idx, prob }));
@@ -211,16 +214,12 @@ export default class NanoGPT {
                 nextToken = this.tf.multinomial(scaledLogits.squeeze([1]) as TF.Tensor1D, 1);
             }
 
-            // Ensure nextToken has the right shape (batch_size, 1)
             nextToken = nextToken.reshape([1, 1]);
-
             return nextToken;
         });
     }
 
-    // Get number of parameters
     getNumParams(): number {
-        // This is a simplified count - in practice you'd iterate through all layers
         const embeddingParams = this.config.vocabSize * this.config.nEmbed + this.config.blockSize * this.config.nEmbed;
         const attentionParams =
             this.config.nLayer *
