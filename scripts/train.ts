@@ -10,6 +10,7 @@ import chalk from 'chalk';
 import dayjs from 'dayjs';
 import duration from 'dayjs/plugin/duration';
 import TeachableLLM from '../lib/TeachableLLM';
+import waitForModel from '../lib/utilities/waitForModel';
 
 dayjs.extend(duration);
 
@@ -85,11 +86,11 @@ const argv = yargs(hideBin(process.argv))
     })
     .parseSync();
 
-async function constructModel(modelPath?: string): Promise<TeachableLLM> {
+function constructModel(modelPath?: string): TeachableLLM {
     if (modelPath) {
         const modelBlob = fs.readFileSync(path.resolve(modelPath));
         console.log('Loading model from:', modelPath);
-        const model = await TeachableLLM.loadModel(tf, modelBlob);
+        const model = TeachableLLM.loadModel(tf, modelBlob);
         return model;
     }
 
@@ -116,7 +117,8 @@ async function train() {
     const rawdata = fs.readFileSync(path.resolve(data), 'utf8');
     const textData = await loadTextData(rawdata);
 
-    const model = await constructModel(modelName);
+    const model = constructModel(modelName);
+    await waitForModel(model);
     const tokeniser = model.tokeniser;
     await tokeniser.train(textData);
 

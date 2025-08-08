@@ -6,6 +6,7 @@ import path from 'path';
 import * as tf from '@tensorflow/tfjs-node-gpu';
 import TeachableLLM from '../lib/TeachableLLM';
 import chalk from 'chalk';
+import waitForModel from '../lib/utilities/waitForModel';
 
 const argv = yargs(hideBin(process.argv))
     .option('model', {
@@ -55,7 +56,9 @@ async function generate() {
 
     // Load the trained model
     const modelBlob = model.startsWith('http') ? model : fs.readFileSync(path.resolve(model));
-    const nanoGPT = await TeachableLLM.loadModel(tf, modelBlob);
+    const nanoGPT = TeachableLLM.loadModel(tf, modelBlob);
+
+    await waitForModel(nanoGPT);
 
     process.stdout.write('\n\n');
     process.stdout.write(chalk.bold(prompt));

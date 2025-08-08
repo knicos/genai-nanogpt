@@ -13,22 +13,47 @@ import { CharTokeniser } from './main';
 type TeachableLLMStatus = 'warmup' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 
 export default class TeachableLLM extends EE<'status' | 'error'> {
-    public readonly config: GPTConfig;
-    public readonly model: NanoGPT;
+    private _config?: GPTConfig;
+    private _model?: NanoGPT;
     public readonly tf: typeof TF;
-    public readonly tokeniser: ITokeniser;
+    private _tokeniser?: ITokeniser;
     private _status: TeachableLLMStatus = 'loading';
 
-    constructor(tf: typeof TF, tokeniser: ITokeniser, model: NanoGPT) {
+    constructor(tf: typeof TF, tokeniser?: ITokeniser, model?: NanoGPT) {
         super();
         this.tf = tf;
-        this.config = model.config;
-        this.tokeniser = tokeniser;
-        this.model = model;
+        this._config = model?.config;
+        this._tokeniser = tokeniser;
+        this._model = model;
+    }
+
+    get config(): GPTConfig {
+        if (!this._config) {
+            throw new Error('Model configuration is not initialized.');
+        }
+        return this._config;
+    }
+
+    get model(): NanoGPT {
+        if (!this._model) {
+            throw new Error('Model is not initialized.');
+        }
+        return this._model;
+    }
+
+    get tokeniser(): ITokeniser {
+        if (!this._tokeniser) {
+            throw new Error('Tokeniser is not initialized.');
+        }
+        return this._tokeniser;
     }
 
     get status(): TeachableLLMStatus {
         return this._status;
+    }
+
+    get ready(): boolean {
+        return this._status === 'ready' && !!this._model && !!this._tokeniser;
     }
 
     private setStatus(status: TeachableLLMStatus) {
@@ -39,21 +64,34 @@ export default class TeachableLLM extends EE<'status' | 'error'> {
     }
 
     saveModel(): Promise<Blob> {
-        return saveModel(this.model, this.tokeniser);
+        if (!this._model || !this._tokeniser) {
+            throw new Error('Model or tokeniser is not initialized.');
+        }
+        return saveModel(this._model, this._tokeniser);
     }
 
-    static async loadModel(tf: typeof TF, data: Blob | Buffer | string): Promise<TeachableLLM> {
-        const { model, tokeniser } = await loadModel(tf, data);
-        const teachableLLM = new TeachableLLM(tf, tokeniser, model);
-        teachableLLM.setStatus('warmup');
-        dummyPassAsync(model)
-            .then(() => {
-                teachableLLM.setStatus('ready');
+    static loadModel(tf: typeof TF, data: Blob | Buffer | string): TeachableLLM {
+        const teachableLLM = new TeachableLLM(tf);
+        loadModel(tf, data)
+            .then(({ model, tokeniser }) => {
+                teachableLLM._model = model;
+                teachableLLM._tokeniser = tokeniser;
+                teachableLLM._config = model.config;
+                teachableLLM.setStatus('warmup');
+                dummyPassAsync(model)
+                    .then(() => {
+                        teachableLLM.setStatus('ready');
+                    })
+                    .catch((err) => {
+                        teachableLLM.setStatus('error');
+                        teachableLLM.emit('error', err);
+                    });
             })
             .catch((err) => {
                 teachableLLM.setStatus('error');
                 teachableLLM.emit('error', err);
             });
+
         return teachableLLM;
     }
 
@@ -65,11 +103,17 @@ export default class TeachableLLM extends EE<'status' | 'error'> {
     }
 
     getNumParams(): number {
-        return this.model.getNumParams();
+        if (!this._model) {
+            throw new Error('Model is not initialized.');
+        }
+        return this._model.getNumParams();
     }
 
     trainer() {
-        const trainer = new Trainer(this.model, this.tokeniser);
+        if (!this._model || !this._tokeniser) {
+            throw new Error('Model or tokeniser is not initialized.');
+        }
+        const trainer = new Trainer(this._model, this._tokeniser);
         trainer.on('start', () => this.setStatus('training'));
         trainer.on('stop', () => this.setStatus('ready'));
         return trainer;
@@ -80,7 +124,10 @@ export default class TeachableLLM extends EE<'status' | 'error'> {
     }
 
     generator(): Generator {
-        const generator = new Generator(this.model, this.tokeniser);
+        if (!this._model || !this._tokeniser) {
+            throw new Error('Model or tokeniser is not initialized.');
+        }
+        const generator = new Generator(this._model, this._tokeniser);
         generator.on('start', () => this.setStatus('busy'));
         generator.on('stop', () => this.setStatus('ready'));
         return generator;

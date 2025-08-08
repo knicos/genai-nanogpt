@@ -8,6 +8,7 @@ import * as tf from '@tensorflow/tfjs-node-gpu';
 import chalk from 'chalk';
 import FullTrainer from '../lib/training/FullTrainer';
 import TeachableLLM from '../lib/TeachableLLM';
+import waitForModel from '../lib/utilities/waitForModel';
 
 const argv = yargs(hideBin(process.argv))
     .option('batch', {
@@ -47,7 +48,8 @@ async function evaluate() {
 
     // Load the trained model
     const modelBlob = fs.readFileSync(path.resolve(model));
-    const nanoGPT = await TeachableLLM.loadModel(tf, modelBlob);
+    const nanoGPT = TeachableLLM.loadModel(tf, modelBlob);
+    await waitForModel(nanoGPT);
     const tokeniser = nanoGPT.tokeniser;
 
     console.log(`Layers: ${nanoGPT.config.nLayer}`);

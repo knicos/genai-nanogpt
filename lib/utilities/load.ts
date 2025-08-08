@@ -64,6 +64,9 @@ export async function loadModel(
         }
     }
 
+    // Force existing variables to be removed
+    tf.disposeVariables();
+
     const model = new NanoGPT(tf, manifest.config);
 
     await dummyPassAsync(model); // Initialize the model to set up weights and caches
