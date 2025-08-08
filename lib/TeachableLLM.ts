@@ -99,7 +99,17 @@ export default class TeachableLLM extends EE<'status' | 'error'> {
         const fullConfig = { ...defaultConfig, ...config };
         const tokeniser = new CharTokeniser(fullConfig.vocabSize);
         const model = new NanoGPT(tf, fullConfig);
-        return new TeachableLLM(tf, tokeniser, model);
+        const tmodel = new TeachableLLM(tf, tokeniser, model);
+        tmodel.setStatus('warmup');
+        dummyPassAsync(model)
+            .then(() => {
+                tmodel.setStatus('ready');
+            })
+            .catch((err) => {
+                tmodel.setStatus('error');
+                tmodel.emit('error', err);
+            });
+        return tmodel;
     }
 
     getNumParams(): number {
