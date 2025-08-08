@@ -6,10 +6,8 @@ import AdamExt from './AdamExt';
 import { NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
 
 export interface TrainingState {
-    epoch: number;
     step: number;
     lastLoss: number;
-    epochLoss: number;
     totalSteps: number;
     losses: number[];
     validationLosses: number[];
@@ -23,12 +21,9 @@ export interface AdamConfig {
 }
 
 export interface TrainingOptions {
-    epochs: number;
-    stepsPerEpoch: number;
     desiredLoss: number;
     logInterval: number;
     prompt?: string;
-    onEpoch?: (e: number, loss: number, valLoss?: number) => Promise<void> | void;
     onStep?: (log: TrainingLogEntry) => Promise<void> | void;
 }
 
@@ -149,7 +144,6 @@ export default abstract class GPTTrainer {
             return lossScalar.array().then((lossValue) => {
                 state.lastLoss = lossValue as number;
                 state.losses.push(state.lastLoss);
-                state.epochLoss += state.lastLoss;
                 lossScalar.dispose();
                 return state.lastLoss;
             });

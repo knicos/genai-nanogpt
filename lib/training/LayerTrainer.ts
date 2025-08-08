@@ -6,13 +6,11 @@ import GPTTrainer, { TrainingOptions, TrainingState } from './Trainer';
 import { schedule, LWSchedule } from './lwSchedule';
 
 interface LayerTrainingState extends TrainingState {
-    epoch: number;
     pass: number;
     layerStep: number;
     step: number;
     stepSinceLayerChange: number;
     lastLoss: number;
-    epochLoss: number;
     totalSteps: number;
     losses: number[];
     validationLosses: number[];
@@ -31,8 +29,6 @@ interface LayerTrainingOptions extends TrainingOptions {
 }
 
 const DEFAULT_OPTIONS: LayerTrainingOptions = {
-    epochs: 1,
-    stepsPerEpoch: 1000000,
     desiredLoss: 0.01,
     logInterval: 1,
     stepsPerLayer: 400,
@@ -78,30 +74,17 @@ export default class LayerTrainer extends GPTTrainer {
         options: Partial<LayerTrainingOptions>,
         validationDataset?: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }> {
-        const {
-            epochs,
-            stepsPerEpoch,
-            desiredLoss,
-            logInterval,
-            stepsPerLayer,
-            onLayerChange,
-            onPassComplete,
-            onStep,
-            onEpoch,
-            prompt,
-        } = {
+        const { desiredLoss, logInterval, stepsPerLayer, onLayerChange, onPassComplete, onStep, prompt } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
 
         const state: LayerTrainingState = {
-            epoch: 0,
             pass: 0,
             layerStep: 0,
             step: 0,
             stepSinceLayerChange: 0,
             lastLoss: 1e6,
-            epochLoss: 0,
             totalSteps: 0,
             losses: [],
             validationLosses: [],
@@ -110,117 +93,93 @@ export default class LayerTrainer extends GPTTrainer {
         this.dummyPass();
 
         const startTime = Date.now();
+        this.startPass = 0;
+        this.startLayer = 0;
 
-        for (state.epoch = 0; state.epoch < epochs; state.epoch++) {
-            state.step = 0;
-            state.epochLoss = 0;
-            state.pass = this.startPass;
-            state.layerStep = this.startLayer + this.startPass * this.model.config.nLayer;
-            state.stepSinceLayerChange = 0;
-            this.startPass = 0;
-            this.startLayer = 0;
+        const iterator = await dataset.iterator();
 
-            const iterator = await dataset.iterator();
+        this.applyTrainingPattern(state.layerStep % this.trainingPattern.length);
 
-            this.applyTrainingPattern(state.layerStep % this.trainingPattern.length);
+        // Training loop with try-catch for better error handling
+        try {
+            while (true) {
+                if (state.lastLoss < desiredLoss) break;
 
-            // Training loop with try-catch for better error handling
-            try {
-                while (true) {
-                    if (stepsPerEpoch && state.step >= stepsPerEpoch) break;
-                    if (state.lastLoss < desiredLoss) break;
+                const result = await iterator.next();
+                if (result.done) break;
+                const batch = result.value;
 
-                    const result = await iterator.next();
-                    if (result.done) break;
-                    const batch = result.value;
+                const prom = this.trainBatch(state, batch);
+                state.stepSinceLayerChange++;
 
-                    const prom = this.trainBatch(state, batch);
-                    state.stepSinceLayerChange++;
+                const entry: LayerTrainingLogEntry = {
+                    loss: state.lastLoss,
+                    step: state.step,
+                    time: Date.now() - startTime,
+                    batchSize: batch.xs.shape[0],
+                    pass: state.pass,
+                    layer: state.layerStep % this.model.config.nLayer,
+                };
+                this.model.log.push(entry);
 
-                    const entry: LayerTrainingLogEntry = {
-                        epoch: state.epoch,
-                        loss: state.lastLoss,
-                        step: state.step,
-                        time: Date.now() - startTime,
-                        batchSize: batch.xs.shape[0],
-                        pass: state.pass,
-                        layer: state.layerStep % this.model.config.nLayer,
-                    };
-                    this.model.log.push(entry);
-
-                    if (state.step % logInterval === 0) {
-                        await prom;
-                        if (onStep) {
-                            if (prompt) {
-                                const text = await generateText(this.tokenizer, this.model, prompt, 100, {
-                                    temperature: 0.8,
-                                    topK: 10,
-                                });
-                                entry.example = text;
-                            }
-                            await onStep(entry);
-                        }
-                    }
-
-                    if (state.stepSinceLayerChange >= stepsPerLayer) {
-                        let valLoss: number | undefined;
-                        if (validationDataset) {
-                            valLoss = await this.evaluateOnDataset(validationDataset, 5);
+                if (state.step % logInterval === 0) {
+                    await prom;
+                    // Validation
+                    if (validationDataset) {
+                        try {
+                            const valLoss = await this.evaluateOnDataset(validationDataset, 5);
                             state.validationLosses.push(valLoss);
                             entry.valLoss = valLoss;
+                        } catch (error) {
+                            console.error('Validation error:', error);
                         }
-
-                        state.layerStep++;
-                        const passComplete = state.layerStep % this.model.config.nLayer === 0;
-                        if (!passComplete) {
-                            if (onLayerChange) {
-                                await onLayerChange(state.layerStep, state.pass, valLoss);
-                            }
-                        } else {
-                            if (onLayerChange) {
-                                await onLayerChange(state.layerStep, state.pass, valLoss);
-                            }
-                            if (onPassComplete) {
-                                await onPassComplete(state.pass);
-                            }
-                            state.pass++;
+                    }
+                    if (onStep) {
+                        if (prompt) {
+                            const text = await generateText(this.tokenizer, this.model, prompt, 100, {
+                                temperature: 0.8,
+                                topK: 10,
+                            });
+                            entry.example = text;
                         }
-                        state.stepSinceLayerChange = 0;
-                        this.applyTrainingPattern(state.layerStep % this.trainingPattern.length);
+                        await onStep(entry);
                     }
                 }
-            } catch (error) {
-                console.error('Training error:', error);
-                this.tf.dispose();
-                throw error;
-            }
 
-            const avgLoss = state.epochLoss / state.step;
-
-            // Validation
-            if (validationDataset) {
-                try {
-                    const valLoss = await this.evaluateOnDataset(validationDataset, 5);
-                    state.validationLosses.push(valLoss);
-
-                    if (onEpoch) {
-                        await onEpoch(state.epoch, avgLoss, valLoss);
+                if (state.stepSinceLayerChange >= stepsPerLayer) {
+                    let valLoss: number | undefined;
+                    if (validationDataset) {
+                        valLoss = await this.evaluateOnDataset(validationDataset, 5);
+                        state.validationLosses.push(valLoss);
+                        entry.valLoss = valLoss;
                     }
-                } catch (error) {
-                    console.error('Validation error:', error);
-                }
-            } else {
-                if (onEpoch) {
-                    onEpoch(state.epoch, avgLoss);
+
+                    state.layerStep++;
+                    const passComplete = state.layerStep % this.model.config.nLayer === 0;
+                    if (!passComplete) {
+                        if (onLayerChange) {
+                            await onLayerChange(state.layerStep, state.pass, valLoss);
+                        }
+                    } else {
+                        if (onLayerChange) {
+                            await onLayerChange(state.layerStep, state.pass, valLoss);
+                        }
+                        if (onPassComplete) {
+                            await onPassComplete(state.pass);
+                        }
+                        state.pass++;
+                    }
+                    state.stepSinceLayerChange = 0;
+                    this.applyTrainingPattern(state.layerStep % this.trainingPattern.length);
                 }
             }
-
+        } catch (error) {
+            console.error('Training error:', error);
             this.tf.dispose();
-
-            if (state.lastLoss < desiredLoss) {
-                break;
-            }
+            throw error;
         }
+
+        this.tf.dispose();
 
         return { losses: state.losses, validationLosses: state.validationLosses };
     }

@@ -6,7 +6,6 @@ import TiedEmbeddingOutputLayer from './layers/TiedEmbedding';
 import LayerNorm from './layers/LayerNorm';
 
 export interface TrainingLogEntry {
-    epoch: number;
     loss: number;
     valLoss?: number;
     step: number;

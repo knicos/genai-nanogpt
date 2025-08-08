@@ -23,7 +23,7 @@
         "test": "vitest",
         "ci:test": "vitest --coverage --reporter=junit --outputFile=junit.xml",
         "coverage": "vitest run --coverage",
-        "train": "tsx scripts/train.ts --epochs 2 --batch 64",
+        "train": "tsx scripts/train.ts --batch 64",
         "generate": "tsx scripts/generate.ts",
         "evaluate": "tsx scripts/evaluate.ts",
         "debug": "tsx scripts/debug.ts"

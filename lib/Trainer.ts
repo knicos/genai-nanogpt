@@ -4,7 +4,6 @@ import EE from 'eventemitter3';
 import FullTrainer from './training/FullTrainer';
 
 export interface ITrainerOptions {
-    epochs?: number; // Number of training epochs
     batchSize?: number; // Batch size for training
     learningRate?: number; // Learning rate for the optimizer
     maxSteps?: number; // Maximum training steps
@@ -34,13 +33,15 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         await this.trainer.trainOnDataset(
             trainDataset,
             {
-                epochs: options?.epochs || 2,
                 prompt: options?.prompt,
-                stepsPerEpoch: options?.maxSteps || 100,
                 logInterval: options?.logInterval || 10,
                 desiredLoss: options?.desiredLoss || 0.01,
                 onStep: async (log: TrainingLogEntry) => {
-                    this.emit('log', log);
+                    const listeners = this.listeners('log');
+                    for (const listener of listeners) {
+                        // These listeners can be async, so we await them
+                        await listener(log);
+                    }
                 },
             },
             validationDataset

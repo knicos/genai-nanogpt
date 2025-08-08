@@ -12,7 +12,7 @@ import { CharTokeniser } from './main';
 
 type TeachableLLMStatus = 'warmup' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 
-export default class TeachableLLM extends EE<'status' | 'error'> {
+export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
     private _config?: GPTConfig;
     private _model?: NanoGPT;
     public readonly tf: typeof TF;
@@ -126,6 +126,13 @@ export default class TeachableLLM extends EE<'status' | 'error'> {
         const trainer = new Trainer(this._model, this._tokeniser);
         trainer.on('start', () => this.setStatus('training'));
         trainer.on('stop', () => this.setStatus('ready'));
+        trainer.on('log', async (step) => {
+            const listeners = this.listeners('trainStep');
+            for (const listener of listeners) {
+                // These listeners can be async, so we await them
+                await listener(step);
+            }
+        });
         return trainer;
     }
 

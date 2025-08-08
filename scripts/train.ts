@@ -17,12 +17,6 @@ dayjs.extend(duration);
 //tf.enableDebugMode();
 
 const argv = yargs(hideBin(process.argv))
-    .option('epochs', {
-        alias: 'e',
-        type: 'number',
-        description: 'Number of training epochs',
-        default: 5,
-    })
     .option('batch', {
         alias: 'b',
         type: 'number',
@@ -106,7 +100,7 @@ function constructModel(modelPath?: string): TeachableLLM {
 }
 
 async function train() {
-    const { epochs, batch, data, maxSteps, loss, autosave, rate, model: modelName } = argv;
+    const { batch, data, maxSteps, loss, autosave, rate, model: modelName } = argv;
 
     if (data === '') {
         console.error('Error: --data option is required');
@@ -130,7 +124,9 @@ async function train() {
                 'Step'
             )} ${chalk.blueBright(log.step)}, ${chalk.bold('Loss:')} ${chalk.redBright(
                 log.loss.toFixed(4)
-            )}, ${chalk.bold('Example:')}\n${chalk.yellowBright(log.example || 'N/A')}`
+            )}, ${chalk.bold('Validation Loss:')} ${chalk.redBright(log.valLoss?.toFixed(4) || 'N/A')}, ${chalk.bold(
+                'Example:'
+            )}\n${chalk.yellowBright(log.example || 'N/A')}`
         );
 
         if (log.step > 0 && log.step % autosave === 0) {
@@ -145,7 +141,6 @@ async function train() {
     });
 
     await trainer.train(textData, {
-        epochs,
         prompt: 'What a great movie. It',
         maxSteps,
         logInterval: 10,
