@@ -154,6 +154,29 @@ export default class NanoGPT {
         }
     }
 
+    // Attention rollout per Abnar & Zuidema (2020)
+    // Expects list of (B, T, T) attention matrices already averaged over heads.
+    private computeAttentionRollout(attentions: TF.Tensor[]): TF.Tensor {
+        return this.tf.tidy(() => {
+            if (attentions.length === 0) {
+                throw new Error('No attentions for rollout');
+            }
+            const B = attentions[0].shape[0]!;
+            const T = attentions[0].shape[1]!;
+            const eye = this.tf.eye(T, T).expandDims(0); // (1,T,T)
+            let rollout = eye.tile([B, 1, 1]); // (B,T,T) start as identity
+            for (const att of attentions) {
+                // Add residual path
+                let a = att.add(eye); // broadcast add
+                // Row-normalize
+                a = a.div(a.sum(-1, true));
+                // Propagate
+                rollout = a.matMul(rollout);
+            }
+            return rollout;
+        });
+    }
+
     forward(
         idx: TF.Tensor,
         targets?: TF.Tensor,
@@ -166,23 +189,20 @@ export default class NanoGPT {
             // Token and position embeddings
             let x = this.inputPhase(idx, training);
 
-            let attentionAccum: TF.Tensor | undefined;
-            if (includeAttention) {
-                attentionAccum = this.tf.zeros([x.shape[0], x.shape[1]!, x.shape[1]!]);
-            }
+            const perLayerAtt: TF.Tensor[] = [];
 
             // Transformer blocks
             for (const block of this.blocks) {
                 const { output, attention } = block.call(x, training, includeAttention);
                 x = output;
-                if (attention && attentionAccum) {
-                    // TODO: Only keep the last token's attention
-                    attentionAccum = attentionAccum.add(attention);
+                if (includeAttention && attention) {
+                    perLayerAtt.push(attention); // (B,T,T) already head-averaged
                 }
             }
 
-            if (attentionAccum) {
-                attentionAccum = attentionAccum.div(this.blocks.length);
+            let aggregatedAttention: TF.Tensor | undefined;
+            if (includeAttention && perLayerAtt.length > 0) {
+                aggregatedAttention = this.computeAttentionRollout(perLayerAtt);
             }
 
             // Final layer norm
@@ -196,7 +216,7 @@ export default class NanoGPT {
                 loss = this.calculateLoss(logits, targets);
             }
 
-            return { logits, loss, attention: includeAttention ? attentionAccum : undefined };
+            return { logits, loss, attention: includeAttention ? aggregatedAttention : undefined };
         });
     }
 
