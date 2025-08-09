@@ -145,8 +145,12 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
             throw new Error('Model or tokeniser is not initialized.');
         }
         const generator = new Generator(this._model, this._tokeniser);
-        generator.on('start', () => this.setStatus('busy'));
-        generator.on('stop', () => this.setStatus('ready'));
+        generator.on('start', () => {
+            if (this.status === 'ready') this.setStatus('busy');
+        });
+        generator.on('stop', () => {
+            if (this.status === 'busy') this.setStatus('ready');
+        });
         return generator;
     }
 

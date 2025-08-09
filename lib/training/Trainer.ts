@@ -24,6 +24,7 @@ export interface TrainingOptions {
     desiredLoss: number;
     logInterval: number;
     prompt?: string;
+    maxSteps: number;
     onStep?: (log: TrainingLogEntry) => Promise<void> | void;
 }
 
@@ -34,6 +35,7 @@ export default abstract class GPTTrainer {
     protected datasetBuilder: DatasetBuilder;
     protected tf: typeof TF;
     protected learningRate: number;
+    protected running = false;
 
     constructor(tf: typeof TF, model: NanoGPT, protected tokenizer: ITokeniser, learningRate: number = 1e-3) {
         this.tf = tf;
@@ -41,6 +43,15 @@ export default abstract class GPTTrainer {
         this.learningRate = learningRate;
         this.resetOptimizer();
         this.datasetBuilder = new DatasetBuilder(this.tf, tokenizer, model.config.blockSize);
+    }
+
+    setLearningRate(learningRate: number): void {
+        this.learningRate = learningRate;
+        this.resetOptimizer({ learningRateFactor: 1, beta1: 0.9, beta2: 0.99, epsilon: 1e-8 });
+    }
+
+    stop() {
+        this.running = false;
     }
 
     getOptimizer(): AdamExt {

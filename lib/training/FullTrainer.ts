@@ -18,6 +18,7 @@ interface TrainingState {
 const DEFAULT_OPTIONS: TrainingOptions = {
     desiredLoss: 0.01,
     logInterval: 1,
+    maxSteps: 1000,
 };
 
 // Enhanced training utilities with Dataset API and memory leak fixes
@@ -32,7 +33,7 @@ export default class FullTrainer extends GPTTrainer {
         options: Partial<TrainingOptions>,
         validationDataset?: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }> {
-        const { desiredLoss, logInterval, onStep, prompt } = {
+        const { desiredLoss, logInterval, onStep, prompt, maxSteps } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
@@ -53,11 +54,13 @@ export default class FullTrainer extends GPTTrainer {
 
         const startTime = Date.now();
 
+        this.running = true;
+
         const iterator = await dataset.iterator();
 
         // Training loop with try-catch for better error handling
         try {
-            while (true) {
+            while (this.running) {
                 if (state.lastLoss < desiredLoss) break;
 
                 const result = await iterator.next();
@@ -96,6 +99,10 @@ export default class FullTrainer extends GPTTrainer {
                         await onStep(entry);
                     }
                 }
+
+                if (state.step >= maxSteps) {
+                    this.stop();
+                }
             }
         } catch (error) {
             console.error('Training error:', error);
@@ -104,6 +111,8 @@ export default class FullTrainer extends GPTTrainer {
         }
 
         this.tf.dispose();
+
+        this.running = false;
 
         return { losses: state.losses, validationLosses: state.validationLosses };
     }

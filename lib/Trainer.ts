@@ -29,13 +29,17 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             options?.batchSize || 32,
             options?.validationSplit || 0.1
         );
+        this.trainer.setLearningRate(options?.learningRate || 1e-3);
+
         this.emit('start');
+
         await this.trainer.trainOnDataset(
             trainDataset,
             {
                 prompt: options?.prompt,
                 logInterval: options?.logInterval || 10,
                 desiredLoss: options?.desiredLoss || 0.01,
+                maxSteps: options?.maxSteps || 1000,
                 onStep: async (log: TrainingLogEntry) => {
                     const listeners = this.listeners('log');
                     for (const listener of listeners) {

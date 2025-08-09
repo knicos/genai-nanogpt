@@ -33,6 +33,7 @@ const DEFAULT_OPTIONS: LayerTrainingOptions = {
     logInterval: 1,
     stepsPerLayer: 400,
     maxPasses: 3,
+    maxSteps: 1000,
 };
 
 // Enhanced training utilities with Dataset API and memory leak fixes
