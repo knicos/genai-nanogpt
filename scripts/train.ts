@@ -91,7 +91,7 @@ function constructModel(modelPath?: string): TeachableLLM {
     const model = TeachableLLM.create(tf, {
         vocabSize: 200,
         blockSize: 128, // Context window size
-        nLayer: 4,
+        nLayer: 6,
         nHead: 3,
         nEmbed: 192,
         dropout: 0.0,

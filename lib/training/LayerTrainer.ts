@@ -4,6 +4,7 @@ import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
 import GPTTrainer, { TrainingOptions, TrainingState } from './Trainer';
 import { schedule, LWSchedule } from './lwSchedule';
+import Evaluator from './Evaluator';
 
 interface LayerTrainingState extends TrainingState {
     pass: number;
@@ -97,6 +98,8 @@ export default class LayerTrainer extends GPTTrainer {
         this.startPass = 0;
         this.startLayer = 0;
 
+        const evaluator = validationDataset ? new Evaluator(this.model, validationDataset) : undefined;
+
         const iterator = await dataset.iterator();
 
         this.applyTrainingPattern(state.layerStep % this.trainingPattern.length);
@@ -126,9 +129,9 @@ export default class LayerTrainer extends GPTTrainer {
                 if (state.step % logInterval === 0) {
                     await prom;
                     // Validation
-                    if (validationDataset) {
+                    if (evaluator) {
                         try {
-                            const valLoss = await this.evaluateOnDataset(validationDataset, 5);
+                            const valLoss = await evaluator.evaluate(5);
                             state.validationLosses.push(valLoss);
                             entry.valLoss = valLoss;
                         } catch (error) {
@@ -148,22 +151,15 @@ export default class LayerTrainer extends GPTTrainer {
                 }
 
                 if (state.stepSinceLayerChange >= stepsPerLayer) {
-                    let valLoss: number | undefined;
-                    if (validationDataset) {
-                        valLoss = await this.evaluateOnDataset(validationDataset, 5);
-                        state.validationLosses.push(valLoss);
-                        entry.valLoss = valLoss;
-                    }
-
                     state.layerStep++;
                     const passComplete = state.layerStep % this.model.config.nLayer === 0;
                     if (!passComplete) {
                         if (onLayerChange) {
-                            await onLayerChange(state.layerStep, state.pass, valLoss);
+                            await onLayerChange(state.layerStep, state.pass);
                         }
                     } else {
                         if (onLayerChange) {
-                            await onLayerChange(state.layerStep, state.pass, valLoss);
+                            await onLayerChange(state.layerStep, state.pass);
                         }
                         if (onPassComplete) {
                             await onPassComplete(state.pass);

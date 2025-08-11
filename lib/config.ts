@@ -8,6 +8,7 @@ export interface GPTConfig {
     dropout: number;
     biasInLinear: boolean;
     biasInLayerNorm: boolean;
+    mlpFactor: number;
 }
 
 // Default configuration
@@ -20,4 +21,5 @@ export const defaultConfig: GPTConfig = {
     dropout: 0.0, // Dropout probability
     biasInLinear: false,
     biasInLayerNorm: false,
+    mlpFactor: 4,
 };

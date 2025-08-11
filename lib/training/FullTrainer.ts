@@ -3,6 +3,7 @@ import { generateText } from '../utilities/generate';
 import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
 import GPTTrainer, { TrainingOptions } from './Trainer';
+import Evaluator from './Evaluator';
 
 interface TrainingState {
     pass: number;
@@ -56,6 +57,8 @@ export default class FullTrainer extends GPTTrainer {
 
         this.running = true;
 
+        const evaluator = validationDataset ? new Evaluator(this.model, validationDataset) : undefined;
+
         const iterator = await dataset.iterator();
 
         // Training loop with try-catch for better error handling
@@ -80,9 +83,9 @@ export default class FullTrainer extends GPTTrainer {
                 if (state.step % logInterval === 0) {
                     await lossPromise;
                     // Validation
-                    if (validationDataset) {
+                    if (evaluator) {
                         try {
-                            const valLoss = await this.evaluateOnDataset(validationDataset, 5);
+                            const valLoss = await evaluator.evaluate(5);
                             state.validationLosses.push(valLoss);
                             entry.valLoss = valLoss;
                         } catch (error) {

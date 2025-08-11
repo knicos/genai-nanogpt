@@ -4,7 +4,17 @@ import * as tf from '@tensorflow/tfjs';
 
 describe('MLP', () => {
     it('should call the MLP layer and return a tensor', ({ expect }) => {
-        const config = { nEmbed: 16, nHead: 2, nLayer: 1, biasInLinear: false, dropout: 0.0, blockSize: 4 };
+        const config = {
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            dropout: 0.0,
+            blockSize: 4,
+            mlpFactor: 4,
+        };
         const mlp = new MLP(tf, 0, config);
 
         const input = tf.randomNormal([1, 4, 16]);
@@ -15,7 +25,17 @@ describe('MLP', () => {
     });
 
     it('should save and load weights correctly', ({ expect }) => {
-        const config = { nEmbed: 16, nHead: 2, nLayer: 1, biasInLinear: false, dropout: 0.0, blockSize: 4 };
+        const config = {
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            dropout: 0.0,
+            blockSize: 4,
+            mlpFactor: 4,
+        };
         const mlp = new MLP(tf, 0, config);
         const input = tf.randomNormal([1, 4, 16]);
         mlp.call(input, false); // Initialize the layer

@@ -14,7 +14,7 @@ export default class MLP {
         this.tf = tf;
         this.index = index;
         this.cFc = this.tf.layers.dense({
-            units: 4 * config.nEmbed,
+            units: config.mlpFactor * config.nEmbed,
             activation: 'gelu',
             useBias: config.biasInLinear,
             kernelInitializer: this.tf.initializers.randomNormal({

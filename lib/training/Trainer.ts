@@ -156,6 +156,7 @@ export default abstract class GPTTrainer {
                 state.lastLoss = lossValue as number;
                 state.losses.push(state.lastLoss);
                 lossScalar.dispose();
+
                 return state.lastLoss;
             });
         } catch (error) {
@@ -165,36 +166,12 @@ export default abstract class GPTTrainer {
         }
     }
 
-    // Train for multiple epochs using Dataset API - FIXED memory leaks
     abstract trainOnDataset(
         dataset: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>,
         options: Partial<TrainingOptions>,
         validationDataset?: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }>;
 
-    // Evaluate model on validation dataset - FIXED memory leaks
-    async evaluateOnDataset(dataset: TF.data.Dataset<TF.TensorContainer>, maxBatches: number = 100): Promise<number> {
-        let totalLoss = 0;
-        let batchCount = 0;
-
-        await dataset.take(maxBatches).forEachAsync(async (batch) => {
-            const { xs, ys } = batch as { xs: TF.Tensor; ys: TF.Tensor };
-
-            const { loss, logits } = this.model.forward(xs, ys, false);
-            const lossValue = loss!.arraySync();
-            const batchLoss = lossValue as number;
-
-            loss!.dispose();
-            logits.dispose(); // Dispose logits if not needed
-
-            totalLoss += batchLoss;
-            batchCount++;
-        });
-
-        return totalLoss / batchCount;
-    }
-
-    // Create training and validation datasets - FIXED memory leaks
     async createTrainValidationSplit(
         textData: string[],
         batchSize: number = 32,
@@ -223,7 +200,5 @@ export default abstract class GPTTrainer {
         if (this.optimizer) {
             this.optimizer.dispose();
         }
-        // Force cleanup of any remaining tensors
-        this.tf.dispose();
     }
 }

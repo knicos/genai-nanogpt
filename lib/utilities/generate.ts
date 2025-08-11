@@ -35,6 +35,7 @@ export async function generateText(
     });
 
     const tokenArray = (await inputTensor.array()) as number[][];
+    inputTensor.dispose();
 
     const generatedTokens = tokenArray[0];
 
