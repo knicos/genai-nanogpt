@@ -24,13 +24,11 @@ export class DatasetBuilder {
         const tokenisedTexts = await Promise.all(textData.map((text) => this.tokenizer.encode(text)));
         // Flatten and add EOS token
         const hasEOS = this.tokenizer.eosToken >= 0;
-        const allTokens = tokenisedTexts
-            .map((t) => (hasEOS ? [...t, this.tokenizer.eosToken] : t))
-            .flat()
-            .slice(
-                Math.floor(start * tokenisedTexts.length),
-                end === 1 ? undefined : Math.floor(end * tokenisedTexts.length)
-            );
+        const flatTokens = tokenisedTexts.map((t) => (hasEOS ? [...t, this.tokenizer.eosToken] : t)).flat();
+        const allTokens = flatTokens.slice(
+            Math.floor(start * flatTokens.length),
+            end === 1 ? undefined : Math.floor(end * flatTokens.length)
+        );
 
         // Use generator to avoid storing all sequences in memory
         const generator = function* (this: DatasetBuilder) {
