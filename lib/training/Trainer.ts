@@ -180,13 +180,13 @@ export default abstract class GPTTrainer {
         trainDataset: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>;
         validationDataset: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>;
     }> {
-        const splitIndex = Math.floor(textData.length * (1 - validationSplit));
-
-        const trainTexts = textData.slice(0, splitIndex);
-        const validationTexts = textData.slice(splitIndex);
-
-        const trainDataset = await this.datasetBuilder.createTextDataset(trainTexts, batchSize);
-        const validationDataset = await this.datasetBuilder.createTextDataset(validationTexts, batchSize);
+        const trainDataset = await this.datasetBuilder.createTextDataset(textData, batchSize, 0, 1 - validationSplit);
+        const validationDataset = await this.datasetBuilder.createTextDataset(
+            textData,
+            batchSize,
+            1 - validationSplit,
+            1
+        );
 
         return { trainDataset, validationDataset };
     }

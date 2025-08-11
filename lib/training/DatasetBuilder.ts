@@ -16,13 +16,21 @@ export class DatasetBuilder {
     // Create dataset from text files
     public async createTextDataset(
         textData: string[],
-        batchSize: number = 32
+        batchSize: number = 32,
+        start: number = 0,
+        end: number = 1
     ): Promise<TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>> {
         // Process ALL text into one token array first
         const tokenisedTexts = await Promise.all(textData.map((text) => this.tokenizer.encode(text)));
         // Flatten and add EOS token
         const hasEOS = this.tokenizer.eosToken >= 0;
-        const allTokens = tokenisedTexts.map((t) => (hasEOS ? [...t, this.tokenizer.eosToken] : t)).flat();
+        const allTokens = tokenisedTexts
+            .map((t) => (hasEOS ? [...t, this.tokenizer.eosToken] : t))
+            .flat()
+            .slice(
+                Math.floor(start * tokenisedTexts.length),
+                end === 1 ? undefined : Math.floor(end * tokenisedTexts.length)
+            );
 
         // Use generator to avoid storing all sequences in memory
         const generator = function* (this: DatasetBuilder) {
