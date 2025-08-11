@@ -9,6 +9,7 @@ export interface IGenerateOptions {
     topK?: number; /// Limits the number of tokens to consider at each step (default: undefined)
     usePadding?: boolean; /// Whether to use padding in the input tensor (default: false)
     includeAttention?: boolean; /// Whether to include attention in the output (default: false)
+    includeProbabilities?: boolean; /// Whether to include probabilities in the output (default: false)
 }
 
 const TOKEN_BLOCK_COUNT = 4; // Number of tokens to generate loop
@@ -21,25 +22,34 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     private generateBlockOfTokens(
         inputTensor: TF.Tensor,
         options?: IGenerateOptions
-    ): { output: TF.Tensor; attention?: TF.Tensor } {
+    ): { output: TF.Tensor; attention?: TF.Tensor; probabilities?: TF.Tensor } {
         const temperature = options?.temperature ?? 1.0;
         const topK = options?.topK;
         const usePadding = options?.usePadding ?? options?.includeAttention ?? false;
         const includeAttention = options?.includeAttention ?? false;
+        const includeProbabilities = options?.includeProbabilities ?? false;
 
         let tensor = inputTensor;
         let attention: TF.Tensor | undefined;
+        let probabilities: TF.Tensor | undefined;
 
         // Generate text
         for (let i = 0; i < TOKEN_BLOCK_COUNT; i++) {
-            const { output: generatedTokens, attention: newAttention } = this.model.generate(tensor, {
+            const {
+                output: generatedTokens,
+                attention: newAttention,
+                probabilities: newProbabilities,
+            } = this.model.generate(tensor, {
                 temperature,
                 topK,
                 usePadding,
                 includeAttention,
+                includeProbabilities,
             });
             const oldInput = tensor;
             tensor = this.model.tf.concat([tensor, generatedTokens], 1);
+
+            // Accumulate attention if they are included
             if (attention && newAttention) {
                 const oldAttention = attention;
                 attention = this.model.tf.concat([attention, newAttention], 0);
@@ -47,11 +57,21 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             } else if (newAttention) {
                 attention = newAttention;
             }
+
+            // Accumulate probabilities if they are included
+            if (probabilities && newProbabilities) {
+                const oldProbabilities = probabilities;
+                probabilities = this.model.tf.concat([probabilities, newProbabilities], 0);
+                oldProbabilities.dispose();
+            } else if (newProbabilities) {
+                probabilities = newProbabilities;
+            }
+
             oldInput.dispose();
             generatedTokens.dispose();
         }
 
-        return { output: tensor, attention };
+        return { output: tensor, attention, probabilities };
     }
 
     public async generate(prompt?: string, options?: IGenerateOptions): Promise<string> {
@@ -65,12 +85,15 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
         // Loop in the model to generate text until eos or max length
         while (true) {
-            const { output, attention } = this.generateBlockOfTokens(inputTensor, options);
+            const { output, attention, probabilities } = this.generateBlockOfTokens(inputTensor, options);
             const oldInput = inputTensor;
             inputTensor = output;
 
             const newTokens = output.slice([0, oldInput.shape[1]!], [1, TOKEN_BLOCK_COUNT]);
             const newTokensArray = ((await newTokens.array()) as number[][])[0];
+
+            oldInput.dispose();
+            newTokens.dispose();
 
             let hasEOSToken = false;
             let hasEnough = false;
@@ -91,18 +114,25 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             const newText = await this.tokeniser.decode(newTokensArray);
             outputText += newText;
 
+            let attentionArray: number[][] | undefined;
             if (attention) {
-                let attentionArray = (await attention.array()) as number[][];
+                attentionArray = (await attention.array()) as number[][];
+                attention.dispose();
                 if (attentionArray.length > newTokensArray.length) {
                     attentionArray = attentionArray.slice(0, newTokensArray.length);
                 }
-                this.emit('tokens', newTokensArray, newText, attentionArray);
-            } else {
-                this.emit('tokens', newTokensArray, newText);
             }
 
-            oldInput.dispose();
-            newTokens.dispose();
+            let probabilitiesArray: number[][] | undefined;
+            if (probabilities) {
+                probabilitiesArray = (await probabilities.array()) as number[][];
+                probabilities.dispose();
+                if (probabilitiesArray.length > newTokensArray.length) {
+                    probabilitiesArray = probabilitiesArray.slice(0, newTokensArray.length);
+                }
+            }
+
+            this.emit('tokens', newTokensArray, newText, attentionArray, probabilitiesArray);
 
             if (hasEOSToken) {
                 break;

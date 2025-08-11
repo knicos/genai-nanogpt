@@ -19,6 +19,7 @@ export interface GenerateOptions {
     topK?: number;
     usePadding?: boolean;
     includeAttention?: boolean;
+    includeProbabilities?: boolean;
 }
 
 // Main GPT model
@@ -220,7 +221,10 @@ export default class NanoGPT {
         });
     }
 
-    generate(idx: TF.Tensor, options?: GenerateOptions): { output: TF.Tensor; attention?: TF.Tensor } {
+    generate(
+        idx: TF.Tensor,
+        options?: GenerateOptions
+    ): { output: TF.Tensor; attention?: TF.Tensor; probabilities?: TF.Tensor } {
         const temperature = options?.temperature ?? 1.0;
         const topK = options?.topK;
         const usePadding = options?.usePadding ?? false;
@@ -260,21 +264,22 @@ export default class NanoGPT {
             const scaledLogits = lastLogits.div(temperature);
 
             let nextToken: TF.Tensor;
+
             if (topK) {
                 const { values: topKValues, indices: topKIndices } = this.tf.topk(scaledLogits, topK);
                 const sampledIdx = this.tf.multinomial(topKValues.squeeze([1]) as TF.Tensor1D, 1);
                 nextToken = this.tf.gather(topKIndices.squeeze([1]), sampledIdx, 1);
             } else {
-                /*const probs = this.tf.softmax(scaledLogits).squeeze();
-                const probsArray = probs.arraySync() as number[];
-                const tokenPairs = probsArray.map((prob, idx) => ({ token: idx, prob }));
-                tokenPairs.sort((a, b) => b.prob - a.prob); // Sort probabilities for debugging*/
-
                 nextToken = this.tf.multinomial(scaledLogits.squeeze([1]) as TF.Tensor1D, 1);
             }
 
+            let probabilities: TF.Tensor | undefined;
+            if (options?.includeProbabilities) {
+                probabilities = this.tf.softmax(scaledLogits.squeeze([1]) as TF.Tensor1D);
+            }
+
             nextToken = nextToken.reshape([1, 1]);
-            return { output: nextToken, attention: lastAttention?.squeeze([1]) };
+            return { output: nextToken, attention: lastAttention?.squeeze([1]), probabilities };
         });
     }
 

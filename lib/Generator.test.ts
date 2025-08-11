@@ -83,4 +83,30 @@ describe('Generator', () => {
         expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
         expect(emittedAttention[0][0]).toHaveLength(model.config.blockSize);
     });
+
+    it('should emit probabilities when requested', async ({ expect }) => {
+        const model = new NanoGPT(tf, {
+            vocabSize: 20,
+            nEmbed: 64,
+            nLayer: 1,
+            nHead: 2,
+            blockSize: 32,
+            dropout: 0.1,
+        });
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const emittedProbabilities: number[][][] = [];
+        generator.on('tokens', (_tokens, _text, _attention, probabilities) => {
+            if (probabilities) {
+                emittedProbabilities.push(probabilities);
+            }
+        });
+
+        const prompt = 'abcde';
+        await generator.generate(prompt, { maxLength: 10, includeProbabilities: true });
+
+        expect(emittedProbabilities.length).toBeGreaterThan(0);
+        expect(emittedProbabilities[0].length).toBeGreaterThan(0);
+    });
 });
