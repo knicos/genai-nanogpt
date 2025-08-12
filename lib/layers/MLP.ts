@@ -74,4 +74,10 @@ export default class MLP {
             return output;
         });
     }
+
+    dispose() {
+        this.cFc.dispose();
+        this.cProj.dispose();
+        this.dropout.dispose();
+    }
 }

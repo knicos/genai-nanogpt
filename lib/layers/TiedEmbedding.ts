@@ -52,4 +52,8 @@ export default class TiedEmbeddingOutputLayer {
             embedDim: this.embedDim,
         };
     }
+
+    dispose() {
+        this.tiedWeights.dispose();
+    }
 }

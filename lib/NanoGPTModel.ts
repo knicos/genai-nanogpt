@@ -297,4 +297,12 @@ export default class NanoGPT {
 
         return embeddingParams + attentionParams + mlpParams + finalParams;
     }
+
+    dispose() {
+        this.wte.dispose();
+        this.wpe.dispose();
+        this.drop.dispose();
+        this.blocks.forEach((block) => block.dispose());
+        this.lnF.dispose();
+    }
 }

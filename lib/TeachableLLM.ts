@@ -157,4 +157,8 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
     generateText(prompt?: string, options?: IGenerateOptions): Promise<string> {
         return this.generator().generate(prompt, options);
     }
+
+    dispose() {
+        this._model?.dispose();
+    }
 }

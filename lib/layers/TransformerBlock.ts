@@ -95,4 +95,11 @@ export default class Block {
             return { output: this.getMLPOutput(residual1, training), attention: attnOut.attention };
         });
     }
+
+    dispose() {
+        this.ln1.dispose();
+        this.attn.dispose();
+        this.ln2.dispose();
+        this.mlp.dispose();
+    }
 }

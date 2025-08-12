@@ -154,4 +154,14 @@ export default class CausalSelfAttention {
             return { output, attention: includeAttention ? attScores.mean(1) : undefined };
         });
     }
+
+    dispose() {
+        this.cAttn.dispose();
+        this.cProj.dispose();
+        this.attnDropout.dispose();
+        this.residDropout.dispose();
+        this.bias.dispose();
+        this.maskInf.dispose();
+        this.divisor.dispose();
+    }
 }

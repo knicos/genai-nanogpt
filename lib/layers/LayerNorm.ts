@@ -51,4 +51,8 @@ export default class LayerNorm {
             return withGamma; //.add(this.beta); Except there is no beta in this version
         });
     }
+
+    dispose() {
+        this.gamma.dispose();
+    }
 }
