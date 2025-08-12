@@ -3,7 +3,17 @@ import { ITokeniser } from '@base/tokeniser/type';
 import zip from 'jszip';
 import { exportWeights, ITensorSpec } from './weights';
 
-export async function saveModel(model: NanoGPT, tokeniser: ITokeniser): Promise<Blob> {
+const VERSION = '1.0.0';
+
+export interface SaveOptions {
+    includeLog?: boolean;
+    name?: string;
+    metadata?: Record<string, unknown>;
+    files?: Record<string, unknown>;
+}
+
+export async function saveModel(model: NanoGPT, tokeniser: ITokeniser, options?: SaveOptions): Promise<Blob> {
+    const includeLog = options?.includeLog ?? true;
     const weights = model.saveWeights();
     const zipFile = new zip();
 
@@ -14,9 +24,20 @@ export async function saveModel(model: NanoGPT, tokeniser: ITokeniser): Promise<
         spec[name] = data.spec;
         zipFile.file(`${name}.bin`, data.data.buffer, { binary: true });
     }
-    zipFile.file('manifest.json', JSON.stringify({ weightSpec: spec, config: model.config }), {
-        binary: false,
-    });
+    zipFile.file(
+        'manifest.json',
+        JSON.stringify({
+            weightSpec: spec,
+            config: model.config,
+            version: VERSION,
+            application: '@genai-fi/nanogpt',
+            meta: options?.metadata,
+            name: options?.name,
+        }),
+        {
+            binary: false,
+        }
+    );
     zipFile.file(
         'tokeniser.json',
         JSON.stringify({ vocab: tokeniser.getVocab(), merges: await tokeniser.getMerges() }),
@@ -24,6 +45,16 @@ export async function saveModel(model: NanoGPT, tokeniser: ITokeniser): Promise<
             binary: false,
         }
     );
-    zipFile.file('log.json', JSON.stringify(model.log), { binary: false });
+
+    if (includeLog) {
+        zipFile.file('log.json', JSON.stringify(model.log), { binary: false });
+    }
+
+    if (options?.files) {
+        for (const [fileName, content] of Object.entries(options.files)) {
+            zipFile.file(fileName, JSON.stringify(content), { binary: false });
+        }
+    }
+
     return zipFile.generateAsync({ type: 'blob' });
 }

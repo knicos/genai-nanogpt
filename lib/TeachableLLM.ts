@@ -2,7 +2,7 @@ import type TF from '@tensorflow/tfjs';
 import { defaultConfig, GPTConfig } from './config';
 import { ITokeniser } from './tokeniser/type';
 import NanoGPT from './NanoGPTModel';
-import { saveModel } from './utilities/save';
+import { saveModel, SaveOptions } from './utilities/save';
 import { loadModel } from './utilities/load';
 import Generator, { IGenerateOptions } from './Generator';
 import Trainer, { ITrainerOptions } from './Trainer';
@@ -63,11 +63,11 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
         }
     }
 
-    saveModel(): Promise<Blob> {
+    saveModel(options?: SaveOptions): Promise<Blob> {
         if (!this._model || !this._tokeniser) {
             throw new Error('Model or tokeniser is not initialized.');
         }
-        return saveModel(this._model, this._tokeniser);
+        return saveModel(this._model, this._tokeniser, options);
     }
 
     static loadModel(tf: typeof TF, data: Blob | Buffer | string): TeachableLLM {
