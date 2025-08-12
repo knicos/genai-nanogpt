@@ -36,6 +36,7 @@ export default abstract class GPTTrainer {
     protected tf: typeof TF;
     protected learningRate: number;
     protected running = false;
+    protected lastState?: TrainingState;
 
     constructor(tf: typeof TF, model: NanoGPT, protected tokenizer: ITokeniser, learningRate: number = 1e-3) {
         this.tf = tf;
@@ -48,6 +49,11 @@ export default abstract class GPTTrainer {
     setLearningRate(learningRate: number): void {
         this.learningRate = learningRate;
         this.resetOptimizer({ learningRateFactor: 1, beta1: 0.9, beta2: 0.99, epsilon: 1e-8 });
+    }
+
+    reset() {
+        this.lastState = undefined;
+        this.running = false;
     }
 
     stop() {

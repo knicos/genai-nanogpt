@@ -15,13 +15,21 @@ export interface ITrainerOptions {
 
 export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     private trainer: FullTrainer;
+    private hasTrained: boolean = false;
 
     constructor(model: NanoGPT, tokeniser: ITokeniser) {
         super();
         this.trainer = new FullTrainer(model.tf, model, tokeniser, 1e-3);
     }
 
-    stop() {}
+    stop() {
+        this.trainer.stop();
+    }
+
+    reset() {
+        this.hasTrained = false;
+        this.trainer.reset();
+    }
 
     async train(text: string[], options?: ITrainerOptions): Promise<void> {
         const { trainDataset, validationDataset } = await this.trainer.createTrainValidationSplit(
@@ -29,7 +37,13 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             options?.batchSize || 32,
             options?.validationSplit || 0.1
         );
-        this.trainer.setLearningRate(options?.learningRate || 1e-3);
+
+        // Only set the learning rate if we haven't trained before
+        // This allows for resuming training without resetting the learning rate
+        if (!this.hasTrained) {
+            this.trainer.setLearningRate(options?.learningRate || 1e-3);
+        }
+        this.hasTrained = true;
 
         this.emit('start');
 

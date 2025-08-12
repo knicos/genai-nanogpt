@@ -6,10 +6,7 @@ import GPTTrainer, { TrainingOptions } from './Trainer';
 import Evaluator from './Evaluator';
 
 interface TrainingState {
-    pass: number;
-    depth: number;
     step: number;
-    stepSinceDepthChange: number;
     lastLoss: number;
     totalSteps: number;
     losses: number[];
@@ -40,15 +37,14 @@ export default class FullTrainer extends GPTTrainer {
         };
 
         const state: TrainingState = {
-            pass: 0,
-            depth: 1,
             step: 0,
-            stepSinceDepthChange: 0,
             lastLoss: 1e6,
             totalSteps: 0,
             losses: [],
             validationLosses: [],
+            ...(this.lastState || {}),
         };
+        this.lastState = state;
 
         this.dummyPass();
         this.model.trainable = true;
