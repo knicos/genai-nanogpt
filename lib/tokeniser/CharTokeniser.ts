@@ -20,6 +20,16 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
                 this.vocabSize = this.vocab.length;
                 this.eosToken = this.vocab.indexOf('<eos>');
                 this.unkToken = this.vocab.indexOf('<unk>');
+                // Try a few common fallback tokens if <unk> is not found
+                if (this.unkToken === -1) {
+                    this.unkToken = this.vocab.indexOf('<pad>');
+                }
+                if (this.unkToken === -1) {
+                    this.unkToken = this.vocab.indexOf('_');
+                }
+                if (this.unkToken === -1) {
+                    this.unkToken = this.vocab.indexOf(' ');
+                }
                 if (this.unkToken === -1) {
                     this.unkToken = this.eosToken;
                 }
@@ -55,7 +65,7 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
             charArray.sort((a, b) => (counts.get(a) || 0) - (counts.get(b) || 0));
             charArray.splice(0, charArray.length - actualSize);
         } else if (charArray.length < actualSize) {
-            // Pad with <eos> if we have fewer characters than vocab size
+            // Pad with <pad> if we have fewer characters than vocab size
             while (charArray.length < actualSize) {
                 charArray.push('<pad>');
             }
