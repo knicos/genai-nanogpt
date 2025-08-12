@@ -10,7 +10,7 @@ import EE from 'eventemitter3';
 import { dummyPassAsync } from './utilities/dummy';
 import { CharTokeniser } from './main';
 
-type TeachableLLMStatus = 'warmup' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
+type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 
 export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
     private _config?: GPTConfig;
@@ -53,7 +53,7 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
     }
 
     get ready(): boolean {
-        return this._status === 'ready' && !!this._model && !!this._tokeniser;
+        return this._status === 'ready' && !!this._model && !!this._tokeniser && this.tokeniser.trained;
     }
 
     private setStatus(status: TeachableLLMStatus) {
@@ -103,7 +103,12 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
         tmodel.setStatus('warmup');
         dummyPassAsync(model)
             .then(() => {
-                tmodel.setStatus('ready');
+                tmodel.setStatus('awaitingTokens');
+                tmodel.tokeniser.once('trainStatus', (status) => {
+                    if (status === 'trained') {
+                        tmodel.setStatus('ready');
+                    }
+                });
             })
             .catch((err) => {
                 tmodel.setStatus('error');

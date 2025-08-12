@@ -80,6 +80,8 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
         this.vocab.forEach((token, index) => {
             this.cache.set(token, index);
         });
+
+        this.emit('trainStatus', 'trained');
         return this.vocabSize;
     }
 

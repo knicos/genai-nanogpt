@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest';
+import { describe, it, vi } from 'vitest';
 import TeachableLLM from './TeachableLLM';
 import * as tf from '@tensorflow/tfjs';
 
@@ -50,5 +50,27 @@ describe('TeachableLLM Tests', () => {
         expect(newModel).toBeInstanceOf(TeachableLLM);
         expect(newModel.ready).toBe(false);
         newModel.dispose();
+    });
+
+    it('has an awaitingTokens status', async ({ expect }) => {
+        const model = TeachableLLM.create(tf, {
+            nEmbed: 32,
+            nHead: 2,
+            nLayer: 1,
+            vocabSize: 20,
+            blockSize: 6,
+            dropout: 0.1,
+            biasInLinear: false,
+            biasInLayerNorm: false,
+            mlpFactor: 4,
+        });
+
+        await vi.waitFor(() => expect(model.status).toBe('awaitingTokens'));
+
+        await model.tokeniser.train(['a', 'b', 'c']);
+
+        await vi.waitFor(() => expect(model.status).toBe('ready'));
+
+        model.dispose();
     });
 });
