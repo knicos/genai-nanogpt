@@ -3,9 +3,9 @@ import type TF from '@tensorflow/tfjs';
 import { defaultConfig, GPTConfig } from './config';
 import Block from './layers/TransformerBlock';
 import TiedEmbeddingOutputLayer from './layers/TiedEmbedding';
-import LayerNorm from './layers/LayerNorm';
 import { KVCache } from './layers/CausalSelfAttention';
 import RoPECache from './layers/RoPECache';
+import RMSNorm from './layers/RMSNorm';
 
 export interface TrainingLogEntry {
     loss: number;
@@ -31,7 +31,7 @@ export default class NanoGPT {
     private wpe?: TF.layers.Layer; // Position embeddings
     private drop: TF.layers.Layer; // Dropout
     private blocks: Block[];
-    private lnF: LayerNorm; // Final layer norm
+    private lnF: RMSNorm; // Final layer norm
     private ropeCache?: RoPECache;
     public readonly tf: typeof TF;
     public log: TrainingLogEntry[] = []; // Training log
@@ -67,7 +67,7 @@ export default class NanoGPT {
         }
 
         // Final layer norm
-        this.lnF = new LayerNorm(tf, [this.config.nEmbed], 1e-5, `final_layer_norm`);
+        this.lnF = new RMSNorm(tf, [this.config.nEmbed], 1e-8, `final_rms_norm`);
     }
 
     get variables(): TF.Variable[] {
@@ -86,7 +86,7 @@ export default class NanoGPT {
         for (let i = 0; i < this.blocks.length; i++) {
             this.blocks[i].saveWeights(map);
         }
-        map.set('final_layer_norm', this.lnF.getWeights());
+        map.set('final_rms_norm', this.lnF.getWeights());
         return map;
     }
 
@@ -96,7 +96,7 @@ export default class NanoGPT {
         for (let i = 0; i < this.blocks.length; i++) {
             this.blocks[i].loadWeights(weights);
         }
-        this.lnF.setWeights(weights.get('final_layer_norm') || []);
+        this.lnF.setWeights(weights.get('final_rms_norm') || []);
     }
 
     private inputPhase(idx: TF.Tensor, pastLen: number, training: boolean = false): TF.Tensor {

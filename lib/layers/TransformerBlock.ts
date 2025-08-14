@@ -2,14 +2,14 @@ import type TF from '@tensorflow/tfjs';
 import { GPTConfig } from '../config';
 import CausalSelfAttention, { KVCache } from './CausalSelfAttention';
 import MLP from './MLP';
-import LayerNorm from './LayerNorm';
 import RoPECache from './RoPECache';
+import RMSNorm from './RMSNorm';
 
 // Transformer block
 export default class Block {
-    private ln1: LayerNorm;
+    private ln1: RMSNorm;
     private attn: CausalSelfAttention;
-    private ln2: LayerNorm;
+    private ln2: RMSNorm;
     private mlp: MLP;
     private tf: typeof TF;
     private index: number;
@@ -20,11 +20,11 @@ export default class Block {
         this.tf = tf;
         this.index = index;
 
-        this.ln1 = new LayerNorm(tf, [config.nEmbed], 1e-5, `block_${this.index}_ln1`);
+        this.ln1 = new RMSNorm(tf, [config.nEmbed], 1e-8, `block_${this.index}_rms1`);
 
         this.attn = new CausalSelfAttention(this.tf, this.index, config, ropeCache);
 
-        this.ln2 = new LayerNorm(tf, [config.nEmbed], 1e-5, `block_${this.index}_ln2`);
+        this.ln2 = new RMSNorm(tf, [config.nEmbed], 1e-8, `block_${this.index}_rms2`);
 
         this.mlp = new MLP(this.tf, this.index, config);
     }
@@ -53,15 +53,15 @@ export default class Block {
     saveWeights(map: Map<string, TF.Tensor[]>): void {
         this.attn.saveWeights(map);
         this.mlp.saveWeights(map);
-        map.set(`block_${this.index}_ln1`, this.ln1.getWeights());
-        map.set(`block_${this.index}_ln2`, this.ln2.getWeights());
+        map.set(`block_${this.index}_rms1`, this.ln1.getWeights());
+        map.set(`block_${this.index}_rms2`, this.ln2.getWeights());
     }
 
     loadWeights(weights: Map<string, TF.Tensor[]>): void {
         this.attn.loadWeights(weights);
         this.mlp.loadWeights(weights);
-        this.ln1.setWeights(weights.get(`block_${this.index}_ln1`) || []);
-        this.ln2.setWeights(weights.get(`block_${this.index}_ln2`) || []);
+        this.ln1.setWeights(weights.get(`block_${this.index}_rms1`) || []);
+        this.ln2.setWeights(weights.get(`block_${this.index}_rms2`) || []);
     }
 
     private getMLPOutput(x: TF.Tensor, training: boolean): TF.Tensor {

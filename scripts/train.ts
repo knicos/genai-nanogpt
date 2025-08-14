@@ -142,7 +142,7 @@ async function train() {
     });
 
     await trainer.train(textData, {
-        prompt: 'What a great movie. It',
+        //prompt: 'What a great movie. It',
         maxSteps,
         logInterval: 10,
         validationSplit: 0.2,
