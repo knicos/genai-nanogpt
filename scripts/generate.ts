@@ -69,7 +69,7 @@ async function generate() {
         process.stdout.write(chalk.yellowBright(text));
     });
     await generator.generate(prompt, {
-        maxLength: 500,
+        maxLength: length,
         temperature,
     });
 

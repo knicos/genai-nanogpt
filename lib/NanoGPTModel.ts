@@ -4,6 +4,8 @@ import { defaultConfig, GPTConfig } from './config';
 import Block from './layers/TransformerBlock';
 import TiedEmbeddingOutputLayer from './layers/TiedEmbedding';
 import LayerNorm from './layers/LayerNorm';
+import { KVCache } from './layers/CausalSelfAttention';
+import RoPECache from './layers/RoPECache';
 
 export interface TrainingLogEntry {
     loss: number;
@@ -26,10 +28,11 @@ export interface GenerateOptions {
 export default class NanoGPT {
     public readonly config: GPTConfig;
     private wte: TiedEmbeddingOutputLayer; // Token embeddings
-    private wpe: TF.layers.Layer; // Position embeddings
+    private wpe?: TF.layers.Layer; // Position embeddings
     private drop: TF.layers.Layer; // Dropout
     private blocks: Block[];
     private lnF: LayerNorm; // Final layer norm
+    private ropeCache?: RoPECache;
     public readonly tf: typeof TF;
     public log: TrainingLogEntry[] = []; // Training log
 
@@ -44,19 +47,23 @@ export default class NanoGPT {
             name: 'token_embedding',
         });
 
-        this.wpe = this.tf.layers.embedding({
-            inputDim: this.config.blockSize,
-            outputDim: this.config.nEmbed,
-            name: 'positional_embedding',
-            embeddingsInitializer: this.tf.initializers.randomNormal({ mean: 0.0, stddev: 0.02 }),
-        });
+        if (this.config.useRope === false) {
+            this.wpe = this.tf.layers.embedding({
+                inputDim: this.config.blockSize,
+                outputDim: this.config.nEmbed,
+                name: 'positional_embedding',
+                embeddingsInitializer: this.tf.initializers.randomNormal({ mean: 0.0, stddev: 0.02 }),
+            });
+        } else {
+            this.ropeCache = new RoPECache(tf, this.config);
+        }
 
         this.drop = this.tf.layers.dropout({ rate: this.config.dropout });
 
         // Transformer blocks
         this.blocks = [];
         for (let i = 0; i < this.config.nLayer; i++) {
-            this.blocks.push(new Block(this.tf, i, this.config));
+            this.blocks.push(new Block(this.tf, i, this.config, this.ropeCache));
         }
 
         // Final layer norm
@@ -65,7 +72,7 @@ export default class NanoGPT {
 
     get variables(): TF.Variable[] {
         return [
-            ...this.wpe.trainableWeights.map((v) => v.read() as TF.Variable),
+            //...this.wpe.trainableWeights.map((v) => v.read() as TF.Variable),
             ...this.blocks.flatMap((b) => b.variables),
             ...this.lnF.trainableWeights.map((v) => v as TF.Variable),
             ...this.wte.variables,
@@ -75,7 +82,7 @@ export default class NanoGPT {
     public saveWeights(): Map<string, TF.Tensor[]> {
         const map = new Map<string, TF.Tensor[]>();
         map.set('token_embedding', this.wte.getWeights());
-        map.set('positional_embedding', this.wpe.getWeights());
+        if (this.wpe) map.set('positional_embedding', this.wpe.getWeights());
         for (let i = 0; i < this.blocks.length; i++) {
             this.blocks[i].saveWeights(map);
         }
@@ -85,25 +92,40 @@ export default class NanoGPT {
 
     public loadWeights(weights: Map<string, TF.Tensor[]>): void {
         this.wte.setWeights(weights.get('token_embedding') || []);
-        this.wpe.setWeights(weights.get('positional_embedding') || []);
+        if (this.wpe) this.wpe.setWeights(weights.get('positional_embedding') || []);
         for (let i = 0; i < this.blocks.length; i++) {
             this.blocks[i].loadWeights(weights);
         }
         this.lnF.setWeights(weights.get('final_layer_norm') || []);
     }
 
-    private inputPhase(idx: TF.Tensor, training: boolean = false): TF.Tensor {
+    private inputPhase(idx: TF.Tensor, pastLen: number, training: boolean = false): TF.Tensor {
         return this.tf.tidy(() => {
-            const [, seqLen] = idx.shape;
+            //const [, seqLen] = idx.shape;
+            //const maxCtx = this.config.blockSize;
+            //const posStart = Math.min(pastLen, maxCtx - seqLen);
 
             const tokEmb = this.wte.embed(idx) as TF.Tensor; // (b, t, n_embd)
-            const posIndices = this.tf.range(0, seqLen, 1, 'int32');
-            const posEmb = this.wpe.apply(posIndices) as TF.Tensor; // (b, t, n_embd)
 
-            const embSum = tokEmb.add(posEmb);
+            if (this.config.useRope === false) {
+                const [, seqLen] = idx.shape;
+                const maxCtx = this.config.blockSize;
+                // position_ids = (pastLen + arange(T)) % maxCtx    // stays in [0, blockSize)
+                const range = this.tf.range(0, seqLen, 1, 'int32'); // (t,)
+                const posIdx = this.tf.mod(
+                    this.tf.add(range, this.tf.scalar(pastLen, 'int32')),
+                    this.tf.scalar(maxCtx, 'int32')
+                ) as TF.Tensor;
+                const posEmb = this.wpe!.apply(posIdx) as TF.Tensor; // (b, t, n_embd)
 
-            const out = this.drop.apply(embSum, { training }) as TF.Tensor;
-            return out;
+                const embSum = tokEmb.add(posEmb);
+
+                const out = this.drop.apply(embSum, { training }) as TF.Tensor;
+                return out;
+            } else {
+                const out = this.drop.apply(tokEmb, { training }) as TF.Tensor;
+                return out;
+            }
         });
     }
 
@@ -130,7 +152,7 @@ export default class NanoGPT {
             block.trainable = value;
         }
 
-        this.wpe.trainable = value;
+        //this.wpe.trainable = value;
         this.lnF.trainable = value;
     }
 
@@ -182,22 +204,43 @@ export default class NanoGPT {
         idx: TF.Tensor,
         targets?: TF.Tensor,
         training = false,
-        includeAttention = false
+        includeAttention = false,
+        cache?: (KVCache | undefined)[]
     ): { logits: TF.Tensor; loss?: TF.Tensor; attention?: TF.Tensor } {
         this.validateInput(idx);
 
         return this.tf.tidy(() => {
             // Token and position embeddings
-            let x = this.inputPhase(idx, training);
+            const pastLen = cache?.[0]?.length ?? 0;
+            let x = this.inputPhase(idx, pastLen, training);
 
             const perLayerAtt: TF.Tensor[] = [];
 
+            if (cache && cache.length !== this.blocks.length) {
+                console.error('Cache', cache);
+                throw new Error(`Cache length ${cache.length} does not match number of blocks ${this.blocks.length}`);
+            }
+
             // Transformer blocks
-            for (const block of this.blocks) {
-                const { output, attention } = block.call(x, training, includeAttention);
+            for (let i = 0; i < this.blocks.length; i++) {
+                const block = this.blocks[i];
+                const {
+                    output,
+                    attention,
+                    cache: newCache,
+                } = block.call(x, training, includeAttention, cache ? cache[i] : undefined);
                 x = output;
                 if (includeAttention && attention) {
                     perLayerAtt.push(attention); // (B,T,T) already head-averaged
+                }
+
+                if (cache && newCache) {
+                    cache[i]?.k.dispose();
+                    cache[i]?.v.dispose();
+                    cache[i] = newCache; // Update cache for this block
+                } else if (newCache) {
+                    newCache.k.dispose();
+                    newCache.v.dispose();
                 }
             }
 
@@ -223,6 +266,7 @@ export default class NanoGPT {
 
     generate(
         idx: TF.Tensor,
+        cache?: (KVCache | undefined)[],
         options?: GenerateOptions
     ): { output: TF.Tensor; attention?: TF.Tensor; probabilities?: TF.Tensor } {
         const temperature = options?.temperature ?? 1.0;
@@ -252,7 +296,7 @@ export default class NanoGPT {
                       ])
                     : cropIdx;
 
-            const { logits, attention } = this.forward(padIdx, undefined, false, includeAttention);
+            const { logits, attention } = this.forward(padIdx, undefined, false, includeAttention, cache);
 
             // Focus only on the last time step
             const lastTimeStep = logits.shape[1]! - 1 - padding;
@@ -300,7 +344,7 @@ export default class NanoGPT {
 
     dispose() {
         this.wte.dispose();
-        this.wpe.dispose();
+        if (this.wpe) this.wpe.dispose();
         this.drop.dispose();
         this.blocks.forEach((block) => block.dispose());
         this.lnF.dispose();

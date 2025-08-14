@@ -9,6 +9,7 @@ export interface GPTConfig {
     biasInLinear: boolean;
     biasInLayerNorm: boolean;
     mlpFactor: number;
+    useRope: boolean;
 }
 
 // Default configuration
@@ -22,4 +23,5 @@ export const defaultConfig: GPTConfig = {
     biasInLinear: false,
     biasInLayerNorm: false,
     mlpFactor: 4,
+    useRope: false, // Use Rotary Position Embeddings
 };

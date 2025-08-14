@@ -103,12 +103,18 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
         tmodel.setStatus('warmup');
         dummyPassAsync(model)
             .then(() => {
-                tmodel.setStatus('awaitingTokens');
-                tmodel.tokeniser.once('trainStatus', (status) => {
-                    if (status === 'trained') {
-                        tmodel.setStatus('ready');
-                    }
-                });
+                if (tmodel.tokeniser.trained) {
+                    tmodel.setStatus('ready');
+                } else {
+                    tmodel.setStatus('awaitingTokens');
+                    console.log('Model ready', tmodel.tokeniser);
+                    tmodel.tokeniser.once('trainStatus', (status) => {
+                        if (status === 'trained') {
+                            tmodel.setStatus('ready');
+                        }
+                    });
+                }
+                console.log('Dummy pass complete, model initialized.');
             })
             .catch((err) => {
                 tmodel.setStatus('error');

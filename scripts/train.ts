@@ -91,10 +91,11 @@ function constructModel(modelPath?: string): TeachableLLM {
     const model = TeachableLLM.create(tf, {
         vocabSize: 200,
         blockSize: 128, // Context window size
-        nLayer: 6,
+        nLayer: 4,
         nHead: 3,
         nEmbed: 192,
         dropout: 0.0,
+        useRope: true,
     });
     return model;
 }
@@ -112,9 +113,9 @@ async function train() {
     const textData = await loadTextData(rawdata);
 
     const model = constructModel(modelName);
-    await waitForModel(model);
     const tokeniser = model.tokeniser;
     await tokeniser.train(textData);
+    await waitForModel(model);
 
     const trainer = model.trainer();
 

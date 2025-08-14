@@ -1,6 +1,7 @@
 import { ITokeniser } from '@base/tokeniser/type';
 import NanoGPT, { GenerateOptions } from '../NanoGPTModel';
 import type TF from '@tensorflow/tfjs';
+import { KVCache } from '@base/layers/CausalSelfAttention';
 
 export async function generateText(
     tokeniser: ITokeniser,
@@ -19,19 +20,28 @@ export async function generateText(
     // Tokenise the prompt
     const tokenisedPrompt = await tokeniser.tokenise([prompt], true);
 
+    const cache: KVCache[] | undefined = model.config.useRope
+        ? new Array(model.config.nLayer).fill(undefined)
+        : undefined;
+
     const inputTensor = model.tf.tidy(() => {
         let inputTensor: TF.Tensor = model.tf.tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
+        let outputTensor = inputTensor;
 
         // Generate text
         for (let i = 0; i < length; i++) {
-            const { output: generatedTokens } = model.generate(inputTensor, options);
+            const { output: generatedTokens } = model.generate(inputTensor, cache, options);
             const oldInput = inputTensor;
-            inputTensor = model.tf.concat([inputTensor, generatedTokens], 1);
+            const oldOutput = outputTensor;
+            outputTensor = model.tf.concat([outputTensor, generatedTokens], 1);
+
+            inputTensor = cache ? generatedTokens : model.tf.concat([inputTensor, generatedTokens], 1);
             oldInput.dispose();
-            generatedTokens.dispose();
+            oldOutput.dispose();
+            if (!cache) generatedTokens.dispose();
         }
 
-        return inputTensor;
+        return outputTensor;
     });
 
     const tokenArray = (await inputTensor.array()) as number[][];

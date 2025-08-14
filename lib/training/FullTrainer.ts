@@ -46,7 +46,9 @@ export default class FullTrainer extends GPTTrainer {
         };
         this.lastState = state;
 
+        console.log('Starting training with options:');
         this.dummyPass();
+        console.log('Dummy pass complete');
         this.model.trainable = true;
 
         const startTime = Date.now();
