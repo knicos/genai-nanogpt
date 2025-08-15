@@ -21,12 +21,18 @@ export default class RoPECache {
         const basePow = this.tf.pow(this.tf.scalar(this.ropeBase, 'float32'), exponent);
         this.ropeInvFreq = this.tf.reciprocal(basePow); // [rotaryDim/2]
 
+        exponent.dispose();
+        basePow.dispose();
+        i.dispose();
+
         if (this.config.useRope === false) {
             this.ropeCos = null;
             this.ropeSin = null;
             this.ropeCacheLen = 0;
         } else {
-            this.ensureRopeCache(this.config.blockSize * 4);
+            this.tf.tidy(() => {
+                this.ensureRopeCache(this.config.blockSize * 4);
+            });
         }
     }
 
@@ -52,31 +58,38 @@ export default class RoPECache {
 
         const half = rd / 2;
 
-        const cos = (this.ropeCos as TF.Tensor).slice([pastLen, 0, 0], [Tcur, half, 1]);
-        const sin = (this.ropeSin as TF.Tensor).slice([pastLen, 0, 0], [Tcur, half, 1]);
-        const cosB = cos.reshape([1, 1, Tcur, half, 1]);
-        const sinB = sin.reshape([1, 1, Tcur, half, 1]);
+        // Use rank-4 tensors for WebGL compatibility (avoid 5D broadcasting)
+        const cos = (this.ropeCos as TF.Tensor).slice([pastLen, 0, 0], [Tcur, half, 1]).reshape([1, 1, Tcur, half]);
+        const sin = (this.ropeSin as TF.Tensor).slice([pastLen, 0, 0], [Tcur, half, 1]).reshape([1, 1, Tcur, half]);
 
-        const both = this.tf.concat([q, k], 0);
-        const B2 = both.shape[0]!;
-        const nh = both.shape[1]!;
+        const B = q.shape[0]!;
+        const nh = q.shape[1]!;
 
-        const rotPart = both.slice([0, 0, 0, 0], [B2, nh, Tcur, rd]);
-        const restPart = rd < hs ? both.slice([0, 0, 0, rd], [B2, nh, Tcur, hs - rd]) : null;
+        const evenIdx = this.tf.range(0, rd, 2, 'int32');
+        const oddIdx = this.tf.range(1, rd, 2, 'int32');
 
-        const pairs = rotPart.reshape([B2, nh, Tcur, half, 2]);
-        const even = pairs.slice([0, 0, 0, 0, 0], [B2, nh, Tcur, half, 1]);
-        const odd = pairs.slice([0, 0, 0, 0, 1], [B2, nh, Tcur, half, 1]);
+        const rotate = (x: TF.Tensor) => {
+            const rotPart = x.slice([0, 0, 0, 0], [B, nh, Tcur, rd]);
+            const restPart = rd < hs ? x.slice([0, 0, 0, rd], [B, nh, Tcur, hs - rd]) : null;
 
-        const evenRot = even.mul(cosB).sub(odd.mul(sinB));
-        const oddRot = odd.mul(cosB).add(even.mul(sinB));
+            const even = this.tf.gather(rotPart, evenIdx, 3); // [B, nh, Tcur, half]
+            const odd = this.tf.gather(rotPart, oddIdx, 3); // [B, nh, Tcur, half]
 
-        const rotated = this.tf.concat([evenRot, oddRot], -1).reshape([B2, nh, Tcur, rd]);
+            const evenRot = even.mul(cos).sub(odd.mul(sin));
+            const oddRot = odd.mul(cos).add(even.mul(sin));
 
-        const merged = restPart ? this.tf.concat([rotated, restPart], 3) : rotated;
-        const B = B2 / 2;
-        const qR = merged.slice([0, 0, 0, 0], [B, nh, Tcur, hs]);
-        const kR = merged.slice([B, 0, 0, 0], [B, nh, Tcur, hs]);
+            // Interleave (even', odd') -> last dim size rd, without elementwise ops on rank-5
+            const stacked = this.tf.stack([evenRot, oddRot], -1); // [B, nh, Tcur, half, 2]
+            const rotated = stacked.reshape([B, nh, Tcur, rd]); // [B, nh, Tcur, rd]
+
+            return restPart ? this.tf.concat([rotated, restPart], 3) : rotated;
+        };
+
+        const qR = rotate(q);
+        const kR = rotate(k);
+
+        evenIdx.dispose();
+        oddIdx.dispose();
 
         return [qR, kR];
     }

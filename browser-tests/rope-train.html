@@ -1,0 +1,65 @@
+<html>
+    <head>
+        <title>TM Language Model</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script
+            type="module"
+            src="/dist/main.js"
+        ></script>
+        <style>
+            body {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            #webcam {
+                margin-bottom: 20px;
+            }
+            #prediction {
+                font-size: 24px;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <script type="module">
+            import { TeachableLLM, waitForModel } from '/dist/main.js';
+
+            const model = TeachableLLM.create(tf, {
+                vocabSize: 20,
+                blockSize: 32, // Context window size
+                nLayer: 1,
+                nHead: 2,
+                nEmbed: 32,
+                dropout: 0.0,
+                useRope: true,
+            });
+
+            const textData = [
+                'The quick brown fox jumps over the lazy dog.',
+                'A journey of a thousand miles begins with a single step.',
+                'To be or not to be, that is the question.',
+                'All that glitters is not gold.',
+                'In the end, we will remember not the words of our enemies, but the silence of our friends.',
+            ];
+
+            const tokeniser = model.tokeniser;
+            await tokeniser.train(textData);
+            await waitForModel(model);
+
+            const trainer = model.trainer();
+
+            await trainer.train(textData, {
+                //prompt: 'What a great movie. It',
+                maxSteps: 100,
+                logInterval: 10,
+                validationSplit: 0.2,
+                desiredLoss: 0.1,
+                batchSize: 8,
+                learningRate: 0.001,
+            });
+
+            console.log('Training complete');
+        </script>
+    </body>
+</html>
