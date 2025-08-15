@@ -6,6 +6,7 @@ import { KVCache } from './layers/CausalSelfAttention';
 
 export interface IGenerateOptions extends GenerateOptions {
     maxLength?: number; /// Maximum length of the generated text
+    noCache?: boolean;
 }
 
 export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
@@ -112,9 +113,10 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
     public async generate(prompt?: string, options?: IGenerateOptions): Promise<string> {
         this.emit('start');
-        const result = this.model.config.useRope
-            ? this.generateCache(prompt, options)
-            : this.generateNoCache(prompt, options);
+        const result =
+            this.model.config.useRope && !options?.noCache
+                ? this.generateCache(prompt, options)
+                : this.generateNoCache(prompt, options);
         this.emit('stop');
         return result;
     }

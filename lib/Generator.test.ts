@@ -84,6 +84,36 @@ describe('Generator', () => {
         expect(emittedAttention[0][0]).toHaveLength(prompt.length);
     });
 
+    it('emits attention with RoPE and KV cache', async ({ expect }) => {
+        const model = new NanoGPT(tf, {
+            vocabSize: 20,
+            nEmbed: 64,
+            nLayer: 1,
+            nHead: 2,
+            blockSize: 32,
+            dropout: 0.1,
+            useRope: true,
+        });
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const emittedAttention: number[][][] = [];
+        const emittedTokens: number[][] = [];
+        generator.on('tokens', (tokens, _1, attention) => {
+            emittedTokens.push(tokens);
+            if (attention) {
+                emittedAttention.push(attention);
+            }
+        });
+
+        const prompt = 'abcde';
+        await generator.generate(prompt, { maxLength: 10, includeAttention: true });
+
+        expect(emittedAttention).toHaveLength(emittedTokens.length);
+        expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
+        expect(emittedAttention[0][0]).toHaveLength(prompt.length);
+    });
+
     it('should emit probabilities when requested', async ({ expect }) => {
         const model = new NanoGPT(tf, {
             vocabSize: 20,

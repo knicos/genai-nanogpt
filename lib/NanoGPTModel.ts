@@ -184,19 +184,53 @@ export default class NanoGPT {
             if (attentions.length === 0) {
                 throw new Error('No attentions for rollout');
             }
-            const B = attentions[0].shape[0]!;
-            const T = attentions[0].shape[1]!;
-            const eye = this.tf.eye(T, T).expandDims(0); // (1,T,T)
-            let rollout = eye.tile([B, 1, 1]); // (B,T,T) start as identity
-            for (const att of attentions) {
-                // Add residual path
-                let a = att.add(eye); // broadcast add
-                // Row-normalize
-                a = a.div(a.sum(-1, true));
-                // Propagate
-                rollout = a.matMul(rollout);
+            const [B, Q, K] = attentions[0].shape as number[];
+
+            // Validate shapes are consistent
+            for (const a of attentions) {
+                const [b2, q2, k2] = a.shape as number[];
+                if (b2 !== B || q2 !== Q || k2 !== K) {
+                    throw new Error(
+                        `Inconsistent attention shapes in rollout: expected [${B},${Q},${K}] got [${b2},${q2},${k2}]`
+                    );
+                }
             }
-            return rollout;
+
+            if (Q === K) {
+                // Full square attentions: standard rollout
+                const eye = this.tf.eye(K, K).expandDims(0); // (1,K,K)
+                let rollout = eye.tile([B, 1, 1]); // (B,K,K)
+                for (const att of attentions) {
+                    const a = att.add(eye);
+                    const aNorm = a.div(a.sum(-1, true)); // (B,K,K)
+                    rollout = aNorm.matMul(rollout); // (B,K,K)
+                }
+                return rollout;
+            }
+
+            if (Q === 1) {
+                // Incremental (KV cache) attentions: only last row available per layer.
+                // Compose a last-token rollout by combining layers' last-row distributions
+                // with residual and renormalization.
+                let rolloutRow: TF.Tensor | null = null; // (B,1,K)
+                const lastIndex = this.tf.tensor1d([K - 1], 'int32');
+                const lastOneHot = this.tf.oneHot(lastIndex, K).reshape([1, 1, K]).tile([B, 1, 1]); // (B,1,K)
+                lastIndex.dispose();
+
+                for (const att of attentions) {
+                    let a = att.add(lastOneHot); // residual path on last position
+                    a = a.div(a.sum(-1, true)); // row-normalize (B,1,K)
+                    if (rolloutRow == null) {
+                        rolloutRow = a;
+                    } else {
+                        rolloutRow = rolloutRow.mul(a);
+                        rolloutRow = rolloutRow.div(rolloutRow.sum(-1, true)); // renormalize
+                    }
+                }
+                return rolloutRow!;
+            }
+
+            throw new Error(`Unsupported attention shapes for rollout: [B=${B}, Q=${Q}, K=${K}]`);
         });
     }
 
