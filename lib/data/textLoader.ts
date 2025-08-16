@@ -16,13 +16,31 @@ function checkFirstRowIsHeader(row: string[]): boolean {
     return row.every((cell) => cell.length < 64);
 }
 
+function extname(file: string): string {
+    return file.split('.').pop() || '';
+}
+
+function getFileType(file: string): string {
+    const ext = extname(file);
+    switch (ext) {
+        case 'parquet':
+            return 'application/parquet';
+        case 'csv':
+            return 'text/csv';
+        case 'txt':
+            return 'text/plain';
+        default:
+            return 'unknown';
+    }
+}
+
 export default async function loadTextData(file: File, options?: DataOptions): Promise<string[]> {
-    const type = file.type;
+    const type = file.type !== '' ? file.type : getFileType(file.name);
     if (type === 'application/parquet') {
         return loadParquet(file, options?.maxSize, options?.column);
     }
     if (type === 'text/csv') {
-        const data = !('FileReaderSync' in global) ? await file.text() : file;
+        const data = await file.text();
         return new Promise<string[]>((resolve, reject) => {
             papa.parse<string[]>(data, {
                 header: false,
@@ -37,7 +55,7 @@ export default async function loadTextData(file: File, options?: DataOptions): P
                         resolve(filtered.map((row) => row[column]));
                     }
                 },
-                error: (error) => {
+                error: (error: unknown) => {
                     reject(error);
                 },
             });

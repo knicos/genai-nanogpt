@@ -91,7 +91,7 @@ const argv = yargs(hideBin(process.argv))
         alias: 'c',
         type: 'number',
         description: 'Context window size in tokens',
-        default: 32,
+        default: 128,
     })
     .option('embedding', {
         type: 'number',
