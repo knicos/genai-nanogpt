@@ -23,7 +23,7 @@
         "test": "vitest",
         "ci:test": "vitest --coverage --reporter=junit --outputFile=junit.xml",
         "coverage": "vitest run --coverage",
-        "train": "tsx scripts/train.ts --batch 64",
+        "train": "tsx scripts/train.ts --batch 32",
         "generate": "tsx scripts/generate.ts",
         "evaluate": "tsx scripts/evaluate.ts",
         "debug": "tsx scripts/debug.ts"
@@ -52,6 +52,7 @@
         "yargs": "^18.0.0"
     },
     "dependencies": {
+        "@dsnp/parquetjs": "^1.8.7",
         "eventemitter3": "^5.0.1",
         "jszip": "^3.10.1",
         "papaparse": "^5.5.3"

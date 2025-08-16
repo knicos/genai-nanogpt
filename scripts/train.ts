@@ -2,7 +2,7 @@
 import * as tf from '@tensorflow/tfjs-node-gpu';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import loadTextData from '../lib/utilities/textLoader';
+import loadTextData from '../lib/data/textLoader';
 import fs from 'fs';
 import path from 'path';
 import { TrainingLogEntry } from '../lib/NanoGPTModel';
@@ -11,6 +11,25 @@ import dayjs from 'dayjs';
 import duration from 'dayjs/plugin/duration';
 import TeachableLLM from '../lib/TeachableLLM';
 import waitForModel from '../lib/utilities/waitForModel';
+import { GPTConfig } from '../lib/config';
+
+function extname(file: string): string {
+    return file.split('.').pop() || '';
+}
+
+function getFileType(file: string): string {
+    const ext = extname(file);
+    switch (ext) {
+        case 'parquet':
+            return 'application/parquet';
+        case 'csv':
+            return 'text/csv';
+        case 'txt':
+            return 'text/plain';
+        default:
+            return 'unknown';
+    }
+}
 
 dayjs.extend(duration);
 
@@ -22,6 +41,12 @@ const argv = yargs(hideBin(process.argv))
         type: 'number',
         description: 'Batch size for training',
         default: 32,
+    })
+    .option('prompt', {
+        alias: 'p',
+        type: 'string',
+        description: 'Prompt for text generation',
+        default: '',
     })
     .option('rate', {
         alias: 'r',
@@ -68,6 +93,16 @@ const argv = yargs(hideBin(process.argv))
         description: 'Context window size in tokens',
         default: 32,
     })
+    .option('embedding', {
+        type: 'number',
+        description: 'Embedding size for the model',
+        default: 192,
+    })
+    .option('heads', {
+        type: 'number',
+        description: 'Number of attention heads',
+        default: 6,
+    })
     .option('layers', {
         type: 'number',
         description: 'Number of transformer layers',
@@ -80,7 +115,7 @@ const argv = yargs(hideBin(process.argv))
     })
     .parseSync();
 
-function constructModel(modelPath?: string): TeachableLLM {
+function constructModel(modelPath?: string, partialConfig?: Partial<GPTConfig>): TeachableLLM {
     if (modelPath) {
         const modelBlob = fs.readFileSync(path.resolve(modelPath));
         console.log('Loading model from:', modelPath);
@@ -91,17 +126,31 @@ function constructModel(modelPath?: string): TeachableLLM {
     const model = TeachableLLM.create(tf, {
         vocabSize: 200,
         blockSize: 128, // Context window size
-        nLayer: 4,
-        nHead: 3,
+        nLayer: 8,
+        nHead: 6,
         nEmbed: 192,
-        dropout: 0.0,
+        dropout: 0.1,
         useRope: true,
+        ...partialConfig,
     });
     return model;
 }
 
 async function train() {
-    const { batch, data, maxSteps, loss, autosave, rate, model: modelName } = argv;
+    const {
+        batch,
+        data,
+        maxSteps,
+        loss,
+        autosave,
+        rate,
+        model: modelName,
+        prompt,
+        layers,
+        context,
+        embedding,
+        heads,
+    } = argv;
 
     if (data === '') {
         console.error('Error: --data option is required');
@@ -109,13 +158,19 @@ async function train() {
         return;
     }
 
-    const rawdata = fs.readFileSync(path.resolve(data), 'utf8');
-    const textData = await loadTextData(rawdata);
+    const rawdata = fs.readFileSync(path.resolve(data));
+    const textData = await loadTextData(new File([rawdata], data, { type: getFileType(data) }));
 
-    const model = constructModel(modelName);
+    const model = constructModel(modelName, { nLayer: layers, blockSize: context, nEmbed: embedding, nHead: heads });
     const tokeniser = model.tokeniser;
     await tokeniser.train(textData);
     await waitForModel(model);
+
+    console.log('Model parameters', model.getNumParams());
+    console.log(
+        'Training samples',
+        textData.reduce((acc, curr) => acc + curr.length, 0)
+    );
 
     const trainer = model.trainer();
 
@@ -142,7 +197,7 @@ async function train() {
     });
 
     await trainer.train(textData, {
-        //prompt: 'What a great movie. It',
+        prompt: prompt.length === 0 ? undefined : prompt,
         maxSteps,
         logInterval: 10,
         validationSplit: 0.2,

@@ -362,16 +362,16 @@ export default class NanoGPT {
     }
 
     getNumParams(): number {
-        const embeddingParams = this.config.vocabSize * this.config.nEmbed + this.config.blockSize * this.config.nEmbed;
+        const embeddingParams = this.config.vocabSize * this.config.nEmbed;
         const attentionParams =
             this.config.nLayer *
             (4 * this.config.nEmbed * this.config.nEmbed + // qkv + proj
                 2 * this.config.nEmbed); // layer norms
         const mlpParams =
             this.config.nLayer *
-            (4 * this.config.nEmbed * this.config.nEmbed + // fc
-                this.config.nEmbed * 4 * this.config.nEmbed); // proj
-        const finalParams = this.config.nEmbed + this.config.vocabSize * this.config.nEmbed;
+            (this.config.mlpFactor * this.config.nEmbed * this.config.nEmbed + // fc
+                this.config.nEmbed * this.config.mlpFactor * this.config.nEmbed); // proj
+        const finalParams = this.config.nEmbed;
 
         return embeddingParams + attentionParams + mlpParams + finalParams;
     }
