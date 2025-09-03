@@ -1,6 +1,7 @@
 import papa from 'papaparse';
 import { loadParquet } from './parquet';
 import { loadPDF } from './pdf';
+import { loadDOCX } from './docx';
 
 export interface DataOptions {
     maxSize?: number;
@@ -32,6 +33,8 @@ function getFileType(file: string): string {
             return 'text/plain';
         case 'pdf':
             return 'application/pdf';
+        case 'docx':
+            return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
         default:
             return 'unknown';
     }
@@ -44,6 +47,9 @@ export default async function loadTextData(file: File, options?: DataOptions): P
     }
     if (type === 'application/pdf') {
         return loadPDF(file, options?.maxSize);
+    }
+    if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        return loadDOCX(file);
     }
     if (type === 'text/csv') {
         const data = await file.text();
