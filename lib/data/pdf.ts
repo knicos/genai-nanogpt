@@ -1,8 +1,16 @@
 const MAX_SIZE = 100 * 1024 * 1024; // 60 MB
 
-export async function loadPDF(file: File, maxSize = MAX_SIZE): Promise<string[]> {
+export async function loadPDF(file: Blob | Uint8Array, maxSize = MAX_SIZE): Promise<string[]> {
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    const loadingTask = pdfjsLib.getDocument({ data: await file.arrayBuffer() });
+
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+            'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
+            import.meta.url
+        ).toString();
+    }
+
+    const loadingTask = pdfjsLib.getDocument({ data: file instanceof Blob ? await file.arrayBuffer() : file });
     const pdf = await loadingTask.promise;
     const numPages = pdf.numPages;
 
@@ -12,7 +20,8 @@ export async function loadPDF(file: File, maxSize = MAX_SIZE): Promise<string[]>
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         const textItems = textContent.items as Array<{ str: string }>;
-        const pageText = textItems.map((item) => item.str).join(' ');
+        const filtered = textItems.filter((item) => item.str.trim().length > 10);
+        const pageText = filtered.map((item) => item.str).join(' ');
         result.push(pageText);
         totalSize += pageText.length;
         if (totalSize > maxSize) break;
