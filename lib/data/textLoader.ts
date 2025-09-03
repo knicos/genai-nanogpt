@@ -1,5 +1,6 @@
 import papa from 'papaparse';
 import { loadParquet } from './parquet';
+import { loadPDF } from './pdf';
 
 export interface DataOptions {
     maxSize?: number;
@@ -29,6 +30,8 @@ function getFileType(file: string): string {
             return 'text/csv';
         case 'txt':
             return 'text/plain';
+        case 'pdf':
+            return 'application/pdf';
         default:
             return 'unknown';
     }
@@ -38,6 +41,9 @@ export default async function loadTextData(file: File, options?: DataOptions): P
     const type = file.type !== '' ? file.type : getFileType(file.name);
     if (type === 'application/parquet') {
         return loadParquet(file, options?.maxSize, options?.column);
+    }
+    if (type === 'application/pdf') {
+        return loadPDF(file, options?.maxSize);
     }
     if (type === 'text/csv') {
         const data = await file.text();
