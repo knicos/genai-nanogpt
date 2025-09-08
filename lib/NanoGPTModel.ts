@@ -6,6 +6,7 @@ import TiedEmbeddingOutputLayer from './layers/TiedEmbedding';
 import { KVCache } from './layers/CausalSelfAttention';
 import RoPECache from './layers/RoPECache';
 import RMSNorm from './layers/RMSNorm';
+import { estimateParameterCount } from './utilities/parameters';
 
 export interface TrainingLogEntry {
     loss: number;
@@ -362,18 +363,7 @@ export default class NanoGPT {
     }
 
     getNumParams(): number {
-        const embeddingParams = this.config.vocabSize * this.config.nEmbed;
-        const attentionParams =
-            this.config.nLayer *
-            (4 * this.config.nEmbed * this.config.nEmbed + // qkv + proj
-                2 * this.config.nEmbed); // layer norms
-        const mlpParams =
-            this.config.nLayer *
-            (this.config.mlpFactor * this.config.nEmbed * this.config.nEmbed + // fc
-                this.config.nEmbed * this.config.mlpFactor * this.config.nEmbed); // proj
-        const finalParams = this.config.nEmbed;
-
-        return embeddingParams + attentionParams + mlpParams + finalParams;
+        return estimateParameterCount(this.config);
     }
 
     dispose() {
