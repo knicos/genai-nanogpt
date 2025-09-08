@@ -27,7 +27,7 @@ describe('DatasetBuilder', () => {
         const value: { xs: tf.Tensor; ys: tf.Tensor } = firstBatch.value;
         expect(value).toBeDefined();
         expect(value.xs.shape).toEqual([2, blockSize]);
-        expect(value.ys.shape).toEqual([2, blockSize, mockTokenizer.vocabSize]);
+        expect(value.ys.shape).toEqual([2, blockSize]); // , mockTokenizer.vocabSize]);
 
         for (let i = 0; i < 10; i++) {
             const nextBatch = await iterator.next();
@@ -63,6 +63,6 @@ describe('DatasetBuilder', () => {
         const value: { xs: tf.Tensor; ys: tf.Tensor } = firstBatch.value;
         expect(value).toBeDefined();
         expect(value.xs.shape).toEqual([2, blockSize]);
-        expect(value.ys.shape).toEqual([2, blockSize, mockTokenizer.vocabSize]);
+        expect(value.ys.shape).toEqual([2, blockSize]); //, mockTokenizer.vocabSize]);
     });
 });

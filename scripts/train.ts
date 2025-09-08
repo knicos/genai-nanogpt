@@ -13,6 +13,8 @@ import TeachableLLM from '../lib/TeachableLLM';
 import waitForModel from '../lib/utilities/waitForModel';
 import { GPTConfig } from '../lib/config';
 
+import '../lib/ops/node/sparseCrossEntropy'; // Register the kernel
+
 function extname(file: string): string {
     return file.split('.').pop() || '';
 }

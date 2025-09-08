@@ -23,7 +23,7 @@
         "test": "vitest",
         "ci:test": "vitest --coverage --reporter=junit --outputFile=junit.xml",
         "coverage": "vitest run --coverage",
-        "train": "tsx scripts/train.ts --batch 32",
+        "train": "tsx scripts/train.ts",
         "generate": "tsx scripts/generate.ts",
         "evaluate": "tsx scripts/evaluate.ts",
         "debug": "tsx scripts/debug.ts"
@@ -33,6 +33,7 @@
     },
     "devDependencies": {
         "@eslint/js": "^9.32.0",
+        "@playwright/test": "^1.55.0",
         "@tensorflow/tfjs-node-gpu": "^4.22.0",
         "@types/node": "^22.13.14",
         "@types/papaparse": "^5.3.16",

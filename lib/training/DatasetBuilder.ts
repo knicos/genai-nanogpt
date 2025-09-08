@@ -48,7 +48,7 @@ export class DatasetBuilder {
                 const batchData = batch as { xs: TF.Tensor; ys: TF.Tensor };
                 return this.tf.tidy(() => ({
                     xs: batchData.xs.cast('int32'),
-                    ys: this.tf.oneHot(batchData.ys.cast('int32'), this.tokenizer.vocabSize),
+                    ys: batchData.ys.cast('int32'), // this.tf.oneHot(batchData.ys.cast('int32'), this.tokenizer.vocabSize),
                 }));
             })
             .prefetch(2); // Smaller prefetch to reduce memory pressure

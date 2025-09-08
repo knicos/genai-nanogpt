@@ -14,3 +14,6 @@ export {
     estimateResources,
     validateConfig,
 } from './utilities/parameters';
+
+import './ops/scatterSub';
+import './ops/gatherSub';

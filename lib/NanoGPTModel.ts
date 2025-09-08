@@ -7,6 +7,7 @@ import { KVCache } from './layers/CausalSelfAttention';
 import RoPECache from './layers/RoPECache';
 import RMSNorm from './layers/RMSNorm';
 import { estimateParameterCount } from './utilities/parameters';
+import { createSoftmaxCrossEntropyWithGrad } from './training/sparseCrossEntropy';
 
 export interface TrainingLogEntry {
     loss: number;
@@ -171,7 +172,9 @@ export default class NanoGPT {
 
     private calculateLoss(logits: TF.Tensor, targets: TF.Tensor): TF.Tensor {
         try {
-            return this.tf.losses.softmaxCrossEntropy(targets, logits, this.tf.Reduction.MEAN);
+            //return this.tf.losses.softmaxCrossEntropy(targets, logits, this.tf.Reduction.MEAN);
+            const lossFn = createSoftmaxCrossEntropyWithGrad();
+            return lossFn(logits, targets).mean();
         } catch (error) {
             console.error('Error computing loss:', error);
             throw new Error(`Loss computation failed: ${error}`);

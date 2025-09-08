@@ -134,7 +134,7 @@ export default abstract class GPTTrainer {
     protected dummyPass(): void {
         // Send a dummy input to initialize the model
         const dummyBatch = this.tf.zeros([1, this.model.config.blockSize], 'int32');
-        const dummyTargets = this.tf.zeros([1, this.model.config.blockSize, this.model.config.vocabSize]);
+        const dummyTargets = this.tf.zeros([1, this.model.config.blockSize], 'int32');
 
         try {
             const l = this.trainStep({ xs: dummyBatch, ys: dummyTargets }, true);
