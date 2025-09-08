@@ -56,4 +56,27 @@ describe('CharTokeniser Tests', () => {
 
         expect(tokens).toContain('<unk>');
     });
+
+    it('replaces <pad> if train called again', async ({ expect }) => {
+        const charTokeniser = new CharTokeniser(20);
+
+        const textData1 = ['hello world', 'hello again'];
+        const textData2 = ['short', 'sort'];
+
+        await charTokeniser.train(textData1);
+
+        const vocabAfterFirstTrain = [...charTokeniser.vocab];
+
+        await charTokeniser.train(textData2);
+
+        const vocabAfterSecondTrain = [...charTokeniser.vocab];
+
+        expect(vocabAfterFirstTrain).not.toEqual(vocabAfterSecondTrain);
+        expect(vocabAfterSecondTrain).toContain('s');
+        expect(vocabAfterSecondTrain).toContain('o');
+        expect(vocabAfterSecondTrain).toContain('r');
+        expect(vocabAfterSecondTrain).toContain('t');
+        expect(vocabAfterFirstTrain).toHaveLength(20);
+        expect(vocabAfterSecondTrain).toHaveLength(20);
+    });
 });
