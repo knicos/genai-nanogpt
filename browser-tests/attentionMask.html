@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>EfficientScatterSub WebGL Test</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script
+            type="module"
+            src="../dist/ops/attentionMask.js"
+        ></script>
+    </head>
+    <body>
+        <script type="module">
+            async function cpuVersion() {
+                await tf.setBackend('cpu');
+                const q = tf.tensor4d(
+                    [
+                        [
+                            [
+                                [0.1, 0.2],
+                                [0.3, 0.4],
+                            ],
+                        ],
+                    ],
+                    [1, 1, 2, 2]
+                ); // (1,1,T,hs)
+                const k = tf.tensor4d(
+                    [
+                        [
+                            [
+                                [0.5, 0.6],
+                                [0.7, 0.8],
+                            ],
+                        ],
+                    ],
+                    [1, 1, 2, 2]
+                ); // (1,1,T,hs)
+                const mask = tf.tensor2d(
+                    [
+                        [0, -1e9],
+                        [0, 0],
+                    ],
+                    [2, 2]
+                ); // (T,T)
+                const divisor = 0.5;
+
+                // Custom op
+                const custom = tf.engine().runKernel('AttentionMask', { q, k, mask }, { divisor });
+                const customArr = await custom.array();
+                return customArr;
+            }
+
+            async function gpuVersion() {
+                await tf.setBackend('webgl');
+                const q = tf.tensor4d(
+                    [
+                        [
+                            [
+                                [0.1, 0.2],
+                                [0.3, 0.4],
+                            ],
+                        ],
+                    ],
+                    [1, 1, 2, 2]
+                ); // (1,1,T,hs)
+                const k = tf.tensor4d(
+                    [
+                        [
+                            [
+                                [0.5, 0.6],
+                                [0.7, 0.8],
+                            ],
+                        ],
+                    ],
+                    [1, 1, 2, 2]
+                ); // (1,1,T,hs)
+                const mask = tf.tensor2d(
+                    [
+                        [0, -1e9],
+                        [0, 0],
+                    ],
+                    [2, 2]
+                ); // (T,T)
+                const divisor = 0.5;
+
+                // Custom op
+                const custom = tf.engine().runKernel('AttentionMask', { q, k, mask }, { divisor });
+                const customArr = await custom.array();
+                return customArr;
+            }
+
+            async function runTest() {
+                const customArr = await gpuVersion();
+                const manualArr = await cpuVersion();
+
+                // Compare arrays
+                const match = JSON.stringify(manualArr) === JSON.stringify(customArr);
+                document.body.innerText = match ? 'PASS' : 'FAIL';
+                window.testResult = { match, manualArr, customArr };
+            }
+            runTest();
+        </script>
+    </body>
+</html>

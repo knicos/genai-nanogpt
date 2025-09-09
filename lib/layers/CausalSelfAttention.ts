@@ -1,6 +1,7 @@
 import type TF from '@tensorflow/tfjs';
 import { GPTConfig } from '../config';
 import RoPECache from './RoPECache';
+import { attentionMask } from '@base/ops/attentionMask';
 
 export type KVCache = {
     k: TF.Tensor; // [B, nHead, T_cache, headDim]
@@ -19,7 +20,7 @@ export default class CausalSelfAttention {
     private bias: TF.Tensor;
     private maskInf: TF.Tensor;
     private tf: typeof TF;
-    private divisor: TF.Tensor;
+    private divisor: number;
     private index: number;
     private _trainable: boolean = true;
 
@@ -58,7 +59,7 @@ export default class CausalSelfAttention {
 
         // Causal mask to ensure that attention is only applied to the left in the input sequence
         this.bias = this.tf.linalg.bandPart(this.tf.ones([config.blockSize, config.blockSize]), -1, 0).cast('bool');
-        this.divisor = this.tf.scalar(1 / Math.sqrt(config.nEmbed / config.nHead)); // Scaling factor for attention scores
+        this.divisor = 1 / Math.sqrt(config.nEmbed / config.nHead); // Scaling factor for attention scores
         const zeros = this.tf.zeros([config.blockSize, config.blockSize]);
         // It must be negative infinity for softmax to ignore these positions
         const negInf = this.tf.fill([config.blockSize, config.blockSize], Number.NEGATIVE_INFINITY);
@@ -93,14 +94,7 @@ export default class CausalSelfAttention {
     }
 
     private getAttentionScores(q: TF.Tensor, k: TF.Tensor, training: boolean): TF.Tensor {
-        const T = q.shape[2]!; // Sequence length
-
-        // Causal self-attention
-        const attUnscaled = this.tf.matMul(q, k, false, true); // (B, nh, T, T)
-        const att = attUnscaled.mul(this.divisor); // Scale by sqrt(d_k)
-        const mask = this.maskInf.slice([0, 0], [T, T]).expandDims(0).expandDims(0); // (1,1,T,T)
-        const maskedAtt = att.add(mask);
-
+        const maskedAtt = attentionMask(q, k, this.maskInf, this.divisor);
         const attSoftmax = this.tf.softmax(maskedAtt, -1); // (B, nh, T, T)
         return this.attnDropout.apply(attSoftmax, { training }) as TF.Tensor;
     }
@@ -251,6 +245,5 @@ export default class CausalSelfAttention {
         this.residDropout.dispose();
         this.bias.dispose();
         this.maskInf.dispose();
-        this.divisor.dispose();
     }
 }

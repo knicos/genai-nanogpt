@@ -13,6 +13,8 @@ describe('CausalSelfAttention', () => {
             biasInLinear: false,
             dropout: 0.0,
             blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
         });
 
         expect(layer).toBeInstanceOf(CausalSelfAttention);
@@ -33,6 +35,8 @@ describe('CausalSelfAttention', () => {
             biasInLinear: false,
             dropout: 0.0,
             blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
         });
 
         const input = tf.randomNormal([1, 4, 16]);
@@ -55,6 +59,8 @@ describe('CausalSelfAttention', () => {
             biasInLinear: false,
             dropout: 0.0,
             blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
         });
         layer.call(input, false); // Initialize the layer
 
@@ -70,6 +76,8 @@ describe('CausalSelfAttention', () => {
             biasInLinear: false,
             dropout: 0.0,
             blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
         });
         newLayer.call(input, false); // Initialize the layer
         newLayer.loadWeights(weightsMap);
