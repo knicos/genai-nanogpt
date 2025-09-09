@@ -8,6 +8,8 @@ import {
     matMul,
     scalar,
     NamedAttrMap,
+    registerGradient,
+    GradConfig,
 } from '@tensorflow/tfjs-core';
 
 class AttentionMaskProgram implements GPGPUProgram {
@@ -96,3 +98,28 @@ registerKernel(cpuKernelConfig);
 export function attentionMask(q: Tensor, k: Tensor, mask: Tensor, divisor: number): Tensor {
     return engine().runKernel('AttentionMask', { q, k, mask }, { divisor });
 }
+
+const attentionMaskGradConfig: GradConfig = {
+    kernelName: 'AttentionMask',
+    inputsToSave: ['q', 'k'],
+    outputsToSave: [],
+    gradFunc: (dy: Tensor | Tensor[], saved: Tensor[], attrs: NamedAttrMap) => {
+        if (Array.isArray(dy)) {
+            throw new Error('Expected dy to be a single Tensor');
+        }
+        const [q, k] = saved as Tensor[];
+        const { divisor } = attrs as { divisor: number };
+
+        return {
+            q: () => dy.matMul(k).mul(divisor),
+            k: () => q.transpose([0, 1, 3, 2]).matMul(dy).mul(divisor).transpose([0, 1, 3, 2]),
+            mask: () => dy,
+            divisor: () => {
+                const attUnscaled = q.matMul(k, false, true);
+                return dy.mul(attUnscaled).sum();
+            },
+        };
+    },
+};
+
+registerGradient(attentionMaskGradConfig);

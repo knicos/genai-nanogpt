@@ -1,6 +1,7 @@
 import { describe, it } from 'vitest';
 import CausalSelfAttention from './CausalSelfAttention';
 import * as tf from '@tensorflow/tfjs';
+import RoPECache from './RoPECache';
 
 describe('CausalSelfAttention', () => {
     it('generates a correctly shaped output', ({ expect }) => {
@@ -23,6 +24,7 @@ describe('CausalSelfAttention', () => {
         const { output } = layer.call(input, false);
         expect(output).toBeInstanceOf(tf.Tensor);
         expect(output.shape).toEqual([1, 4, 16]);
+        layer.dispose();
     });
 
     it('can generate attention scores', ({ expect }) => {
@@ -45,6 +47,7 @@ describe('CausalSelfAttention', () => {
         expect(attention!.shape).toEqual([1, 4, 4]);
 
         console.log('Attention', attention!.toString());
+        layer.dispose();
     });
 
     it('saves and loads weights correctly', ({ expect }) => {
@@ -86,5 +89,45 @@ describe('CausalSelfAttention', () => {
         const { output: newOutput } = newLayer.call(input, false);
         expect(originalOutput.shape).toEqual(newOutput.shape);
         expect(originalOutput.dataSync()).toEqual(newOutput.dataSync());
+
+        layer.dispose();
+        newLayer.dispose();
+    });
+
+    it('can be trained', async ({ expect }) => {
+        const config = {
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.0,
+            blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
+        };
+        const ropeCache = new RoPECache(tf, config);
+        const layer = new CausalSelfAttention(tf, 0, config, ropeCache);
+
+        const input = tf.randomNormal([1, 4, 16]);
+        const target = tf.randomNormal([1, 4, 16]);
+
+        layer.call(input, false);
+
+        //const optimizer = tf.train.adam(0.01);
+
+        const f = () => {
+            const { output } = layer.call(input, true);
+            const loss = tf.losses.meanSquaredError(target, output);
+            return loss as tf.Scalar;
+        };
+        const { value: loss } = tf.variableGrads(f);
+
+        const lossValue = (await loss.data())[0];
+        console.log('Final loss:', lossValue);
+        expect(lossValue).toBeLessThan(1.0);
+
+        layer.dispose();
     });
 });
