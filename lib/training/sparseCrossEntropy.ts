@@ -77,7 +77,9 @@ export function createSoftmaxCrossEntropyWithGrad() {
                     // Gradient for labels is always zero
                     const gradLabels = tf.zerosLike(labels);
 
-                    return [gradLogitsScaled, gradLabels];
+                    const reshapedGradLogits = gradLogitsScaled.reshape(logits.shape);
+
+                    return [reshapedGradLogits, gradLabels];
                 });
             };
 
