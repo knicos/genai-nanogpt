@@ -10,6 +10,8 @@ export interface IGenerateOptions extends GenerateOptions {
 }
 
 export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
+    private active = false;
+
     constructor(private readonly model: NanoGPT, private readonly tokeniser: ITokeniser) {
         super();
     }
@@ -28,6 +30,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
         // Loop in the model to generate text until eos or max length
         for (let i = 0; i < maxTokens; i++) {
+            if (!this.active) {
+                break;
+            }
             const {
                 output: generatedToken,
                 attention,
@@ -88,6 +93,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
         // Loop in the model to generate text until eos or max length
         for (let i = 0; i < maxTokens; i++) {
+            if (!this.active) {
+                break;
+            }
             const {
                 output: generatedToken,
                 attention,
@@ -112,12 +120,21 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     }
 
     public async generate(prompt?: string, options?: IGenerateOptions): Promise<string> {
+        const slicePrompt =
+            prompt && prompt.length > this.model.config.blockSize ? prompt.slice(-this.model.config.blockSize) : prompt;
+        this.active = true;
         this.emit('start');
         const result =
             this.model.config.useRope && !options?.noCache
-                ? this.generateCache(prompt, options)
-                : this.generateNoCache(prompt, options);
+                ? this.generateCache(slicePrompt, options)
+                : this.generateNoCache(slicePrompt, options);
+        const r = await result;
+        this.active = false;
         this.emit('stop');
-        return result;
+        return r;
+    }
+
+    public stop() {
+        this.active = false;
     }
 }
