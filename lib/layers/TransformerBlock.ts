@@ -4,9 +4,11 @@ import CausalSelfAttention, { KVCache } from './CausalSelfAttention';
 import MLP from './MLP';
 import RoPECache from './RoPECache';
 import RMSNorm from './RMSNorm';
+import MemoryProfiler from '@base/utilities/profile';
+import BaseLayer from './BaseLayer';
 
 // Transformer block
-export default class Block {
+export default class Block extends BaseLayer {
     private ln1: RMSNorm;
     private attn: CausalSelfAttention;
     private ln2: RMSNorm;
@@ -17,6 +19,7 @@ export default class Block {
     public skipped: boolean = false;
 
     constructor(tf: typeof TF, index: number, config: GPTConfig, ropeCache?: RoPECache) {
+        super();
         this.tf = tf;
         this.index = index;
 
@@ -27,6 +30,14 @@ export default class Block {
         this.ln2 = new RMSNorm(tf, [config.nEmbed], 1e-8, `block_${this.index}_rms2`);
 
         this.mlp = new MLP(this.tf, this.index, config);
+    }
+
+    override setProfiler(value: MemoryProfiler | undefined): void {
+        this._profiler = value;
+        this.attn.setProfiler(value);
+        this.mlp.setProfiler(value);
+        this.ln1.setProfiler(value);
+        this.ln2.setProfiler(value);
     }
 
     get variables(): TF.Variable[] {

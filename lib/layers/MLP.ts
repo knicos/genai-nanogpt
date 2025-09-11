@@ -1,8 +1,9 @@
 import type TF from '@tensorflow/tfjs';
 import { GPTConfig } from '../config';
+import BaseLayer from './BaseLayer';
 
 // Multi-layer perceptron
-export default class MLP {
+export default class MLP extends BaseLayer {
     private cFc: TF.layers.Layer;
     private cProj: TF.layers.Layer;
     private dropout: TF.layers.Layer;
@@ -11,6 +12,7 @@ export default class MLP {
     private _trainable: boolean = true;
 
     constructor(tf: typeof TF, index: number, config: GPTConfig) {
+        super();
         this.tf = tf;
         this.index = index;
         this.cFc = this.tf.layers.dense({
@@ -68,9 +70,11 @@ export default class MLP {
 
     call(x: TF.Tensor, training = false): TF.Tensor {
         return this.tf.tidy(() => {
+            this.startMemory();
             const hidden = this.cFc.apply(x) as TF.Tensor;
             const projected = this.cProj.apply(hidden) as TF.Tensor;
             const output = this.dropout.apply(projected, { training }) as TF.Tensor;
+            this.endMemory('MLP');
             return output;
         });
     }

@@ -97,6 +97,7 @@ export default abstract class GPTTrainer {
 
     protected trainStep(batch: { xs: TF.Tensor; ys: TF.Tensor }, dummy = false, print = false): TF.Scalar {
         return this.tf.tidy(() => {
+            this.model.getProfiler()?.startMemory();
             const { xs, ys } = batch;
 
             const f = () => {
@@ -124,7 +125,12 @@ export default abstract class GPTTrainer {
                 //this.tf.dispose(grads);
                 // Apply gradients
                 this.optimizer.applyGradients(grads as NamedVariableMap);
+
+                this.model.getProfiler()?.endMemory('Training');
+
                 this.tf.dispose(grads);
+            } else {
+                this.model.getProfiler()?.endMemory('Training');
             }
 
             return lossValue;

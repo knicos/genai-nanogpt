@@ -8,6 +8,8 @@ import RoPECache from './layers/RoPECache';
 import RMSNorm from './layers/RMSNorm';
 import { estimateParameterCount } from './utilities/parameters';
 import { createSoftmaxCrossEntropyWithGrad } from './training/sparseCrossEntropy';
+import MemoryProfiler from './utilities/profile';
+import BaseLayer from './layers/BaseLayer';
 
 export interface TrainingLogEntry {
     loss: number;
@@ -27,7 +29,7 @@ export interface GenerateOptions {
 }
 
 // Main GPT model
-export default class NanoGPT {
+export default class NanoGPT extends BaseLayer {
     public readonly config: GPTConfig;
     private wte: TiedEmbeddingOutputLayer; // Token embeddings
     private wpe?: TF.layers.Layer; // Position embeddings
@@ -39,6 +41,7 @@ export default class NanoGPT {
     public log: TrainingLogEntry[] = []; // Training log
 
     constructor(tf: typeof TF, config: Partial<GPTConfig> = {}) {
+        super();
         this.tf = tf;
         this.config = { ...defaultConfig, ...config };
 
@@ -158,6 +161,14 @@ export default class NanoGPT {
         this.lnF.trainable = value;
     }
 
+    override setProfiler(value: MemoryProfiler | undefined) {
+        this._profiler = value;
+        for (const block of this.blocks) {
+            block.setProfiler(value);
+        }
+        this.lnF.setProfiler(value);
+    }
+
     private validateInput(idx: TF.Tensor): void {
         if (idx.shape.length !== 2) {
             throw new Error(`Invalid input shape: expected [batch_size, sequence_length], got ${idx.shape}`);
@@ -248,6 +259,7 @@ export default class NanoGPT {
         this.validateInput(idx);
 
         return this.tf.tidy(() => {
+            this.startMemory();
             // Token and position embeddings
             const pastLen = cache?.[0]?.length ?? 0;
             let x = this.inputPhase(idx, pastLen, training);
@@ -261,6 +273,8 @@ export default class NanoGPT {
 
             // Transformer blocks
             for (let i = 0; i < this.blocks.length; i++) {
+                const oldX = x;
+
                 const block = this.blocks[i];
                 const {
                     output,
@@ -268,6 +282,7 @@ export default class NanoGPT {
                     cache: newCache,
                 } = block.call(x, training, includeAttention, cache ? cache[i] : undefined);
                 x = output;
+                oldX.dispose();
                 if (includeAttention && attention) {
                     perLayerAtt.push(attention); // (B,T,T) already head-averaged
                 }
@@ -297,6 +312,8 @@ export default class NanoGPT {
             if (targets) {
                 loss = this.calculateLoss(logits, targets);
             }
+
+            this.endMemory('Forward');
 
             return { logits, loss, attention: includeAttention ? aggregatedAttention : undefined };
         });

@@ -95,6 +95,14 @@ const cpuKernelConfig: KernelConfig = {
 
 registerKernel(cpuKernelConfig);
 
+const tensorflowKernelConfig: KernelConfig = {
+    kernelName: 'AttentionMask',
+    backendName: 'tensorflow',
+    kernelFunc: attentionMaskCPU,
+};
+
+registerKernel(tensorflowKernelConfig);
+
 export function attentionMask(q: Tensor, k: Tensor, mask: Tensor, divisor: number): Tensor {
     return engine().runKernel('AttentionMask', { q, k, mask }, { divisor });
 }

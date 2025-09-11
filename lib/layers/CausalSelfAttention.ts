@@ -1,7 +1,8 @@
 import type TF from '@tensorflow/tfjs';
 import { GPTConfig } from '../config';
 import RoPECache from './RoPECache';
-import { attentionMask } from '@base/ops/attentionMask';
+import { attentionMask } from '../ops/attentionMask';
+import BaseLayer from './BaseLayer';
 
 export type KVCache = {
     k: TF.Tensor; // [B, nHead, T_cache, headDim]
@@ -11,7 +12,7 @@ export type KVCache = {
 };
 
 // Multi-head self-attention implementation
-export default class CausalSelfAttention {
+export default class CausalSelfAttention extends BaseLayer {
     private config: GPTConfig;
     private cAttn: TF.layers.Layer;
     private cProj: TF.layers.Layer;
@@ -25,6 +26,7 @@ export default class CausalSelfAttention {
     private _trainable: boolean = true;
 
     constructor(tf: typeof TF, index: number, config: GPTConfig, private readonly ropeCache?: RoPECache) {
+        super();
         this.config = config;
         this.tf = tf;
         this.index = index;
@@ -179,6 +181,7 @@ export default class CausalSelfAttention {
             throw new Error('Cannot use pastKV without RoPE enabled');
         }
         return this.tf.tidy(() => {
+            this.startMemory();
             const [qI, kNewI, vNew] = this.getQKV(x); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
             const Tcur = qI.shape[2]!;
             const maxCtx = this.config.blockSize;
@@ -234,7 +237,9 @@ export default class CausalSelfAttention {
                 cumulativeLength: pastKV ? pastKV.cumulativeLength + Tcur : Tcur,
             };
 
-            return { output, attention: includeAttention ? attScores.mean(1) : undefined, presentKV };
+            const attention = includeAttention ? attScores.mean(1) : undefined;
+            this.endMemory(`CausalSelfAttention`);
+            return { output, attention, presentKV };
         });
     }
 

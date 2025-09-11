@@ -9,6 +9,7 @@ import Trainer, { ITrainerOptions } from './Trainer';
 import EE from 'eventemitter3';
 import { dummyPassAsync } from './utilities/dummy';
 import { CharTokeniser } from './main';
+import MemoryProfiler from './utilities/profile';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 
@@ -119,6 +120,29 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
                 tmodel.emit('error', err);
             });
         return tmodel;
+    }
+
+    getProfiler(): MemoryProfiler | undefined {
+        return this._model?.getProfiler();
+    }
+
+    get enableProfiler(): boolean {
+        return !!this._model?.getProfiler();
+    }
+
+    set enableProfiler(value: boolean) {
+        if (value) {
+            if (!this._model) {
+                throw new Error('Model is not initialized.');
+            }
+            if (!this._model.getProfiler()) {
+                this._model.setProfiler(new MemoryProfiler());
+            }
+        } else {
+            if (this._model) {
+                this._model.setProfiler(undefined);
+            }
+        }
     }
 
     getNumParams(): number {

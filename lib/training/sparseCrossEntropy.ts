@@ -1,5 +1,5 @@
-import { gatherSub } from '@base/ops/gatherSub';
-import { scatterSub } from '@base/ops/scatterSub';
+import { gatherSub } from '../ops/gatherSub';
+import { scatterSub } from '../ops/scatterSub';
 import * as tf from '@tensorflow/tfjs-core';
 
 /**

@@ -1,11 +1,13 @@
 import type TF from '@tensorflow/tfjs';
+import BaseLayer from './BaseLayer';
 
-export default class RMSNorm {
+export default class RMSNorm extends BaseLayer {
     private gamma: TF.Variable;
     private epsilon: number;
     private tf: typeof TF;
 
     constructor(tf: typeof TF, shape: number[], epsilon = 1e-8, name = '') {
+        super();
         this.tf = tf;
         this.epsilon = epsilon;
         this.gamma = tf.variable(tf.ones(shape), true, `${name}_gamma`, 'float32');
@@ -29,11 +31,14 @@ export default class RMSNorm {
 
     apply(x: TF.Tensor): TF.Tensor {
         return this.tf.tidy(() => {
+            this.startMemory();
             // RMSNorm: x / sqrt(mean(x^2) + epsilon), then scale by gamma
             const meanSquare = x.square().mean(-1, true);
             const invRms = meanSquare.add(this.epsilon).rsqrt();
             const normalized = x.mul(invRms);
-            return normalized.mul(this.gamma);
+            const result = normalized.mul(this.gamma);
+            this.endMemory('RMSNorm');
+            return result;
         });
     }
 

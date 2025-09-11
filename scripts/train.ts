@@ -168,6 +168,8 @@ async function train() {
     await tokeniser.train(textData);
     await waitForModel(model);
 
+    model.enableProfiler = true;
+
     console.log('Model parameters', model.getNumParams());
     console.log(
         'Training samples',
@@ -186,6 +188,7 @@ async function train() {
                 'Example:'
             )}\n${chalk.yellowBright(log.example || 'N/A')}`
         );
+        model.getProfiler()?.printSummary();
 
         if (log.step > 0 && log.step % autosave === 0) {
             try {
