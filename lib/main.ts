@@ -18,3 +18,5 @@ export {
 import './ops/scatterSub';
 import './ops/gatherSub';
 import './ops/attentionMask';
+import './ops/qkv';
+import './ops/rope';

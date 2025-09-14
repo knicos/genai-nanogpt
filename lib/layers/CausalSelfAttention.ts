@@ -3,6 +3,8 @@ import { GPTConfig } from '../config';
 import RoPECache from './RoPECache';
 import { attentionMask } from '../ops/attentionMask';
 import BaseLayer from './BaseLayer';
+import { qkv } from '../ops/qkv';
+import { rope } from '../ops/rope';
 
 export type KVCache = {
     k: TF.Tensor; // [B, nHead, T_cache, headDim]
@@ -14,7 +16,7 @@ export type KVCache = {
 // Multi-head self-attention implementation
 export default class CausalSelfAttention extends BaseLayer {
     private config: GPTConfig;
-    private cAttn: TF.layers.Layer;
+    private cAttn: TF.Variable | null = null;
     private cProj: TF.layers.Layer;
     private attnDropout: TF.layers.Layer;
     private residDropout: TF.layers.Layer;
@@ -24,15 +26,17 @@ export default class CausalSelfAttention extends BaseLayer {
     private divisor: number;
     private index: number;
     private _trainable: boolean = true;
+    private units: number;
 
     constructor(tf: typeof TF, index: number, config: GPTConfig, private readonly ropeCache?: RoPECache) {
         super();
         this.config = config;
         this.tf = tf;
         this.index = index;
+        this.units = config.nEmbed * 3;
 
         // Key, query, value projections for all heads, but in a batch
-        this.cAttn = this.tf.layers.dense({
+        /*this.cAttn = this.tf.layers.dense({
             units: 3 * config.nEmbed,
             useBias: config.biasInLinear,
             name: `block_${index}_attn_cAttn`,
@@ -41,7 +45,7 @@ export default class CausalSelfAttention extends BaseLayer {
                 stddev: 0.02,
             }),
             biasInitializer: 'zeros',
-        });
+        });*/
 
         // Output projection
         this.cProj = this.tf.layers.dense({
@@ -68,11 +72,21 @@ export default class CausalSelfAttention extends BaseLayer {
         this.maskInf = this.tf.where(this.bias as TF.Tensor, zeros, negInf);
     }
 
+    private build() {
+        if (this.cAttn === null) {
+            this.cAttn = this.tf.variable(
+                this.tf.randomNormal([this.config.nEmbed, this.units], 0, 0.02),
+                true
+                //`block_${this.index}_attn_cAttn_kernel`
+            );
+        }
+    }
+
     get variables(): TF.Variable[] {
-        return [
-            ...this.cAttn.trainableWeights.map((v) => v.read() as TF.Variable),
-            ...this.cProj.trainableWeights.map((v) => v.read() as TF.Variable),
-        ];
+        if (this.cAttn === null) {
+            throw new Error('Layer not built yet');
+        }
+        return [this.cAttn, ...this.cProj.trainableWeights.map((v) => v.read() as TF.Variable)];
     }
 
     get trainable(): boolean {
@@ -81,17 +95,23 @@ export default class CausalSelfAttention extends BaseLayer {
 
     set trainable(value: boolean) {
         this._trainable = value;
-        this.cAttn.trainable = value;
+        if (this.cAttn) this.cAttn.trainable = value;
         this.cProj.trainable = value;
     }
 
     saveWeights(map: Map<string, TF.Tensor[]>) {
-        map.set(`block_${this.index}_cAttn`, this.cAttn.getWeights());
+        map.set(`block_${this.index}_cAttn`, this.cAttn ? [this.cAttn.clone()] : []);
         map.set(`block_${this.index}_cProj`, this.cProj.getWeights());
     }
 
     loadWeights(weights: Map<string, TF.Tensor[]>): void {
-        this.cAttn.setWeights(weights.get(`block_${this.index}_cAttn`) || []);
+        const attnWeight = weights.get(`block_${this.index}_cAttn`)?.[0];
+        if (!attnWeight) throw new Error(`Weights for block_${this.index}_cAttn not found`);
+        if (this.cAttn) {
+            this.cAttn.assign(attnWeight);
+        } else {
+            this.cAttn = this.tf.variable(attnWeight, true); //, `block_${this.index}_attn_cAttn_kernel`);
+        }
         this.cProj.setWeights(weights.get(`block_${this.index}_cProj`) || []);
     }
 
@@ -127,32 +147,7 @@ export default class CausalSelfAttention extends BaseLayer {
     }
 
     private getQKV(x: TF.Tensor): [TF.Tensor, TF.Tensor, TF.Tensor] {
-        const [B, T, C] = x.shape; // batch size, sequence length, embedding dimensionality
-
-        // Calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        const qkv = this.cAttn.apply(x) as TF.Tensor; // (B, T, 3*C)
-        //x.dispose();
-        const [q, k, v] = this.tf.split(qkv, 3, -1); // Each is (B, T, C)
-        qkv.dispose();
-
-        // Reshape for multi-head attention
-        const headDim = C / this.config.nHead;
-
-        const qReshaped = this.tf.reshape(q, [B, T, this.config.nHead, headDim]);
-        q.dispose();
-        const qT = qReshaped.transpose([0, 2, 1, 3]); // (B, nh, T, hs)
-        qReshaped.dispose();
-
-        const kReshaped = this.tf.reshape(k, [B, T, this.config.nHead, headDim]);
-        k.dispose();
-        const kT = kReshaped.transpose([0, 2, 1, 3]); // (B, nh, T, hs)
-        kReshaped.dispose();
-
-        const vReshaped = this.tf.reshape(v, [B, T, this.config.nHead, headDim]);
-        v.dispose();
-        const vT = vReshaped.transpose([0, 2, 1, 3]); // (B, nh, T, hs)
-        vReshaped.dispose();
-        return [qT, kT, vT];
+        return qkv(x, this.cAttn!, this.config.nHead) as [TF.Tensor, TF.Tensor, TF.Tensor];
     }
 
     private getOutputProjection(x: TF.Tensor, training: boolean): TF.Tensor {
@@ -180,6 +175,9 @@ export default class CausalSelfAttention extends BaseLayer {
         if (pastKV && !this.config.useRope) {
             throw new Error('Cannot use pastKV without RoPE enabled');
         }
+
+        this.build();
+
         return this.tf.tidy(() => {
             this.startMemory();
             const [qI, kNewI, vNew] = this.getQKV(x); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
@@ -188,7 +186,14 @@ export default class CausalSelfAttention extends BaseLayer {
 
             // Apply RoPE to current chunk before concatenating with past
             const pastLenInitial = pastKV ? pastKV.cumulativeLength : 0;
-            const [q, kNew] = this.ropeCache ? this.ropeCache.applyRoPE(qI, kNewI, pastLenInitial) : [qI, kNewI];
+            //const [q, kNew] = this.ropeCache ? this.ropeCache.applyRoPE(qI, kNewI, pastLenInitial) : [qI, kNewI];
+            const q = this.ropeCache ? rope(qI, this.ropeCache, pastLenInitial) : qI;
+            const kNew = this.ropeCache ? rope(kNewI, this.ropeCache, pastLenInitial) : kNewI;
+
+            if (this.ropeCache) {
+                qI.dispose();
+                kNewI.dispose();
+            }
 
             let kTotal = kNew;
             let vTotal = vNew;
@@ -244,7 +249,7 @@ export default class CausalSelfAttention extends BaseLayer {
     }
 
     dispose() {
-        this.cAttn.dispose();
+        this.cAttn?.dispose();
         this.cProj.dispose();
         this.attnDropout.dispose();
         this.residDropout.dispose();

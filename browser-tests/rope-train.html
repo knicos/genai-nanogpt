@@ -35,6 +35,8 @@
                 useRope: true,
             });
 
+            model.enableProfiler = true;
+
             const textData = [
                 'The quick brown fox jumps over the lazy dog.',
                 'A journey of a thousand miles begins with a single step.',
@@ -60,6 +62,8 @@
             });
 
             console.log('Training complete');
+
+            model.getProfiler().printSummary();
         </script>
     </body>
 </html>

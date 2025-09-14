@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>EfficientScatterSub WebGL Test</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script
+            type="module"
+            src="../dist/ops/qkvRope.js"
+        ></script>
+    </head>
+    <body>
+        <script type="module">
+            function arraysClose(a, b, epsilon = 1e-5) {
+                if (Array.isArray(a) && Array.isArray(b)) {
+                    if (a.length !== b.length) return false;
+                    for (let i = 0; i < a.length; ++i) {
+                        if (!arraysClose(a[i], b[i], epsilon)) return false;
+                    }
+                    return true;
+                } else if (typeof a === 'number' && typeof b === 'number') {
+                    return Math.abs(a - b) < epsilon;
+                } else {
+                    return false;
+                }
+            }
+
+            async function cpuVersion() {
+                await tf.setBackend('cpu');
+                const memStart = tf.memory().numBytes;
+                const x = tf.tensor3d(
+                    [
+                        [
+                            [0.1, 0.2],
+                            [0.3, 0.4],
+                        ],
+                    ],
+                    [1, 2, 2]
+                ); // (1,T,hs)
+                const kernel = tf.tensor2d(
+                    [
+                        [0.5, 0.6, 0.9, 1.0, 1.3, 1.4],
+                        [0.7, 0.8, 1.1, 1.2, 1.5, 1.6],
+                    ],
+                    [2, 6]
+                );
+
+                // Custom op
+                const custom = tf.engine().runKernel('QKV', { x, kernel }, { heads: 1 });
+                const customQ = await custom[0].array();
+                const customK = await custom[1].array();
+                const customV = await custom[2].array();
+                const memEnd = tf.memory().numBytes;
+                console.log('CPU memory used:', memEnd - memStart);
+                return [customQ, customK, customV];
+            }
+
+            async function gpuVersion() {
+                await tf.setBackend('webgl');
+                const memStart = tf.memory().numBytes;
+                const x = tf.tensor3d(
+                    [
+                        [
+                            [0.1, 0.2],
+                            [0.3, 0.4],
+                        ],
+                    ],
+                    [1, 2, 2]
+                ); // (1,T,hs)
+                const kernel = tf.tensor2d(
+                    [
+                        [0.5, 0.6, 0.9, 1.0, 1.3, 1.4],
+                        [0.7, 0.8, 1.1, 1.2, 1.5, 1.6],
+                    ],
+                    [2, 6]
+                );
+
+                // Custom op
+                const custom = tf.engine().runKernel('QKV', { x, kernel }, { heads: 1 });
+                const customQ = await custom[0].array();
+                const customK = await custom[1].array();
+                const customV = await custom[2].array();
+                const memEnd = tf.memory().numBytes;
+                console.log('GPU memory used:', memEnd - memStart);
+                return [customQ, customK, customV];
+            }
+
+            async function runTest() {
+                const customArr = await gpuVersion();
+                const manualArr = await cpuVersion();
+
+                console.log('Manual:', manualArr);
+                console.log('Custom:', customArr);
+
+                // Compare arrays
+                const match = arraysClose(manualArr, customArr);
+                document.body.innerText = match ? 'PASS' : 'FAIL';
+                window.testResult = { match, manualArr, customArr };
+            }
+            runTest();
+        </script>
+    </body>
+</html>

@@ -2,7 +2,7 @@ import type TF from '@tensorflow/tfjs';
 import { GPTConfig } from '../config';
 
 export default class RoPECache {
-    private rotaryDim: number;
+    public readonly rotaryDim: number;
     private ropeBase: number;
     private ropeInvFreq: TF.Tensor;
     private ropeCos: TF.Tensor | null = null; // [cacheLen, rotaryDim/2]
@@ -36,7 +36,7 @@ export default class RoPECache {
         }
     }
 
-    private ensureRopeCache(needed: number) {
+    public ensureRopeCache(needed: number) {
         if (needed <= this.ropeCacheLen) return;
         if (this.ropeCos) this.ropeCos.dispose();
         if (this.ropeSin) this.ropeSin.dispose();
@@ -45,6 +45,14 @@ export default class RoPECache {
         this.ropeCos = this.tf.keep(this.tf.cos(freqs).expandDims(-1)); // [L, rd/2, 1]
         this.ropeSin = this.tf.keep(this.tf.sin(freqs).expandDims(-1)); // [L, rd/2, 1]
         this.ropeCacheLen = needed;
+    }
+
+    public getCos(): TF.Tensor | null {
+        return this.ropeCos;
+    }
+
+    public getSin(): TF.Tensor | null {
+        return this.ropeSin;
     }
 
     public applyRoPE(q: TF.Tensor, k: TF.Tensor, pastLen: number): [TF.Tensor, TF.Tensor] {

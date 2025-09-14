@@ -90,7 +90,7 @@ describe('CausalSelfAttention', () => {
         expect(originalOutput.shape).toEqual(newOutput.shape);
         expect(originalOutput.dataSync()).toEqual(newOutput.dataSync());
 
-        layer.dispose();
+        //layer.dispose();
         newLayer.dispose();
     });
 
