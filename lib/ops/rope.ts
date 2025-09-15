@@ -1,5 +1,6 @@
 import RoPECache from '@base/layers/RoPECache';
 import { GPGPUProgram, MathBackendWebGL, Tensor, engine } from '@tensorflow/tfjs';
+import { UniformType } from '@tensorflow/tfjs-backend-webgl/dist/shader_compiler';
 import {
     registerKernel,
     KernelConfig,
@@ -19,8 +20,9 @@ class RopeProgram implements GPGPUProgram {
     outputShape: number[];
     userCode: string;
     // enableShapeUniforms = true;
+    customUniforms = [{ name: 'pastLen', type: 'int' as UniformType }];
 
-    constructor(batch: number, heads: number, T: number, C: number, pastLen: number) {
+    constructor(batch: number, heads: number, T: number, C: number) {
         this.outputShape = [batch, heads, T, C];
 
         this.userCode = `
@@ -37,8 +39,8 @@ class RopeProgram implements GPGPUProgram {
 
             if (d < rotaryDim) {
                 int pairIdx = d / 2;
-                float cos = getCos(t + ${pastLen}, pairIdx, 0);
-                float sin = getSin(t + ${pastLen}, pairIdx, 0);
+                float cos = getCos(t + pastLen, pairIdx, 0);
+                float sin = getSin(t + pastLen, pairIdx, 0);
 
                 if (d % 2 == 0) {
                     // even index
@@ -73,8 +75,8 @@ function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: N
     const seqLength = x.shape[2]!;
     const C = x.shape[3]!;
 
-    const program = new RopeProgram(batchSize, heads, seqLength, C, pastLen);
-    return backend.runWebGLProgram(program, [x, sin, cos], 'float32');
+    const program = new RopeProgram(batchSize, heads, seqLength, C);
+    return backend.runWebGLProgram(program, [x, sin, cos], 'float32', [[pastLen]]);
 }
 
 const kernelConfig: KernelConfig = {
@@ -173,7 +175,7 @@ const tensorflowKernelConfig: KernelConfig = {
 registerKernel(tensorflowKernelConfig);
 
 export function rope(x: Tensor, cache: RoPECache, pastLength: number): Tensor {
-    cache.ensureRopeCache(x.shape[1]!);
+    cache.ensureRopeCache(x.shape[1]! + pastLength); // x.shape[1] = Tcur
     return engine().runKernel('Rope', { x, sin: cache.getSin()!, cos: cache.getCos()! }, { pastLen: pastLength });
 }
 

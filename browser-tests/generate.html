@@ -1,0 +1,55 @@
+<html>
+    <head>
+        <title>TM Language Model</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script
+            type="module"
+            src="/dist/main.js"
+        ></script>
+        <style>
+            body {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            #webcam {
+                margin-bottom: 20px;
+            }
+            #prediction {
+                font-size: 24px;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <script type="module">
+            import { TeachableLLM, waitForModel } from '/dist/main.js';
+
+            const fileInput = document.getElementById('fileInput');
+            const output = document.getElementById('output');
+            fileInput.addEventListener('change', async (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const model = await TeachableLLM.loadModel(tf, file);
+                    await waitForModel(model);
+                    model.enableProfiler = true;
+
+                    const prompt = 'Once upon a time';
+                    console.log('Generating text for prompt:', prompt);
+                    const generated = await model.generateText(prompt, {
+                        maxLength: 128 * 4 * 2,
+                        temperature: 0.7,
+                    });
+                    output.innerText += '\n\nGenerated Text:\n' + generated;
+                    model.getProfiler().printSummary();
+                }
+            });
+        </script>
+        <input
+            type="file"
+            id="fileInput"
+            accept=".zip"
+        />
+        <div id="output"></div>
+    </body>
+</html>
