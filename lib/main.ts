@@ -20,3 +20,4 @@ import './ops/gatherSub';
 import './ops/attentionMask';
 import './ops/qkv';
 import './ops/rope';
+import './ops/appendCache';

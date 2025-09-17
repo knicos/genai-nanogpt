@@ -177,8 +177,20 @@ async function train() {
     );
 
     const trainer = model.trainer();
+    const totalSteps = Math.min(
+        maxSteps,
+        Math.floor((textData.reduce((acc, curr) => acc + curr.length, 0) * 0.8) / batch)
+    );
 
     trainer.on('log', async (log: TrainingLogEntry) => {
+        const progress = log.step / totalSteps;
+        const estimatedTime = log.time / progress - log.time;
+        console.log(
+            `${chalk.green('Progress')} ${(progress * 100).toFixed(1)}%, ${chalk.green('ETA')} ${dayjs
+                .duration(estimatedTime)
+                .asHours()
+                .toFixed(1)} hours`
+        );
         console.log(
             `${chalk.bold('Time')} ${dayjs.duration(log.time).asMinutes().toFixed(0)} minutes: ${chalk.bold(
                 'Step'
@@ -186,9 +198,10 @@ async function train() {
                 log.loss.toFixed(4)
             )}, ${chalk.bold('Validation Loss:')} ${chalk.redBright(log.valLoss?.toFixed(4) || 'N/A')}, ${chalk.bold(
                 'Example:'
-            )}\n${chalk.yellowBright(log.example || 'N/A')}`
+            )} ${chalk.yellowBright(log.example || 'N/A')}`
         );
         model.getProfiler()?.printSummary();
+        model.enableProfiler = false;
 
         if (log.step > 0 && log.step % autosave === 0) {
             try {

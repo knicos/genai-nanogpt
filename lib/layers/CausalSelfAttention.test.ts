@@ -1,5 +1,5 @@
 import { describe, it } from 'vitest';
-import CausalSelfAttention from './CausalSelfAttention';
+import CausalSelfAttention, { KVCache } from './CausalSelfAttention';
 import * as tf from '@tensorflow/tfjs';
 import RoPECache from './RoPECache';
 
@@ -47,6 +47,38 @@ describe('CausalSelfAttention', () => {
         expect(attention!.shape).toEqual([1, 4, 4]);
 
         console.log('Attention', attention!.toString());
+        layer.dispose();
+    });
+
+    it('can use a KV cache', ({ expect }) => {
+        const layer = new CausalSelfAttention(tf, 0, {
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.0,
+            blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
+        });
+
+        const input = tf.randomNormal([1, 1, 16]);
+        const cache: KVCache = {
+            k: tf.randomNormal([1, 2, 2, 8]),
+            v: tf.randomNormal([1, 2, 2, 8]),
+            length: 2,
+            cumulativeLength: 2,
+        };
+        const { output, presentKV } = layer.call(input, false, false, cache);
+        expect(output).toBeInstanceOf(tf.Tensor);
+        expect(output.shape).toEqual([1, 1, 16]);
+        expect(presentKV).toBeDefined();
+        expect(presentKV!.k.shape).toEqual([1, 2, 3, 8]);
+        expect(presentKV!.v.shape).toEqual([1, 2, 3, 8]);
+        expect(presentKV!.length).toEqual(3);
+        expect(presentKV!.cumulativeLength).toEqual(3);
         layer.dispose();
     });
 

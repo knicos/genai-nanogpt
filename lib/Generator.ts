@@ -115,6 +115,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             outputText += newText;
         }
 
+        cache.forEach((c) => {
+            if (c) {
+                c.k.dispose();
+                c.v.dispose();
+            }
+        });
+
         inputTensor.dispose();
         return outputText;
     }

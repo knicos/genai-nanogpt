@@ -5,6 +5,7 @@ import { attentionMask } from '../ops/attentionMask';
 import BaseLayer from './BaseLayer';
 import { qkv } from '../ops/qkv';
 import { rope } from '../ops/rope';
+import { appendCache } from '@base/ops/appendCache';
 
 export type KVCache = {
     k: TF.Tensor; // [B, nHead, T_cache, headDim]
@@ -165,6 +166,29 @@ export default class CausalSelfAttention extends BaseLayer {
         return finalOutput;
     }
 
+    private updateCache(kNew: TF.Tensor, vNew: TF.Tensor, pastKV?: KVCache): KVCache {
+        const maxCtx = this.config.blockSize;
+        const Tcur = kNew.shape[2]!;
+        const pastLen = Math.min(pastKV?.length || 0, maxCtx - Tcur);
+
+        const kTotal = pastKV ? appendCache(pastKV.k, kNew, maxCtx) : kNew;
+        const vTotal = pastKV ? appendCache(pastKV.v, vNew, maxCtx) : vNew;
+
+        // Handled in the NanoGPTModel class
+        /*if (pastKV) {
+            pastKV.k.dispose();
+            pastKV.v.dispose();
+        }*/
+
+        const presentKV: KVCache = {
+            k: this.tf.keep(kTotal),
+            v: this.tf.keep(vTotal),
+            length: pastLen + Tcur,
+            cumulativeLength: pastKV ? pastKV.cumulativeLength + Tcur : Tcur,
+        };
+        return presentKV;
+    }
+
     // Added optional KV cache support (pastKV). Returns presentKV for chaining.
     call(
         x: TF.Tensor,
@@ -181,8 +205,6 @@ export default class CausalSelfAttention extends BaseLayer {
         return this.tf.tidy(() => {
             this.startMemory();
             const [qI, kNewI, vNew] = this.getQKV(x); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
-            const Tcur = qI.shape[2]!;
-            const maxCtx = this.config.blockSize;
 
             // Apply RoPE to current chunk before concatenating with past
             const pastLenInitial = pastKV ? pastKV.cumulativeLength : 0;
@@ -195,29 +217,14 @@ export default class CausalSelfAttention extends BaseLayer {
                 kNewI.dispose();
             }
 
-            let kTotal = kNew;
-            let vTotal = vNew;
-            let pastLen = 0;
+            const pastLen = pastKV ? pastKV.length : 0;
+            const presentKV = this.updateCache(kNew, vNew, pastKV);
+            const kTotal = presentKV.k;
+            const vTotal = presentKV.v;
 
             if (pastKV) {
-                pastLen = pastKV.length;
-                kTotal = this.tf.concat([pastKV.k, kNew], 2); // [B,nh,T_total,hs]
-                vTotal = this.tf.concat([pastKV.v, vNew], 2); // [B,nh,T_total,hs]
-            }
-
-            // Clamp to sliding window [last maxCtx tokens]
-            const Ttotal = kTotal.shape[2]!;
-            if (Ttotal > maxCtx) {
-                const start = Ttotal - maxCtx;
-                const B = kTotal.shape[0]!;
-                const H = kTotal.shape[1]!;
-                const HS = kTotal.shape[3]!;
-                kTotal = kTotal.slice([0, 0, start, 0], [B, H, maxCtx, HS]);
-                vTotal = vTotal.slice([0, 0, start, 0], [B, H, maxCtx, HS]);
-
-                // Effective past after clamping
-                const clampedTotal = maxCtx;
-                pastLen = clampedTotal - Tcur;
+                kNew.dispose();
+                vNew.dispose();
             }
 
             // Attention scores: mask for full forward or multi-token chunk; skip for single-token incremental
@@ -233,14 +240,6 @@ export default class CausalSelfAttention extends BaseLayer {
             const y = this.tf.matMul(attScores, vTotal); // (B, nh, T_cur, hs)
 
             const output = this.getOutputProjection(y, training); // (B, T_cur, C)
-
-            // Prepare present cache; keep so caller can reuse outside tidy
-            const presentKV: KVCache = {
-                k: this.tf.keep(kTotal),
-                v: this.tf.keep(vTotal),
-                length: pastLen + Tcur,
-                cumulativeLength: pastKV ? pastKV.cumulativeLength + Tcur : Tcur,
-            };
 
             const attention = includeAttention ? attScores.mean(1) : undefined;
             this.endMemory(`CausalSelfAttention`);
