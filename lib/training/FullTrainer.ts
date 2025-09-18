@@ -1,9 +1,10 @@
-import { ITokeniser } from '../tokeniser/type';
+import type { ITokeniser } from '../tokeniser/type';
 import { generateText } from '../utilities/generate';
 import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
-import type TF from '@tensorflow/tfjs';
 import GPTTrainer, { TrainingOptions } from './Trainer';
 import Evaluator from './Evaluator';
+import { dispose, Tensor } from '@tensorflow/tfjs-core';
+import { Dataset } from '@tensorflow/tfjs-data';
 
 interface TrainingState {
     step: number;
@@ -21,15 +22,15 @@ const DEFAULT_OPTIONS: TrainingOptions = {
 
 // Enhanced training utilities with Dataset API and memory leak fixes
 export default class FullTrainer extends GPTTrainer {
-    constructor(tf: typeof TF, model: NanoGPT, tokenizer: ITokeniser, learningRate: number = 3e-4) {
-        super(tf, model, tokenizer, learningRate);
+    constructor(model: NanoGPT, tokenizer: ITokeniser, learningRate: number = 3e-4) {
+        super(model, tokenizer, learningRate);
     }
 
     // Train for multiple epochs using Dataset API - FIXED memory leaks
     async trainOnDataset(
-        dataset: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>,
+        dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
         options: Partial<TrainingOptions>,
-        validationDataset?: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>
+        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }> {
         const { desiredLoss, logInterval, onStep, prompt, maxSteps } = {
             ...DEFAULT_OPTIONS,
@@ -105,11 +106,11 @@ export default class FullTrainer extends GPTTrainer {
             }
         } catch (error) {
             console.error('Training error:', error);
-            this.tf.dispose();
+            dispose();
             throw error;
         }
 
-        this.tf.dispose();
+        dispose();
 
         this.running = false;
 

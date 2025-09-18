@@ -25,5 +25,7 @@ dist-ssr
 
 junit.xml
 coverage
+playwright-report
+.last-run.json
 
 *.zip

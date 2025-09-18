@@ -5,7 +5,7 @@ import RoPECache from './RoPECache';
 
 describe('CausalSelfAttention', () => {
     it('generates a correctly shaped output', ({ expect }) => {
-        const layer = new CausalSelfAttention(tf, 0, {
+        const layer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
             vocabSize: 20,
             nEmbed: 16,
@@ -28,7 +28,7 @@ describe('CausalSelfAttention', () => {
     });
 
     it('can generate attention scores', ({ expect }) => {
-        const layer = new CausalSelfAttention(tf, 0, {
+        const layer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
             vocabSize: 20,
             nEmbed: 16,
@@ -51,7 +51,7 @@ describe('CausalSelfAttention', () => {
     });
 
     it('can use a KV cache', ({ expect }) => {
-        const layer = new CausalSelfAttention(tf, 0, {
+        const layer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
             vocabSize: 20,
             nEmbed: 16,
@@ -85,7 +85,7 @@ describe('CausalSelfAttention', () => {
     it('saves and loads weights correctly', ({ expect }) => {
         const input = tf.randomNormal([1, 4, 16]);
 
-        const layer = new CausalSelfAttention(tf, 0, {
+        const layer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
             vocabSize: 20,
             nEmbed: 16,
@@ -102,7 +102,7 @@ describe('CausalSelfAttention', () => {
         const weightsMap = new Map<string, tf.Tensor[]>();
         layer.saveWeights(weightsMap);
 
-        const newLayer = new CausalSelfAttention(tf, 0, {
+        const newLayer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
             vocabSize: 20,
             nEmbed: 16,
@@ -139,8 +139,8 @@ describe('CausalSelfAttention', () => {
             mlpFactor: 4,
             useRope: true,
         };
-        const ropeCache = new RoPECache(tf, config);
-        const layer = new CausalSelfAttention(tf, 0, config, ropeCache);
+        const ropeCache = new RoPECache(config);
+        const layer = new CausalSelfAttention(0, config, ropeCache);
 
         const input = tf.randomNormal([1, 4, 16]);
         const target = tf.randomNormal([1, 4, 16]);

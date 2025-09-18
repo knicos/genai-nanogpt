@@ -1,6 +1,7 @@
 import { describe, it } from 'vitest';
-import { qkvCPU, qkv } from './qkv';
+import { qkvCPU } from './cpu/qkv';
 import * as tf from '@tensorflow/tfjs';
+import { qkv } from './qkv';
 
 describe('qkvRope', () => {
     it('produces equivalent gradients', async ({ expect }) => {

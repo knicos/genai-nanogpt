@@ -1,9 +1,22 @@
-import { ITokeniser } from '../tokeniser/type';
+import type { ITokeniser } from '../tokeniser/type';
 import { DatasetBuilder } from './DatasetBuilder';
 import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
-import type TF from '@tensorflow/tfjs';
 import AdamExt from './AdamExt';
-import { NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
+import { NamedVariableMap, TensorContainer } from '@tensorflow/tfjs-core/dist/tensor_types';
+import {
+    dispose,
+    max,
+    mean,
+    min,
+    moments,
+    norm,
+    Scalar,
+    Tensor,
+    tidy,
+    variableGrads,
+    zeros,
+} from '@tensorflow/tfjs-core';
+import { Dataset } from '@tensorflow/tfjs-data';
 
 export interface TrainingState {
     step: number;
@@ -33,17 +46,15 @@ export default abstract class GPTTrainer {
     protected model: NanoGPT;
     protected optimizer!: AdamExt;
     protected datasetBuilder: DatasetBuilder;
-    protected tf: typeof TF;
     protected learningRate: number;
     protected running = false;
     protected lastState?: TrainingState;
 
-    constructor(tf: typeof TF, model: NanoGPT, protected tokenizer: ITokeniser, learningRate: number = 1e-3) {
-        this.tf = tf;
+    constructor(model: NanoGPT, protected tokenizer: ITokeniser, learningRate: number = 1e-3) {
         this.model = model;
         this.learningRate = learningRate;
         this.resetOptimizer();
-        this.datasetBuilder = new DatasetBuilder(this.tf, tokenizer, model.config.blockSize);
+        this.datasetBuilder = new DatasetBuilder(tokenizer, model.config.blockSize);
     }
 
     setLearningRate(learningRate: number): void {
@@ -87,16 +98,16 @@ export default abstract class GPTTrainer {
             const grad = grads[varName];
             console.log(`${varName}:`);
             console.log(`  Shape: ${grad.shape}`);
-            console.log(`  Mean: ${this.tf.mean(grad).dataSync()[0]}`);
-            console.log(`  Std: ${this.tf.moments(grad).variance.sqrt().dataSync()[0]}`);
-            console.log(`  Min: ${this.tf.min(grad).dataSync()[0]}`);
-            console.log(`  Max: ${this.tf.max(grad).dataSync()[0]}`);
-            console.log(`  Norm: ${this.tf.norm(grad).dataSync()[0]}`);
+            console.log(`  Mean: ${mean(grad).dataSync()[0]}`);
+            console.log(`  Std: ${moments(grad).variance.sqrt().dataSync()[0]}`);
+            console.log(`  Min: ${min(grad).dataSync()[0]}`);
+            console.log(`  Max: ${max(grad).dataSync()[0]}`);
+            console.log(`  Norm: ${norm(grad).dataSync()[0]}`);
         });
     }
 
-    protected trainStep(batch: { xs: TF.Tensor; ys: TF.Tensor }, dummy = false, print = false): TF.Scalar {
-        return this.tf.tidy(() => {
+    protected trainStep(batch: { xs: Tensor; ys: Tensor }, dummy = false, print = false): Scalar {
+        return tidy(() => {
             this.model.getProfiler()?.startMemory();
             const { xs, ys } = batch;
 
@@ -104,11 +115,11 @@ export default abstract class GPTTrainer {
                 const { loss, logits } = this.model.forward(xs, ys, true);
                 //console.log('Logits', logits.toString());
                 logits.dispose();
-                return loss! as TF.Scalar;
+                return loss! as Scalar;
             };
 
             //const vars = this.model.variables;
-            const { value: lossValue, grads } = this.tf.variableGrads(f);
+            const { value: lossValue, grads } = variableGrads(f);
 
             if (!dummy) {
                 // Clip gradients
@@ -128,7 +139,7 @@ export default abstract class GPTTrainer {
 
                 this.model.getProfiler()?.endMemory('Training');
 
-                this.tf.dispose(grads);
+                dispose(grads);
             } else {
                 this.model.getProfiler()?.endMemory('Training');
             }
@@ -139,8 +150,8 @@ export default abstract class GPTTrainer {
 
     protected dummyPass(): void {
         // Send a dummy input to initialize the model
-        const dummyBatch = this.tf.zeros([1, this.model.config.blockSize], 'int32');
-        const dummyTargets = this.tf.zeros([1, this.model.config.blockSize], 'int32');
+        const dummyBatch = zeros([1, this.model.config.blockSize], 'int32');
+        const dummyTargets = zeros([1, this.model.config.blockSize], 'int32');
 
         try {
             const l = this.trainStep({ xs: dummyBatch, ys: dummyTargets }, true);
@@ -154,7 +165,7 @@ export default abstract class GPTTrainer {
         }
     }
 
-    protected async trainBatch(state: TrainingState, batch: { xs: TF.Tensor; ys: TF.Tensor }): Promise<number> {
+    protected async trainBatch(state: TrainingState, batch: { xs: Tensor; ys: Tensor }): Promise<number> {
         try {
             //console.log('Batch XS', batch.xs.toString());
             const lossScalar = this.trainStep(batch, false, false);
@@ -173,15 +184,15 @@ export default abstract class GPTTrainer {
             });
         } catch (error) {
             console.error(`Error processing batch at step ${state.step}:`, error);
-            this.tf.dispose();
+            dispose();
             throw error;
         }
     }
 
     abstract trainOnDataset(
-        dataset: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>,
+        dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
         options: Partial<TrainingOptions>,
-        validationDataset?: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>
+        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }>;
 
     async createTrainValidationSplit(
@@ -189,8 +200,8 @@ export default abstract class GPTTrainer {
         batchSize: number = 32,
         validationSplit: number = 0.1
     ): Promise<{
-        trainDataset: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>;
-        validationDataset: TF.data.Dataset<{ xs: TF.Tensor; ys: TF.Tensor }>;
+        trainDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
+        validationDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
     }> {
         const trainDataset = await this.datasetBuilder.createTextDataset(textData, batchSize, 0, 1 - validationSplit);
         const validationDataset = await this.datasetBuilder.createTextDataset(
@@ -203,7 +214,7 @@ export default abstract class GPTTrainer {
         return { trainDataset, validationDataset };
     }
 
-    async createDataset(textData: string[], batchSize: number = 32): Promise<TF.data.Dataset<TF.TensorContainer>> {
+    async createDataset(textData: string[], batchSize: number = 32): Promise<Dataset<TensorContainer>> {
         const trainDataset = await this.datasetBuilder.createTextDataset(textData, batchSize);
         return trainDataset;
     }

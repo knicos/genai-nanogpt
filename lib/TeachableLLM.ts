@@ -1,6 +1,5 @@
-import type TF from '@tensorflow/tfjs';
 import { defaultConfig, GPTConfig } from './config';
-import { ITokeniser } from './tokeniser/type';
+import type { ITokeniser } from './tokeniser/type';
 import NanoGPT from './NanoGPTModel';
 import { saveModel, SaveOptions } from './utilities/save';
 import { loadModel } from './utilities/load';
@@ -10,19 +9,18 @@ import EE from 'eventemitter3';
 import { dummyPassAsync } from './utilities/dummy';
 import { CharTokeniser } from './main';
 import MemoryProfiler from './utilities/profile';
+import BPETokeniser from './tokeniser/bpe';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 
 export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
     private _config?: GPTConfig;
     private _model?: NanoGPT;
-    public readonly tf: typeof TF;
     private _tokeniser?: ITokeniser;
     private _status: TeachableLLMStatus = 'loading';
 
-    constructor(tf: typeof TF, tokeniser?: ITokeniser, model?: NanoGPT) {
+    constructor(tokeniser?: ITokeniser, model?: NanoGPT) {
         super();
-        this.tf = tf;
         this._config = model?.config;
         this._tokeniser = tokeniser;
         this._model = model;
@@ -71,9 +69,9 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
         return saveModel(this._model, this._tokeniser, options);
     }
 
-    static loadModel(tf: typeof TF, data: Blob | Buffer | string): TeachableLLM {
-        const teachableLLM = new TeachableLLM(tf);
-        loadModel(tf, data)
+    static loadModel(data: Blob | Buffer | string): TeachableLLM {
+        const teachableLLM = new TeachableLLM();
+        loadModel(data)
             .then(({ model, tokeniser }) => {
                 teachableLLM._model = model;
                 teachableLLM._tokeniser = tokeniser;
@@ -96,11 +94,12 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
         return teachableLLM;
     }
 
-    static create(tf: typeof TF, config: Partial<GPTConfig> = {}) {
+    static create(tokeniserType: 'char' | 'bpe', config: Partial<GPTConfig> = {}) {
         const fullConfig = { ...defaultConfig, ...config };
-        const tokeniser = new CharTokeniser(fullConfig.vocabSize);
-        const model = new NanoGPT(tf, fullConfig);
-        const tmodel = new TeachableLLM(tf, tokeniser, model);
+        const tokeniser =
+            tokeniserType === 'char' ? new CharTokeniser(fullConfig.vocabSize) : new BPETokeniser(fullConfig.vocabSize);
+        const model = new NanoGPT(fullConfig);
+        const tmodel = new TeachableLLM(tokeniser, model);
         tmodel.setStatus('warmup');
         dummyPassAsync(model)
             .then(() => {

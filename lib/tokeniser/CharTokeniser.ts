@@ -1,5 +1,5 @@
 import EE from 'eventemitter3';
-import { ITokeniser } from './type';
+import type { ITokeniser } from './type';
 
 const specialTokens = ['<eos>', '<unk>'];
 

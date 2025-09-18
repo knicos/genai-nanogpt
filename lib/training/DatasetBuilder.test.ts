@@ -1,7 +1,9 @@
 import { describe, it, vi } from 'vitest';
 import { DatasetBuilder } from './DatasetBuilder';
 import * as tf from '@tensorflow/tfjs';
-import { ITokeniser } from '../tokeniser/type';
+import type { ITokeniser } from '../tokeniser/type';
+
+await tf.setBackend('cpu');
 
 describe('DatasetBuilder', () => {
     it('should create a dataset from text data', async ({ expect }) => {
@@ -12,7 +14,7 @@ describe('DatasetBuilder', () => {
         const blockSize = 10;
 
         // Create instance of DatasetBuilder
-        const datasetBuilder = new DatasetBuilder(tf, mockTokenizer, blockSize);
+        const datasetBuilder = new DatasetBuilder(mockTokenizer, blockSize);
 
         // Test createTextDataset method
         const textData = ['hello world', 'this is a test'];
@@ -49,7 +51,7 @@ describe('DatasetBuilder', () => {
         const blockSize = 10;
 
         // Create instance of DatasetBuilder
-        const datasetBuilder = new DatasetBuilder(tf, mockTokenizer, blockSize);
+        const datasetBuilder = new DatasetBuilder(mockTokenizer, blockSize);
 
         // Test createTextDataset method with a single text input
         const textData = ['hello world'];

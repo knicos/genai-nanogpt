@@ -1,4 +1,4 @@
-import type TF from '@tensorflow/tfjs';
+import { tensor, Tensor } from '@tensorflow/tfjs-core';
 
 export interface ITensorSpec {
     shape: number[];
@@ -22,7 +22,7 @@ function float32Concat(arrays: Float32Array[]): Float32Array {
     return result;
 }
 
-export async function exportWeights(weights: TF.Tensor[]): Promise<IWeightManifest> {
+export async function exportWeights(weights: Tensor[]): Promise<IWeightManifest> {
     const manifest: IWeightManifest = {
         spec: [],
         data: new Float32Array(),
@@ -55,8 +55,8 @@ export async function exportWeights(weights: TF.Tensor[]): Promise<IWeightManife
     return manifest;
 }
 
-export async function importWeights(manifest: IWeightManifest, tf: typeof TF): Promise<TF.Tensor[]> {
-    const weights: TF.Tensor[] = [];
+export async function importWeights(manifest: IWeightManifest): Promise<Tensor[]> {
+    const weights: Tensor[] = [];
     let offset = 0;
 
     for (const spec of manifest.spec) {
@@ -64,11 +64,11 @@ export async function importWeights(manifest: IWeightManifest, tf: typeof TF): P
         const data = manifest.data.slice(offset, offset + size);
         offset += size;
 
-        const tensor = tf.tensor(data, spec.shape, 'float32');
+        const ten = tensor(data, spec.shape, 'float32');
         /*if (spec.min !== undefined && spec.scale !== undefined) {
             tensor.sub(spec.min).div(spec.scale);
         }*/
-        weights.push(tensor);
+        weights.push(ten);
     }
 
     return weights;

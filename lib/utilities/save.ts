@@ -1,7 +1,8 @@
 import NanoGPT from '@base/NanoGPTModel';
-import { ITokeniser } from '@base/tokeniser/type';
+import type { ITokeniser } from '@base/tokeniser/type';
 import zip from 'jszip';
 import { exportWeights, ITensorSpec } from './weights';
+import CharTokeniser from '../tokeniser/CharTokeniser';
 
 const VERSION = '1.0.0';
 
@@ -22,7 +23,7 @@ export async function saveModel(model: NanoGPT, tokeniser: ITokeniser, options?:
     for (const [name, tensorList] of weights) {
         const data = await exportWeights(tensorList);
         spec[name] = data.spec;
-        zipFile.file(`${name}.bin`, data.data.buffer, { binary: true });
+        zipFile.file(`${name}.bin`, data.data.buffer as ArrayBuffer, { binary: true });
     }
     zipFile.file(
         'manifest.json',
@@ -40,7 +41,11 @@ export async function saveModel(model: NanoGPT, tokeniser: ITokeniser, options?:
     );
     zipFile.file(
         'tokeniser.json',
-        JSON.stringify({ vocab: tokeniser.getVocab(), merges: await tokeniser.getMerges() }),
+        JSON.stringify({
+            type: tokeniser instanceof CharTokeniser ? 'char' : 'bpe',
+            vocab: tokeniser.getVocab(),
+            merges: await tokeniser.getMerges(),
+        }),
         {
             binary: false,
         }

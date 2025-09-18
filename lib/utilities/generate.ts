@@ -1,7 +1,7 @@
-import { ITokeniser } from '@base/tokeniser/type';
+import type { ITokeniser } from '@base/tokeniser/type';
 import NanoGPT, { GenerateOptions } from '../NanoGPTModel';
-import type TF from '@tensorflow/tfjs';
 import { KVCache } from '@base/layers/CausalSelfAttention';
+import { concat, Tensor, tensor2d, tidy } from '@tensorflow/tfjs-core';
 
 export async function generateText(
     tokeniser: ITokeniser,
@@ -24,8 +24,8 @@ export async function generateText(
         ? new Array(model.config.nLayer).fill(undefined)
         : undefined;
 
-    const inputTensor = model.tf.tidy(() => {
-        let inputTensor: TF.Tensor = model.tf.tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
+    const inputTensor = tidy(() => {
+        let inputTensor: Tensor = tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
         let outputTensor = inputTensor;
 
         // Generate text
@@ -33,9 +33,9 @@ export async function generateText(
             const { output: generatedTokens } = model.generate(inputTensor, cache, options);
             const oldInput = inputTensor;
             const oldOutput = outputTensor;
-            outputTensor = model.tf.concat([outputTensor, generatedTokens], 1);
+            outputTensor = concat([outputTensor, generatedTokens], 1);
 
-            inputTensor = cache ? generatedTokens : model.tf.concat([inputTensor, generatedTokens], 1);
+            inputTensor = cache ? generatedTokens : concat([inputTensor, generatedTokens], 1);
             oldInput.dispose();
             oldOutput.dispose();
             if (!cache) generatedTokens.dispose();

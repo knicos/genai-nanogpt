@@ -1,11 +1,12 @@
-import type TF from '@tensorflow/tfjs';
 import zip from 'jszip';
 import { importWeights, ITensorSpec, IWeightManifest } from './weights';
 import CharTokeniser from '../tokeniser/CharTokeniser';
 import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
-import { ITokeniser } from '@base/tokeniser/type';
+import type { ITokeniser } from '@base/tokeniser/type';
 import { GPTConfig } from '../config';
 import { dummyPassAsync } from './dummy';
+import { disposeVariables, Tensor } from '@tensorflow/tfjs-core';
+import BPETokeniser from '../tokeniser/bpe';
 
 async function loadURL(url: string): Promise<ArrayBuffer> {
     const response = await fetch(url);
@@ -15,10 +16,7 @@ async function loadURL(url: string): Promise<ArrayBuffer> {
     return response.arrayBuffer();
 }
 
-export async function loadModel(
-    tf: typeof TF,
-    data: Blob | Buffer | string
-): Promise<{ model: NanoGPT; tokeniser: ITokeniser }> {
+export async function loadModel(data: Blob | Buffer | string): Promise<{ model: NanoGPT; tokeniser: ITokeniser }> {
     const blob = typeof data === 'string' ? await loadURL(data) : data;
 
     const zipFile = await zip.loadAsync(blob);
@@ -42,13 +40,19 @@ export async function loadModel(
         throw new Error('Tokeniser file not found in the zip archive');
     }
     const tokeniserData = JSON.parse(tokeniserFile) as {
+        type: 'char' | 'bpe';
         vocab: string[];
         merges: [string, string][];
     };
 
-    const tokeniser = new CharTokeniser(tokeniserData.vocab);
+    const tokeniserType = tokeniserData.type ?? 'char';
 
-    const weights = new Map<string, TF.Tensor[]>();
+    const tokeniser =
+        tokeniserType === 'char'
+            ? new CharTokeniser(tokeniserData.vocab)
+            : new BPETokeniser(tokeniserData.vocab, tokeniserData.merges);
+
+    const weights = new Map<string, Tensor[]>();
 
     for (const fileName of Object.keys(zipFile.files)) {
         if (fileName.endsWith('.bin')) {
@@ -59,15 +63,15 @@ export async function loadModel(
             entry.data = floatData;
             manifests.set(name, entry);
 
-            const tensors = await importWeights(entry, tf);
+            const tensors = await importWeights(entry);
             weights.set(name, tensors);
         }
     }
 
     // Force existing variables to be removed
-    tf.disposeVariables();
+    disposeVariables();
 
-    const model = new NanoGPT(tf, manifest.config);
+    const model = new NanoGPT(manifest.config);
 
     await dummyPassAsync(model); // Initialize the model to set up weights and caches
     model.loadWeights(weights);

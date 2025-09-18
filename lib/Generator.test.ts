@@ -12,7 +12,7 @@ describe('Generator', () => {
     });
 
     it('should generate text based on a prompt', async ({ expect }) => {
-        const model = new NanoGPT(tf, {
+        const model = new NanoGPT({
             vocabSize: 20, // Example vocab size
             nEmbed: 64, // Example embedding size
             nLayer: 1, // Example number of layers
@@ -32,7 +32,7 @@ describe('Generator', () => {
     });
 
     it('should emit tokens during generation', async ({ expect }) => {
-        const model = new NanoGPT(tf, {
+        const model = new NanoGPT({
             vocabSize: 20,
             nEmbed: 64,
             nLayer: 1,
@@ -56,7 +56,7 @@ describe('Generator', () => {
     });
 
     it('should emit tokens with attention when requested', async ({ expect }) => {
-        const model = new NanoGPT(tf, {
+        const model = new NanoGPT({
             vocabSize: 20,
             nEmbed: 64,
             nLayer: 1,
@@ -85,7 +85,7 @@ describe('Generator', () => {
     });
 
     it('emits attention with RoPE and KV cache', async ({ expect }) => {
-        const model = new NanoGPT(tf, {
+        const model = new NanoGPT({
             vocabSize: 20,
             nEmbed: 64,
             nLayer: 1,
@@ -115,7 +115,7 @@ describe('Generator', () => {
     });
 
     it('should emit probabilities when requested', async ({ expect }) => {
-        const model = new NanoGPT(tf, {
+        const model = new NanoGPT({
             vocabSize: 20,
             nEmbed: 64,
             nLayer: 1,

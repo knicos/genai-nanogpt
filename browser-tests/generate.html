@@ -30,7 +30,7 @@
             fileInput.addEventListener('change', async (event) => {
                 const file = event.target.files[0];
                 if (file) {
-                    const model = await TeachableLLM.loadModel(tf, file);
+                    const model = await TeachableLLM.loadModel(file);
                     await waitForModel(model);
                     model.enableProfiler = true;
 

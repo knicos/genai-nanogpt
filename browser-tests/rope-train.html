@@ -25,7 +25,7 @@
         <script type="module">
             import { TeachableLLM, waitForModel } from '/dist/main.js';
 
-            const model = TeachableLLM.create(tf, {
+            const model = TeachableLLM.create('char', {
                 vocabSize: 20,
                 blockSize: 32, // Context window size
                 nLayer: 1,
@@ -62,6 +62,7 @@
             });
 
             console.log('Training complete');
+            document.body.innerText = 'PASS';
 
             model.getProfiler().printSummary();
         </script>

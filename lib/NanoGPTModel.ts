@@ -1,4 +1,3 @@
-import type TF from '@tensorflow/tfjs';
 //import { PositionEmbedding } from './NLP/position_embedding';
 import { defaultConfig, GPTConfig } from './config';
 import Block from './layers/TransformerBlock';
@@ -10,6 +9,25 @@ import { estimateParameterCount } from './utilities/parameters';
 import { createSoftmaxCrossEntropyWithGrad } from './training/sparseCrossEntropy';
 import MemoryProfiler from './utilities/profile';
 import BaseLayer from './layers/BaseLayer';
+import { layers, initializers } from '@tensorflow/tfjs-layers';
+import {
+    add,
+    eye,
+    gather,
+    mod,
+    multinomial,
+    oneHot,
+    pad,
+    range,
+    scalar,
+    softmax,
+    Tensor,
+    Tensor1D,
+    tensor1d,
+    tidy,
+    topk,
+    Variable,
+} from '@tensorflow/tfjs-core';
 
 export interface TrainingLogEntry {
     loss: number;
@@ -32,60 +50,58 @@ export interface GenerateOptions {
 export default class NanoGPT extends BaseLayer {
     public readonly config: GPTConfig;
     private wte: TiedEmbeddingOutputLayer; // Token embeddings
-    private wpe?: TF.layers.Layer; // Position embeddings
-    private drop: TF.layers.Layer; // Dropout
+    private wpe?: layers.Layer; // Position embeddings
+    private drop: layers.Layer; // Dropout
     private blocks: Block[];
     private lnF: RMSNorm; // Final layer norm
     private ropeCache?: RoPECache;
-    public readonly tf: typeof TF;
     public log: TrainingLogEntry[] = []; // Training log
 
-    constructor(tf: typeof TF, config: Partial<GPTConfig> = {}) {
+    constructor(config: Partial<GPTConfig> = {}) {
         super();
-        this.tf = tf;
         this.config = { ...defaultConfig, ...config };
 
         // Token embeddings
-        this.wte = new TiedEmbeddingOutputLayer(tf, {
+        this.wte = new TiedEmbeddingOutputLayer({
             vocabSize: this.config.vocabSize,
             embedDim: this.config.nEmbed,
             name: 'token_embedding',
         });
 
         if (this.config.useRope === false) {
-            this.wpe = this.tf.layers.embedding({
+            this.wpe = layers.embedding({
                 inputDim: this.config.blockSize,
                 outputDim: this.config.nEmbed,
                 name: 'positional_embedding',
-                embeddingsInitializer: this.tf.initializers.randomNormal({ mean: 0.0, stddev: 0.02 }),
+                embeddingsInitializer: initializers.randomNormal({ mean: 0.0, stddev: 0.02 }),
             });
         } else {
-            this.ropeCache = new RoPECache(tf, this.config);
+            this.ropeCache = new RoPECache(this.config);
         }
 
-        this.drop = this.tf.layers.dropout({ rate: this.config.dropout });
+        this.drop = layers.dropout({ rate: this.config.dropout });
 
         // Transformer blocks
         this.blocks = [];
         for (let i = 0; i < this.config.nLayer; i++) {
-            this.blocks.push(new Block(this.tf, i, this.config, this.ropeCache));
+            this.blocks.push(new Block(i, this.config, this.ropeCache));
         }
 
         // Final layer norm
-        this.lnF = new RMSNorm(tf, [this.config.nEmbed], 1e-8, `final_rms_norm`);
+        this.lnF = new RMSNorm([this.config.nEmbed], 1e-8, `final_rms_norm`);
     }
 
-    get variables(): TF.Variable[] {
+    get variables(): Variable[] {
         return [
             //...this.wpe.trainableWeights.map((v) => v.read() as TF.Variable),
             ...this.blocks.flatMap((b) => b.variables),
-            ...this.lnF.trainableWeights.map((v) => v as TF.Variable),
+            ...this.lnF.trainableWeights.map((v) => v as Variable),
             ...this.wte.variables,
         ];
     }
 
-    public saveWeights(): Map<string, TF.Tensor[]> {
-        const map = new Map<string, TF.Tensor[]>();
+    public saveWeights(): Map<string, Tensor[]> {
+        const map = new Map<string, Tensor[]>();
         map.set('token_embedding', this.wte.getWeights());
         if (this.wpe) map.set('positional_embedding', this.wpe.getWeights());
         for (let i = 0; i < this.blocks.length; i++) {
@@ -95,7 +111,7 @@ export default class NanoGPT extends BaseLayer {
         return map;
     }
 
-    public loadWeights(weights: Map<string, TF.Tensor[]>): void {
+    public loadWeights(weights: Map<string, Tensor[]>): void {
         this.wte.setWeights(weights.get('token_embedding') || []);
         if (this.wpe) this.wpe.setWeights(weights.get('positional_embedding') || []);
         for (let i = 0; i < this.blocks.length; i++) {
@@ -104,31 +120,28 @@ export default class NanoGPT extends BaseLayer {
         this.lnF.setWeights(weights.get('final_rms_norm') || []);
     }
 
-    private inputPhase(idx: TF.Tensor, pastLen: number, training: boolean = false): TF.Tensor {
-        return this.tf.tidy(() => {
+    private inputPhase(idx: Tensor, pastLen: number, training: boolean = false): Tensor {
+        return tidy(() => {
             //const [, seqLen] = idx.shape;
             //const maxCtx = this.config.blockSize;
             //const posStart = Math.min(pastLen, maxCtx - seqLen);
 
-            const tokEmb = this.wte.embed(idx) as TF.Tensor; // (b, t, n_embd)
+            const tokEmb = this.wte.embed(idx) as Tensor; // (b, t, n_embd)
 
             if (this.config.useRope === false) {
                 const [, seqLen] = idx.shape;
                 const maxCtx = this.config.blockSize;
                 // position_ids = (pastLen + arange(T)) % maxCtx    // stays in [0, blockSize)
-                const range = this.tf.range(0, seqLen, 1, 'int32'); // (t,)
-                const posIdx = this.tf.mod(
-                    this.tf.add(range, this.tf.scalar(pastLen, 'int32')),
-                    this.tf.scalar(maxCtx, 'int32')
-                ) as TF.Tensor;
-                const posEmb = this.wpe!.apply(posIdx) as TF.Tensor; // (b, t, n_embd)
+                const rng = range(0, seqLen, 1, 'int32'); // (t,)
+                const posIdx = mod(add(rng, scalar(pastLen, 'int32')), scalar(maxCtx, 'int32')) as Tensor;
+                const posEmb = this.wpe!.apply(posIdx) as Tensor; // (b, t, n_embd)
 
                 const embSum = tokEmb.add(posEmb);
 
-                const out = this.drop.apply(embSum, { training }) as TF.Tensor;
+                const out = this.drop.apply(embSum, { training }) as Tensor;
                 return out;
             } else {
-                const out = this.drop.apply(tokEmb, { training }) as TF.Tensor;
+                const out = this.drop.apply(tokEmb, { training }) as Tensor;
                 return out;
             }
         });
@@ -169,7 +182,7 @@ export default class NanoGPT extends BaseLayer {
         this.lnF.setProfiler(value);
     }
 
-    private validateInput(idx: TF.Tensor): void {
+    private validateInput(idx: Tensor): void {
         if (idx.shape.length !== 2) {
             throw new Error(`Invalid input shape: expected [batch_size, sequence_length], got ${idx.shape}`);
         }
@@ -181,7 +194,7 @@ export default class NanoGPT extends BaseLayer {
         }
     }
 
-    private calculateLoss(logits: TF.Tensor, targets: TF.Tensor): TF.Tensor {
+    private calculateLoss(logits: Tensor, targets: Tensor): Tensor {
         try {
             //return this.tf.losses.softmaxCrossEntropy(targets, logits, this.tf.Reduction.MEAN);
             const lossFn = createSoftmaxCrossEntropyWithGrad();
@@ -194,8 +207,8 @@ export default class NanoGPT extends BaseLayer {
 
     // Attention rollout per Abnar & Zuidema (2020)
     // Expects list of (B, T, T) attention matrices already averaged over heads.
-    private computeAttentionRollout(attentions: TF.Tensor[]): TF.Tensor {
-        return this.tf.tidy(() => {
+    private computeAttentionRollout(attentions: Tensor[]): Tensor {
+        return tidy(() => {
             if (attentions.length === 0) {
                 throw new Error('No attentions for rollout');
             }
@@ -213,10 +226,10 @@ export default class NanoGPT extends BaseLayer {
 
             if (Q === K) {
                 // Full square attentions: standard rollout
-                const eye = this.tf.eye(K, K).expandDims(0); // (1,K,K)
-                let rollout = eye.tile([B, 1, 1]); // (B,K,K)
+                const ey = eye(K, K).expandDims(0); // (1,K,K)
+                let rollout = ey.tile([B, 1, 1]); // (B,K,K)
                 for (const att of attentions) {
-                    const a = att.add(eye);
+                    const a = att.add(ey);
                     const aNorm = a.div(a.sum(-1, true)); // (B,K,K)
                     rollout = aNorm.matMul(rollout); // (B,K,K)
                 }
@@ -227,9 +240,9 @@ export default class NanoGPT extends BaseLayer {
                 // Incremental (KV cache) attentions: only last row available per layer.
                 // Compose a last-token rollout by combining layers' last-row distributions
                 // with residual and renormalization.
-                let rolloutRow: TF.Tensor | null = null; // (B,1,K)
-                const lastIndex = this.tf.tensor1d([K - 1], 'int32');
-                const lastOneHot = this.tf.oneHot(lastIndex, K).reshape([1, 1, K]).tile([B, 1, 1]); // (B,1,K)
+                let rolloutRow: Tensor | null = null; // (B,1,K)
+                const lastIndex = tensor1d([K - 1], 'int32');
+                const lastOneHot = oneHot(lastIndex, K).reshape([1, 1, K]).tile([B, 1, 1]); // (B,1,K)
                 lastIndex.dispose();
 
                 for (const att of attentions) {
@@ -250,21 +263,21 @@ export default class NanoGPT extends BaseLayer {
     }
 
     forward(
-        idx: TF.Tensor,
-        targets?: TF.Tensor,
+        idx: Tensor,
+        targets?: Tensor,
         training = false,
         includeAttention = false,
         cache?: (KVCache | undefined)[]
-    ): { logits: TF.Tensor; loss?: TF.Tensor; attention?: TF.Tensor } {
+    ): { logits: Tensor; loss?: Tensor; attention?: Tensor } {
         this.validateInput(idx);
 
-        return this.tf.tidy(() => {
+        return tidy(() => {
             this.startMemory();
             // Token and position embeddings
             const pastLen = cache?.[0]?.length ?? 0;
             let x = this.inputPhase(idx, pastLen, training);
 
-            const perLayerAtt: TF.Tensor[] = [];
+            const perLayerAtt: Tensor[] = [];
 
             if (cache && cache.length !== this.blocks.length) {
                 console.error('Cache', cache);
@@ -297,18 +310,18 @@ export default class NanoGPT extends BaseLayer {
                 }
             }
 
-            let aggregatedAttention: TF.Tensor | undefined;
+            let aggregatedAttention: Tensor | undefined;
             if (includeAttention && perLayerAtt.length > 0) {
                 aggregatedAttention = this.computeAttentionRollout(perLayerAtt);
             }
 
             // Final layer norm
-            x = this.lnF.apply(x) as TF.Tensor;
+            x = this.lnF.apply(x) as Tensor;
 
             // Embedding to logits
-            const logits = this.wte.project(x) as TF.Tensor;
+            const logits = this.wte.project(x) as Tensor;
 
-            let loss: TF.Tensor | undefined;
+            let loss: Tensor | undefined;
             if (targets) {
                 loss = this.calculateLoss(logits, targets);
             }
@@ -320,16 +333,16 @@ export default class NanoGPT extends BaseLayer {
     }
 
     generate(
-        idx: TF.Tensor,
+        idx: Tensor,
         cache?: (KVCache | undefined)[],
         options?: GenerateOptions
-    ): { output: TF.Tensor; attention?: TF.Tensor; probabilities?: TF.Tensor } {
+    ): { output: Tensor; attention?: Tensor; probabilities?: Tensor } {
         const temperature = options?.temperature ?? 1.0;
-        const topK = options?.topK;
+        const tK = options?.topK;
         const usePadding = options?.usePadding ?? false;
         const includeAttention = options?.includeAttention ?? false;
 
-        return this.tf.tidy(() => {
+        return tidy(() => {
             const currentIdx = idx;
 
             // Crop sequence if it exceeds block size
@@ -345,7 +358,7 @@ export default class NanoGPT extends BaseLayer {
             // In some cases padding is faster
             const padIdx =
                 padding > 0
-                    ? this.tf.pad(cropIdx, [
+                    ? pad(cropIdx, [
                           [0, 0],
                           [0, padding],
                       ])
@@ -362,19 +375,19 @@ export default class NanoGPT extends BaseLayer {
 
             const scaledLogits = lastLogits.div(temperature);
 
-            let nextToken: TF.Tensor;
+            let nextToken: Tensor;
 
-            if (topK) {
-                const { values: topKValues, indices: topKIndices } = this.tf.topk(scaledLogits, topK);
-                const sampledIdx = this.tf.multinomial(topKValues.squeeze([1]) as TF.Tensor1D, 1);
-                nextToken = this.tf.gather(topKIndices.squeeze([1]), sampledIdx, 1);
+            if (tK) {
+                const { values: topKValues, indices: topKIndices } = topk(scaledLogits, tK);
+                const sampledIdx = multinomial(topKValues.squeeze([1]) as Tensor1D, 1);
+                nextToken = gather(topKIndices.squeeze([1]), sampledIdx, 1);
             } else {
-                nextToken = this.tf.multinomial(scaledLogits.squeeze([1]) as TF.Tensor1D, 1);
+                nextToken = multinomial(scaledLogits.squeeze([1]) as Tensor1D, 1);
             }
 
-            let probabilities: TF.Tensor | undefined;
+            let probabilities: Tensor | undefined;
             if (options?.includeProbabilities) {
-                probabilities = this.tf.softmax(scaledLogits.squeeze([1]) as TF.Tensor1D);
+                probabilities = softmax(scaledLogits.squeeze([1]) as Tensor1D);
             }
 
             nextToken = nextToken.reshape([1, 1]);

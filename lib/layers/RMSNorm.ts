@@ -1,19 +1,17 @@
-import type TF from '@tensorflow/tfjs';
+import { ones, Tensor, tidy, variable, Variable } from '@tensorflow/tfjs-core';
 import BaseLayer from './BaseLayer';
 
 export default class RMSNorm extends BaseLayer {
-    private gamma: TF.Variable;
+    private gamma: Variable;
     private epsilon: number;
-    private tf: typeof TF;
 
-    constructor(tf: typeof TF, shape: number[], epsilon = 1e-8, name = '') {
+    constructor(shape: number[], epsilon = 1e-8, name = '') {
         super();
-        this.tf = tf;
         this.epsilon = epsilon;
-        this.gamma = tf.variable(tf.ones(shape), true, `${name}_gamma`, 'float32');
+        this.gamma = variable(ones(shape), true, `${name}_gamma`, 'float32');
     }
 
-    get trainableWeights(): TF.Variable[] {
+    get trainableWeights(): Variable[] {
         return [this.gamma];
     }
 
@@ -21,16 +19,16 @@ export default class RMSNorm extends BaseLayer {
         this.gamma.trainable = value;
     }
 
-    getWeights(): TF.Tensor[] {
+    getWeights(): Tensor[] {
         return [this.gamma];
     }
 
-    setWeights(weights: TF.Tensor[]): void {
+    setWeights(weights: Tensor[]): void {
         this.gamma.assign(weights[0]);
     }
 
-    apply(x: TF.Tensor): TF.Tensor {
-        return this.tf.tidy(() => {
+    apply(x: Tensor): Tensor {
+        return tidy(() => {
             this.startMemory();
             // RMSNorm: x / sqrt(mean(x^2) + epsilon), then scale by gamma
             const meanSquare = x.square().mean(-1, true);

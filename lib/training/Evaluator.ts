@@ -1,11 +1,12 @@
 import NanoGPT from '../NanoGPTModel';
-import type TF from '@tensorflow/tfjs';
 import { LazyIterator } from '@tensorflow/tfjs-data/dist/iterators/lazy_iterator';
+import { Dataset } from '@tensorflow/tfjs-data';
+import { Tensor, TensorContainer } from '@tensorflow/tfjs-core';
 
 export default class Evaluator {
-    private iterator: Promise<LazyIterator<TF.TensorContainer>>;
+    private iterator: Promise<LazyIterator<TensorContainer>>;
 
-    constructor(private model: NanoGPT, dataset: TF.data.Dataset<TF.TensorContainer>) {
+    constructor(private model: NanoGPT, dataset: Dataset<TensorContainer>) {
         this.iterator = dataset.iterator();
     }
 
@@ -18,7 +19,7 @@ export default class Evaluator {
             const result = await iterator.next();
             if (result.done) break;
             const batch = result.value;
-            const { xs, ys } = batch as { xs: TF.Tensor; ys: TF.Tensor };
+            const { xs, ys } = batch as { xs: Tensor; ys: Tensor };
 
             const { loss, logits } = this.model.forward(xs, ys, false, false);
             logits.dispose();

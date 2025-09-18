@@ -1,5 +1,5 @@
 import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
-import { ITokeniser } from './tokeniser/type';
+import type { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import FullTrainer from './training/FullTrainer';
 
@@ -19,7 +19,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
 
     constructor(model: NanoGPT, tokeniser: ITokeniser) {
         super();
-        this.trainer = new FullTrainer(model.tf, model, tokeniser, 1e-3);
+        this.trainer = new FullTrainer(model, tokeniser, 1e-3);
     }
 
     stop() {

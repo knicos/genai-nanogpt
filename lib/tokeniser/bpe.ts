@@ -1,4 +1,6 @@
 import parseTokens from '../utilities/tokenParse';
+import EE from 'eventemitter3';
+import type { ITokeniser } from './type';
 
 interface TokenPair {
     a: string;
@@ -7,17 +9,23 @@ interface TokenPair {
     instances: Set<number>;
 }
 
+type PairKey = `${string}-::-${string}`;
+
 interface InternalTokenState {
     tokens: string[][];
-    pairs: Map<string, TokenPair>;
+    pairs: Map<PairKey, TokenPair>;
+}
+
+function makePairKey(a: string, b: string): PairKey {
+    return `${a}-::-${b}` as PairKey;
 }
 
 function initPairs(tokens: string[][]): InternalTokenState {
-    const pairs = new Map<string, TokenPair>();
+    const pairs = new Map<PairKey, TokenPair>();
     for (let j = 0; j < tokens.length; j++) {
         const tokenSet = tokens[j];
         for (let i = 0; i < tokenSet.length - 1; i++) {
-            const pair = `${tokenSet[i]}${tokenSet[i + 1]}`;
+            const pair = makePairKey(tokenSet[i], tokenSet[i + 1]);
             const entry = pairs.get(pair) || {
                 a: tokenSet[i],
                 b: tokenSet[i + 1],
@@ -33,11 +41,17 @@ function initPairs(tokens: string[][]): InternalTokenState {
 }
 
 function updatePair(state: InternalTokenState, a: string, b: string, instance: number, v: number): void {
-    const pairKey = `${a}${b}`;
+    const pairKey = makePairKey(a, b);
     if (state.pairs.has(pairKey)) {
         const pair = state.pairs.get(pairKey)!;
         pair.count += v;
-        pair.instances.add(instance);
+        if (v > 0) {
+            pair.instances.add(instance);
+        } else if (pair.count <= 0) {
+            state.pairs.delete(pairKey);
+        } else {
+            pair.instances.delete(instance);
+        }
     } else {
         state.pairs.set(pairKey, { a, b, count: v, instances: new Set([instance]) });
     }
@@ -96,30 +110,58 @@ function mergeTokens(state: InternalTokenState, pair: TokenPair) {
         state.tokens[index] = newTokens;
     });
     // Remove the merged pair from pairs map
-    state.pairs.delete(`${pair.a}${pair.b}`);
+    state.pairs.delete(makePairKey(pair.a, pair.b));
 }
 
-export default class BPE {
+export default class BPETokeniser extends EE<'trainStatus'> implements ITokeniser {
+    private targetSize: number;
     private vocab: Set<string> = new Set();
     private vocabIndex: Map<string, number> = new Map();
     private merges: [string, string][] = [];
     private pretokenMap: Map<string, string[]> = new Map();
 
-    constructor(vocab?: string[], merges?: [string, string][]) {
-        if (vocab) {
+    constructor(vocabSize: number);
+    constructor(vocab: string[], merges?: [string, string][]);
+    constructor(vocab: string[] | number, merges?: [string, string][]) {
+        super();
+        if (Array.isArray(vocab)) {
             // Recreate the merges
             vocab.forEach((v, i) => {
                 this.vocab.add(v);
                 this.vocabIndex.set(v, i);
             });
-        }
-        if (merges) {
-            this.merges = merges;
+            if (merges) {
+                this.merges = merges;
+            }
+            this.targetSize = vocab.length;
+        } else {
+            this.vocab.add('<eos>');
+            this.vocab.add('<unk>');
+            this.targetSize = vocab;
         }
     }
 
-    public train(text: string[], vocabSize: number, onUpdate?: (progress: number, vocabSize: number) => void): void {
-        const pretokens = text.map((t) => parseTokens(t, true)).flat(1);
+    public destroy() {
+        this.vocab.clear();
+        this.vocabIndex.clear();
+        this.merges = [];
+        this.pretokenMap.clear();
+    }
+
+    public get trained(): boolean {
+        return this.vocab.size === this.targetSize && this.merges.length > 0;
+    }
+
+    public get vocabSize(): number {
+        return this.vocab.size;
+    }
+
+    public get eosToken(): number {
+        return this.vocabIndex.get('<eos>') ?? 0;
+    }
+
+    public async train(text: string[]): Promise<number> {
+        const pretokens = text.map((t) => parseTokens(t)).flat(1);
         const preTokenSet = new Set<string>(pretokens);
 
         this.vocab = new Set();
@@ -130,7 +172,7 @@ export default class BPE {
 
         const pretokensArray = Array.from(preTokenSet);
         const tokens = pretokensArray.map((token) => {
-            const chars = token.split('');
+            const chars = Array.from(token);
             return chars.map((c) => {
                 this.vocab.add(c);
                 return c;
@@ -139,7 +181,7 @@ export default class BPE {
 
         const state = initPairs(tokens);
 
-        while (this.vocab.size < vocabSize && this.merges.length < vocabSize) {
+        while (this.vocab.size < this.targetSize && this.merges.length < this.targetSize) {
             //state = initPairs(state.tokens);
             const pair = bestPair(state);
             if (!pair) {
@@ -150,10 +192,6 @@ export default class BPE {
             this.vocab.add(pair.a + pair.b);
 
             mergeTokens(state, pair);
-
-            if (onUpdate && this.vocab.size % 100 === 0) {
-                onUpdate(this.vocab.size / vocabSize, this.vocab.size);
-            }
         }
 
         pretokensArray.forEach((token, i) => {
@@ -166,18 +204,20 @@ export default class BPE {
         for (const v of this.vocab.keys()) {
             this.vocabIndex.set(v, i++);
         }
+
+        return this.vocab.size;
     }
 
     public getVocab() {
         return Array.from(this.vocab);
     }
 
-    public getMerges() {
+    public async getMerges() {
         return this.merges;
     }
 
     private tokeniseWord(word: string): string[] {
-        let tokens = word.split('');
+        let tokens = Array.from(word);
         this.merges.forEach((m) => {
             tokens = mergeTokensAll([tokens], m)[0];
         });
@@ -187,7 +227,7 @@ export default class BPE {
 
     private tokeniseStrings(text: string[]): string[][] {
         return text.map((t) => {
-            const pretokens = parseTokens(t, true);
+            const pretokens = parseTokens(t);
             const tokens = pretokens
                 .map((token) => {
                     if (this.pretokenMap.has(token)) {
@@ -201,14 +241,28 @@ export default class BPE {
         });
     }
 
-    public tokenise(text: string[], numeric: true): number[][];
-    public tokenise(text: string[]): string[][];
-    public tokenise(text: string[], numeric?: boolean): number[][] | string[][] {
+    public async tokenise(text: string[], numeric: true): Promise<number[][]>;
+    public async tokenise(text: string[]): Promise<string[][]>;
+    public async tokenise(text: string[], numeric?: boolean): Promise<number[][] | string[][]> {
         const tokens = this.tokeniseStrings(text);
         if (numeric) {
             return tokens.map((ts) => ts.map((t) => this.vocabIndex.get(t) ?? -1));
         } else {
             return tokens;
         }
+    }
+
+    public async detokenise(tokens: number[][]): Promise<string[]> {
+        const vocab = this.getVocab();
+        const text = tokens.map((t) => t.map((tt) => vocab[tt]).join(''));
+        return text;
+    }
+
+    public async encode(text: string): Promise<number[]> {
+        return (await this.tokenise([text], true))[0];
+    }
+
+    public async decode(tokens: number[]): Promise<string> {
+        return (await this.detokenise([tokens]))[0];
     }
 }

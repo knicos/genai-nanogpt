@@ -2,9 +2,11 @@ import { describe, it, vi } from 'vitest';
 import TeachableLLM from './TeachableLLM';
 import * as tf from '@tensorflow/tfjs';
 
+await tf.setBackend('cpu');
+
 describe('TeachableLLM Tests', () => {
     it('can create a model', async ({ expect }) => {
-        const model = TeachableLLM.create(tf, {
+        const model = TeachableLLM.create('char', {
             nEmbed: 32,
             nHead: 2,
             nLayer: 1,
@@ -21,7 +23,7 @@ describe('TeachableLLM Tests', () => {
     });
 
     it('can create multiple if disposed', async ({ expect }) => {
-        const model = TeachableLLM.create(tf, {
+        const model = TeachableLLM.create('char', {
             nEmbed: 32,
             nHead: 2,
             nLayer: 1,
@@ -36,7 +38,7 @@ describe('TeachableLLM Tests', () => {
         expect(model.ready).toBe(false);
         model.dispose();
 
-        const newModel = TeachableLLM.create(tf, {
+        const newModel = TeachableLLM.create('char', {
             nEmbed: 32,
             nHead: 2,
             nLayer: 1,
@@ -53,7 +55,7 @@ describe('TeachableLLM Tests', () => {
     });
 
     it('has an awaitingTokens status', async ({ expect }) => {
-        const model = TeachableLLM.create(tf, {
+        const model = TeachableLLM.create('char', {
             nEmbed: 32,
             nHead: 2,
             nLayer: 1,

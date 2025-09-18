@@ -1,11 +1,12 @@
 import { describe, it } from 'vitest';
 import * as tf from '@tensorflow/tfjs';
-import { rope, ropeCPU } from './rope';
+import { rope } from './rope';
 import RoPECache from '@base/layers/RoPECache';
+import { ropeCPU } from './cpu/rope';
 
 describe('rope', () => {
     it('produces equivalent gradients', async ({ expect }) => {
-        const cache = new RoPECache(tf, {
+        const cache = new RoPECache({
             biasInLayerNorm: false,
             vocabSize: 20,
             nEmbed: 16,

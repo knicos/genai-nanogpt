@@ -21,6 +21,7 @@
         "preview": "vite preview",
         "lint": "eslint",
         "test": "vitest",
+        "test:gl": "playwright test",
         "ci:test": "vitest --coverage --reporter=junit --outputFile=junit.xml",
         "coverage": "vitest run --coverage",
         "train": "tsx scripts/train.ts",

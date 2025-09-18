@@ -1,8 +1,8 @@
-import type TF from '@tensorflow/tfjs';
 import NanoGPT, { GenerateOptions } from './NanoGPTModel';
-import { ITokeniser } from './tokeniser/type';
+import type { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import { KVCache } from './layers/CausalSelfAttention';
+import { concat, Tensor, tensor2d } from '@tensorflow/tfjs-core';
 
 export interface IGenerateOptions extends GenerateOptions {
     maxLength?: number; /// Maximum length of the generated text
@@ -16,9 +16,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         super();
     }
 
-    private async tokenisePrompt(prompt?: string): Promise<TF.Tensor> {
+    private async tokenisePrompt(prompt?: string): Promise<Tensor> {
         const tokenisedPrompt = prompt ? await this.tokeniser.tokenise([prompt], true) : [[this.tokeniser.eosToken]];
-        const inputTensor: TF.Tensor = this.model.tf.tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
+        const inputTensor: Tensor = tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
         return inputTensor;
     }
 
@@ -40,7 +40,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             } = this.model.generate(inputTensor, undefined, options);
 
             const oldInput = inputTensor;
-            inputTensor = this.model.tf.concat([inputTensor, generatedToken], 1);
+            inputTensor = concat([inputTensor, generatedToken], 1);
             oldInput.dispose();
 
             const newText = await this.processResponse(generatedToken, attention, probabilities);
@@ -57,9 +57,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     }
 
     private async processResponse(
-        generatedToken: TF.Tensor,
-        attention: TF.Tensor | undefined,
-        probabilities: TF.Tensor | undefined
+        generatedToken: Tensor,
+        attention: Tensor | undefined,
+        probabilities: Tensor | undefined
     ): Promise<string | null> {
         const newToken = ((await generatedToken.array()) as number[][])[0][0];
         if (newToken === this.tokeniser.eosToken) {

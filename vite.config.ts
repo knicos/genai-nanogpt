@@ -30,6 +30,7 @@ export default defineConfig({
             provider: 'v8',
             reporter: ['cobertura', 'html'],
         },
+        exclude: ['**/browser-tests/**', '**/node_modules/**', '**/dist/**'],
     },
     resolve: {
         alias: {
@@ -39,7 +40,7 @@ export default defineConfig({
     build: {
         copyPublicDir: true,
         rollupOptions: {
-            external: ['@tensorflow/tfjs'],
+            external: ['@tensorflow/tfjs', 'crypto'],
             output: {
                 assetFileNames: 'assets/[name][extname]',
                 entryFileNames: '[name].js',

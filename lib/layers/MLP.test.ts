@@ -14,8 +14,9 @@ describe('MLP', () => {
             dropout: 0.0,
             blockSize: 4,
             mlpFactor: 4,
+            useRope: true,
         };
-        const mlp = new MLP(tf, 0, config);
+        const mlp = new MLP(0, config);
 
         const input = tf.randomNormal([1, 4, 16]);
         const output = mlp.call(input, false);
@@ -35,15 +36,16 @@ describe('MLP', () => {
             dropout: 0.0,
             blockSize: 4,
             mlpFactor: 4,
+            useRope: true,
         };
-        const mlp = new MLP(tf, 0, config);
+        const mlp = new MLP(0, config);
         const input = tf.randomNormal([1, 4, 16]);
         mlp.call(input, false); // Initialize the layer
 
         const weightsMap = new Map<string, tf.Tensor[]>();
         mlp.saveWeights(weightsMap);
 
-        const newMlp = new MLP(tf, 0, config);
+        const newMlp = new MLP(0, config);
         newMlp.call(input, false); // Initialize the layer
         newMlp.loadWeights(weightsMap);
 
