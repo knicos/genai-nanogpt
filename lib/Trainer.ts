@@ -2,6 +2,7 @@ import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
 import type { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import FullTrainer from './training/FullTrainer';
+import { TrainingProgress } from './training/Trainer';
 
 export interface ITrainerOptions {
     batchSize?: number; // Batch size for training
@@ -38,6 +39,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             options?.validationSplit || 0.1
         );
 
+        const totalSamples = text.reduce((sum, t) => sum + t.length, 0) * (1 - (options?.validationSplit || 0));
+
         // Only set the learning rate if we haven't trained before
         // This allows for resuming training without resetting the learning rate
         if (!this.hasTrained) {
@@ -54,11 +57,18 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                 logInterval: options?.logInterval || 10,
                 desiredLoss: options?.desiredLoss || 0.01,
                 maxSteps: options?.maxSteps || 1000,
-                onStep: async (log: TrainingLogEntry) => {
+                onStep: async (log: TrainingLogEntry, progress: TrainingProgress) => {
                     const listeners = this.listeners('log');
                     for (const listener of listeners) {
                         // These listeners can be async, so we await them
-                        await listener(log);
+                        await listener(log, {
+                            ...progress,
+                            progress: progress.totalSamples / totalSamples,
+                            remaining: Math.max(
+                                0,
+                                ((totalSamples - progress.totalSamples) / progress.totalSamples) * progress.duration
+                            ),
+                        });
                     }
                 },
             },

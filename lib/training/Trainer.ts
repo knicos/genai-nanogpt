@@ -26,6 +26,12 @@ export interface TrainingState {
     validationLosses: number[];
 }
 
+export interface TrainingProgress {
+    duration: number;
+    totalSamples: number;
+    samplesPerSecond: number;
+}
+
 export interface AdamConfig {
     learningRateFactor: number;
     beta1: number;
@@ -38,7 +44,7 @@ export interface TrainingOptions {
     logInterval: number;
     prompt?: string;
     maxSteps: number;
-    onStep?: (log: TrainingLogEntry) => Promise<void> | void;
+    onStep?: (log: TrainingLogEntry, progress: TrainingProgress) => Promise<void> | void;
 }
 
 // Enhanced training utilities with Dataset API and memory leak fixes

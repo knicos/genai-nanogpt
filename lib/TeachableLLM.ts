@@ -1,6 +1,6 @@
 import { defaultConfig, GPTConfig } from './config';
 import type { ITokeniser } from './tokeniser/type';
-import NanoGPT from './NanoGPTModel';
+import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
 import { saveModel, SaveOptions } from './utilities/save';
 import { loadModel } from './utilities/load';
 import Generator, { IGenerateOptions } from './Generator';
@@ -10,6 +10,7 @@ import { dummyPassAsync } from './utilities/dummy';
 import { CharTokeniser } from './main';
 import MemoryProfiler from './utilities/profile';
 import BPETokeniser from './tokeniser/bpe';
+import { TrainingProgress } from './training/Trainer';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded';
@@ -171,7 +172,7 @@ export default class TeachableLLM {
         const trainer = new Trainer(this._model, this._tokeniser);
         trainer.on('start', () => this.setStatus('training'));
         trainer.on('stop', () => this.setStatus('ready'));
-        trainer.on('log', async (step) => {
+        trainer.on('log', async (step: TrainingLogEntry) => {
             const listeners = this.ee.listeners('trainStep');
             for (const listener of listeners) {
                 // These listeners can be async, so we await them
@@ -220,7 +221,7 @@ export default class TeachableLLM {
 
     on(event: 'status', listener: (status: TeachableLLMStatus) => void): void;
     on(event: 'error', listener: (error: Error) => void): void;
-    on(event: 'trainStep', listener: (step: number) => void): void;
+    on(event: 'trainStep', listener: (step: TrainingLogEntry, progress: TrainingProgress) => void): void;
     on(event: 'loaded', listener: () => void): void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     on(event: TeachableLLMEvents, listener: (...args: any[]) => void): void {
@@ -234,7 +235,7 @@ export default class TeachableLLM {
 
     off(event: 'status', listener: (status: TeachableLLMStatus) => void): void;
     off(event: 'error', listener: (error: Error) => void): void;
-    off(event: 'trainStep', listener: (step: number) => void): void;
+    off(event: 'trainStep', listener: (step: TrainingLogEntry, progress: TrainingProgress) => void): void;
     off(event: 'loaded', listener: () => void): void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     off(event: TeachableLLMEvents, listener: (...args: any[]) => void): void {

@@ -16,6 +16,7 @@ interface LayerTrainingState extends TrainingState {
     totalSteps: number;
     losses: number[];
     validationLosses: number[];
+    trainingDuration: number;
 }
 
 interface LayerTrainingLogEntry extends TrainingLogEntry {
@@ -91,6 +92,7 @@ export default class LayerTrainer extends GPTTrainer {
             totalSteps: 0,
             losses: [],
             validationLosses: [],
+            trainingDuration: 0,
         };
 
         this.dummyPass();
@@ -147,7 +149,11 @@ export default class LayerTrainer extends GPTTrainer {
                             });
                             entry.example = text;
                         }
-                        await onStep(entry);
+                        await onStep(entry, {
+                            duration: state.trainingDuration,
+                            totalSamples: state.totalSteps * entry.batchSize,
+                            samplesPerSecond: (state.totalSteps * entry.batchSize) / (state.trainingDuration / 1000),
+                        });
                     }
                 }
 

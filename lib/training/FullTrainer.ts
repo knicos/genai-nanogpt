@@ -1,7 +1,7 @@
 import type { ITokeniser } from '../tokeniser/type';
 import { generateText } from '../utilities/generate';
 import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
-import GPTTrainer, { TrainingOptions } from './Trainer';
+import GPTTrainer, { TrainingOptions, TrainingProgress } from './Trainer';
 import Evaluator from './Evaluator';
 import { dispose, Tensor } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
@@ -12,6 +12,8 @@ interface TrainingState {
     totalSteps: number;
     losses: number[];
     validationLosses: number[];
+    logStartTime: number;
+    trainingDuration: number;
 }
 
 const DEFAULT_OPTIONS: TrainingOptions = {
@@ -37,12 +39,16 @@ export default class FullTrainer extends GPTTrainer {
             ...options,
         };
 
+        const startTime = Date.now();
+
         const state: TrainingState = {
             step: 0,
             lastLoss: 1e6,
             totalSteps: 0,
             losses: [],
             validationLosses: [],
+            logStartTime: startTime,
+            trainingDuration: 0,
             ...(this.lastState || {}),
         };
         this.lastState = state;
@@ -50,12 +56,10 @@ export default class FullTrainer extends GPTTrainer {
         this.dummyPass();
         this.model.trainable = true;
 
-        const startTime = Date.now();
-
         this.running = true;
+        state.logStartTime = startTime;
 
         const evaluator = validationDataset ? new Evaluator(this.model, validationDataset) : undefined;
-
         const iterator = await dataset.iterator();
 
         // Training loop with try-catch for better error handling
@@ -79,6 +83,8 @@ export default class FullTrainer extends GPTTrainer {
 
                 if (state.step % logInterval === 0) {
                     await lossPromise;
+                    const logEndTime = Date.now();
+                    state.trainingDuration += logEndTime - state.logStartTime;
                     // Validation
                     if (evaluator) {
                         try {
@@ -96,8 +102,17 @@ export default class FullTrainer extends GPTTrainer {
                             });
                             entry.example = text;
                         }
-                        await onStep(entry);
+
+                        const progress: TrainingProgress = {
+                            duration: state.trainingDuration,
+                            totalSamples: state.totalSteps * entry.batchSize,
+                            samplesPerSecond: (state.totalSteps * entry.batchSize) / (state.trainingDuration / 1000),
+                        };
+
+                        await onStep(entry, progress);
                     }
+
+                    state.logStartTime = Date.now();
                 }
 
                 if (state.step >= maxSteps) {
