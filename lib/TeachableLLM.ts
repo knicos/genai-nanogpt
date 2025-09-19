@@ -12,18 +12,27 @@ import MemoryProfiler from './utilities/profile';
 import BPETokeniser from './tokeniser/bpe';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
+type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded';
 
-export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
+export default class TeachableLLM {
+    private ee = new EE<TeachableLLMEvents>();
     private _config?: GPTConfig;
     private _model?: NanoGPT;
     private _tokeniser?: ITokeniser;
     private _status: TeachableLLMStatus = 'loading';
 
     constructor(tokeniser?: ITokeniser, model?: NanoGPT) {
-        super();
         this._config = model?.config;
         this._tokeniser = tokeniser;
         this._model = model;
+    }
+
+    get vocab(): string[] {
+        return this._tokeniser?.getVocab() || [];
+    }
+
+    get loaded(): boolean {
+        return !!this._model && !!this._tokeniser && !!this._config;
     }
 
     get config(): GPTConfig {
@@ -58,7 +67,7 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
     private setStatus(status: TeachableLLMStatus) {
         if (this._status !== status) {
             this._status = status;
-            this.emit('status', status);
+            this.ee.emit('status', status);
         }
     }
 
@@ -80,15 +89,16 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
                 dummyPassAsync(model)
                     .then(() => {
                         teachableLLM.setStatus('ready');
+                        teachableLLM.ee.emit('loaded');
                     })
                     .catch((err) => {
                         teachableLLM.setStatus('error');
-                        teachableLLM.emit('error', err);
+                        teachableLLM.ee.emit('error', err);
                     });
             })
             .catch((err) => {
                 teachableLLM.setStatus('error');
-                teachableLLM.emit('error', err);
+                teachableLLM.ee.emit('error', err);
             });
 
         return teachableLLM;
@@ -101,12 +111,15 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
         const model = new NanoGPT(fullConfig);
         const tmodel = new TeachableLLM(tokeniser, model);
         tmodel.setStatus('warmup');
+
         dummyPassAsync(model)
             .then(() => {
                 if (tmodel.tokeniser.trained) {
                     tmodel.setStatus('ready');
+                    tmodel.ee.emit('loaded');
                 } else {
                     tmodel.setStatus('awaitingTokens');
+                    tmodel.ee.emit('loaded');
                     tmodel.tokeniser.once('trainStatus', (status) => {
                         if (status === 'trained') {
                             tmodel.setStatus('ready');
@@ -116,7 +129,7 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
             })
             .catch((err) => {
                 tmodel.setStatus('error');
-                tmodel.emit('error', err);
+                tmodel.ee.emit('error', err);
             });
         return tmodel;
     }
@@ -159,7 +172,7 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
         trainer.on('start', () => this.setStatus('training'));
         trainer.on('stop', () => this.setStatus('ready'));
         trainer.on('log', async (step) => {
-            const listeners = this.listeners('trainStep');
+            const listeners = this.ee.listeners('trainStep');
             for (const listener of listeners) {
                 // These listeners can be async, so we await them
                 await listener(step);
@@ -172,9 +185,20 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
         return this.trainer().train(text, options);
     }
 
+    async trainTokeniser(text: string[]): Promise<number> {
+        if (!this._tokeniser) {
+            throw new Error('tokeniser_not_initialized.');
+        }
+        const tokenCount = await this._tokeniser.train(text);
+        if (this._status === 'awaitingTokens') {
+            this.setStatus('ready');
+        }
+        return tokenCount;
+    }
+
     generator(): Generator {
         if (!this._model || !this._tokeniser) {
-            throw new Error('Model or tokeniser is not initialized.');
+            throw new Error('model_or_tokeniser_not_initialized.');
         }
         const generator = new Generator(this._model, this._tokeniser);
         generator.on('start', () => {
@@ -192,5 +216,28 @@ export default class TeachableLLM extends EE<'status' | 'error' | 'trainStep'> {
 
     dispose() {
         this._model?.dispose();
+    }
+
+    on(event: 'status', listener: (status: TeachableLLMStatus) => void): void;
+    on(event: 'error', listener: (error: Error) => void): void;
+    on(event: 'trainStep', listener: (step: number) => void): void;
+    on(event: 'loaded', listener: () => void): void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    on(event: TeachableLLMEvents, listener: (...args: any[]) => void): void {
+        if (event === 'loaded' && this.loaded) {
+            // If already loaded, call the listener immediately
+            setTimeout(() => listener(), 0);
+            return;
+        }
+        this.ee.on(event, listener);
+    }
+
+    off(event: 'status', listener: (status: TeachableLLMStatus) => void): void;
+    off(event: 'error', listener: (error: Error) => void): void;
+    off(event: 'trainStep', listener: (step: number) => void): void;
+    off(event: 'loaded', listener: () => void): void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    off(event: TeachableLLMEvents, listener: (...args: any[]) => void): void {
+        this.ee.off(event, listener);
     }
 }

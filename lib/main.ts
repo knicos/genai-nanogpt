@@ -7,6 +7,7 @@ export { default as loadTextData } from './data/textLoader';
 export type { ITrainerOptions } from './Trainer';
 export type { IGenerateOptions } from './Generator';
 export type { TrainingLogEntry } from './NanoGPTModel';
+export type { ITokeniser } from './tokeniser/type';
 export type { GPTConfig } from './config';
 export {
     estimateParameterCount,

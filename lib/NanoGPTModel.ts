@@ -16,14 +16,12 @@ import {
     gather,
     mod,
     multinomial,
-    oneHot,
     pad,
     range,
     scalar,
     softmax,
     Tensor,
     Tensor1D,
-    tensor1d,
     tidy,
     topk,
     Variable,
@@ -234,28 +232,6 @@ export default class NanoGPT extends BaseLayer {
                     rollout = aNorm.matMul(rollout); // (B,K,K)
                 }
                 return rollout;
-            }
-
-            if (Q === 1) {
-                // Incremental (KV cache) attentions: only last row available per layer.
-                // Compose a last-token rollout by combining layers' last-row distributions
-                // with residual and renormalization.
-                let rolloutRow: Tensor | null = null; // (B,1,K)
-                const lastIndex = tensor1d([K - 1], 'int32');
-                const lastOneHot = oneHot(lastIndex, K).reshape([1, 1, K]).tile([B, 1, 1]); // (B,1,K)
-                lastIndex.dispose();
-
-                for (const att of attentions) {
-                    let a = att.add(lastOneHot); // residual path on last position
-                    a = a.div(a.sum(-1, true)); // row-normalize (B,1,K)
-                    if (rolloutRow == null) {
-                        rolloutRow = a;
-                    } else {
-                        rolloutRow = rolloutRow.mul(a);
-                        rolloutRow = rolloutRow.div(rolloutRow.sum(-1, true)); // renormalize
-                    }
-                }
-                return rolloutRow!;
             }
 
             throw new Error(`Unsupported attention shapes for rollout: [B=${B}, Q=${Q}, K=${K}]`);

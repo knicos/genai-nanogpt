@@ -84,7 +84,7 @@ describe('Generator', () => {
         expect(emittedAttention[0][0]).toHaveLength(prompt.length);
     });
 
-    it('emits attention with RoPE and KV cache', async ({ expect }) => {
+    it('emits attention with RoPE', async ({ expect }) => {
         const model = new NanoGPT({
             vocabSize: 20,
             nEmbed: 64,
@@ -107,7 +107,7 @@ describe('Generator', () => {
         });
 
         const prompt = 'abcde';
-        await generator.generate(prompt, { maxLength: 10, includeAttention: true });
+        await generator.generate(prompt, { maxLength: 10, includeAttention: true, noCache: true });
 
         expect(emittedAttention).toHaveLength(emittedTokens.length);
         expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);

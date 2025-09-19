@@ -17,8 +17,14 @@ describe('TeachableLLM Tests', () => {
             biasInLayerNorm: false,
             mlpFactor: 4,
         });
+
+        const loadedCB = vi.fn();
+        model.on('loaded', loadedCB);
+
         expect(model).toBeInstanceOf(TeachableLLM);
         expect(model.ready).toBe(false);
+        expect(model.loaded).toBe(true);
+        await vi.waitFor(() => expect(loadedCB).toHaveBeenCalled());
         model.dispose();
     });
 

@@ -205,6 +205,7 @@ export default class BPETokeniser extends EE<'trainStatus'> implements ITokenise
             this.vocabIndex.set(v, i++);
         }
 
+        this.emit('trainStatus', 'trained');
         return this.vocab.size;
     }
 
