@@ -27,6 +27,29 @@ describe('CausalSelfAttention', () => {
         layer.dispose();
     });
 
+    it('can accept dropout', ({ expect }) => {
+        const layer = new CausalSelfAttention(0, {
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.1,
+            blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
+        });
+
+        expect(layer).toBeInstanceOf(CausalSelfAttention);
+
+        const input = tf.randomNormal([1, 4, 16]);
+        const { output } = layer.call(input, true);
+        expect(output).toBeInstanceOf(tf.Tensor);
+        expect(output.shape).toEqual([1, 4, 16]);
+        layer.dispose();
+    });
+
     it('can generate attention scores', ({ expect }) => {
         const layer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,

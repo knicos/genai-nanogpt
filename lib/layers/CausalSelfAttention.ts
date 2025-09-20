@@ -22,6 +22,7 @@ import {
     zeros,
 } from '@tensorflow/tfjs-core';
 import { initializers, layers } from '@tensorflow/tfjs-layers';
+import { fusedSoftmax } from '@base/ops/fusedSoftmax';
 
 export type KVCache = {
     k: Tensor; // [B, nHead, T_cache, headDim]
@@ -35,7 +36,7 @@ export default class CausalSelfAttention extends BaseLayer {
     private config: GPTConfig;
     private cAttn: Variable | null = null;
     private cProj: layers.Layer;
-    private attnDropout: layers.Layer;
+    //private attnDropout: layers.Layer;
     private residDropout: layers.Layer;
     private bias: Tensor;
     private maskInf: Tensor;
@@ -75,7 +76,7 @@ export default class CausalSelfAttention extends BaseLayer {
         });
 
         // Dropout layers
-        this.attnDropout = layers.dropout({ rate: config.dropout });
+        //this.attnDropout = layers.dropout({ rate: config.dropout });
         this.residDropout = layers.dropout({ rate: config.dropout });
 
         // Causal mask to ensure that attention is only applied to the left in the input sequence
@@ -132,8 +133,10 @@ export default class CausalSelfAttention extends BaseLayer {
 
     private getAttentionScores(q: Tensor, k: Tensor, training: boolean): Tensor {
         const maskedAtt = attentionMask(q, k, this.maskInf, this.divisor);
-        const attSoftmax = softmax(maskedAtt, -1); // (B, nh, T, T)
-        return this.attnDropout.apply(attSoftmax, { training }) as Tensor;
+        if (training && this.config.dropout > 0) {
+            return fusedSoftmax(maskedAtt, this.config.dropout);
+        }
+        return softmax(maskedAtt, -1);
     }
 
     // Attention with optional past. If pastLen > 0 and T_cur == 1, no mask needed.
@@ -157,8 +160,11 @@ export default class CausalSelfAttention extends BaseLayer {
             const mask = this.maskInf.slice([0, 0], [Tcur, Tcur]).expandDims(0).expandDims(0); // (1,1,T_cur,T_cur)
             att = att.add(mask);
         }
-        const attSoftmax = softmax(att, -1);
-        return this.attnDropout.apply(attSoftmax, { training }) as Tensor;
+
+        if (training && this.config.dropout > 0) {
+            return fusedSoftmax(att, this.config.dropout);
+        }
+        return softmax(att, -1);
     }
 
     private getQKV(x: Tensor): [Tensor, Tensor, Tensor] {
@@ -264,7 +270,7 @@ export default class CausalSelfAttention extends BaseLayer {
     dispose() {
         this.cAttn?.dispose();
         this.cProj.dispose();
-        this.attnDropout.dispose();
+        //this.attnDropout.dispose();
         this.residDropout.dispose();
         this.bias.dispose();
         this.maskInf.dispose();
