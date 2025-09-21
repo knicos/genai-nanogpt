@@ -20,8 +20,8 @@ class SubExpProgram implements GPGPUProgram {
     outputShape: number[];
     userCode: string;
 
-    constructor(batch: number, nh: number, T: number) {
-        this.outputShape = [batch, nh, T, T];
+    constructor(shape: number[]) {
+        this.outputShape = shape;
 
         this.userCode = `
         void main() {
@@ -47,8 +47,8 @@ class DivDropoutProgram implements GPGPUProgram {
         { name: 'seed', type: 'float' as UniformType },
     ];
 
-    constructor(batch: number, nh: number, T: number) {
-        this.outputShape = [batch, nh, T, T];
+    constructor(shape: number[]) {
+        this.outputShape = shape;
         this.userCode = `
         float random(ivec4 coords) {
             float x = float(coords.x * 4096 + coords.y * 256 + coords.z * 16 + coords.w);
@@ -93,32 +93,16 @@ export function softmax(args: { inputs: SoftmaxInputs; backend: unknown; attrs: 
 
     const expandedShape = backend_util.expandShapeToKeepDim(maxLogit.shape, axes);
 
-    //const maxLogitsReshaped = reshape(maxLogit, expandedShape);
-    //const a = sub(logits as Tensor, maxLogitsReshaped);
-    //const b = exp(a);
-
-    const batchSize = logits.shape[0];
-    const T = logits.shape[2]!; // Sequence length
-    const nh = logits.shape[1]!; // Number of heads
-
     // Use the SubExpProgram to compute exp(logits - maxLogit) in one shader
     // program, rather than doing it in two steps.
-    const subExp = new SubExpProgram(batchSize, nh, T);
+    const subExp = new SubExpProgram(logits.shape);
     const expTensor = backend.runWebGLProgram(subExp, [logits, maxLogit], 'float32');
 
     const sumExp = sum({ inputs: { x: expTensor }, backend, attrs: { axis: axes, keepDims: false } });
     const sumExpReshaped = reshape({ inputs: { x: sumExp }, backend, attrs: { shape: expandedShape } });
 
-    /*const $noiseShape = getNoiseShape($x, noiseShape);
-    const keepProb = 1 - rate;
-    const multiplier = div(
-        floor(add(randomUniform($noiseShape, 0, 1, 'float32', seed), keepProb)),
-        keepProb);
-
-    return mul($x, multiplier);*/
-
     if (dropoutRate !== undefined && dropoutRate > 0) {
-        const dropoutProg = new DivDropoutProgram(batchSize, nh, T);
+        const dropoutProg = new DivDropoutProgram(logits.shape);
         const out = backend.runWebGLProgram(dropoutProg, [expTensor, sumExpReshaped], 'float32', [
             [dropoutRate],
             [seed ?? Math.random() * 10000],

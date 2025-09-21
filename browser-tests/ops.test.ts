@@ -29,3 +29,9 @@ test('scatterSub operation', async ({ page }) => {
     const body = page.locator('body');
     await expect(body).toHaveText('PASS');
 });
+
+test('fusedSoftmax operation', async ({ page }) => {
+    await page.goto('/browser-tests/fusedSoftmax.html');
+    const body = page.locator('body');
+    await expect(body).toHaveText('PASS');
+});

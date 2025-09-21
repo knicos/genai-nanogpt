@@ -124,9 +124,7 @@ export default class CausalSelfAttention extends BaseLayer {
     private getAttentionScoresWithPast(
         q: Tensor, // [B, nh, T_cur, hs]
         kTotal: Tensor, // [B, nh, T_total, hs] where T_total=pastLen+T_cur
-        training: boolean,
-        pastLen: number,
-        seed: number
+        pastLen: number
     ): Tensor {
         const Tcur = q.shape[2]!;
 
@@ -143,7 +141,7 @@ export default class CausalSelfAttention extends BaseLayer {
             att = att.add(mask);
         }
 
-        return fusedSoftmax(att, training ? this.config.gpt.dropout : 0, seed);
+        return fusedSoftmax(att, 0, 0);
     }
 
     private getQKV(x: Tensor): [Tensor, Tensor, Tensor] {
@@ -216,7 +214,7 @@ export default class CausalSelfAttention extends BaseLayer {
             // Attention scores: mask for full forward or multi-token chunk; skip for single-token incremental
             let attScores: Tensor;
             if (pastLen > 0) {
-                attScores = this.getAttentionScoresWithPast(q, kTotal, training, pastLen, seed);
+                attScores = this.getAttentionScoresWithPast(q, kTotal, pastLen);
             } else {
                 // No past: regular causal mask over a square (training/full forward)
                 attScores = this.getAttentionScores(q, kTotal, training, seed);

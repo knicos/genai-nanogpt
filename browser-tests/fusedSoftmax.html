@@ -32,20 +32,21 @@
                     [
                         [
                             [
-                                [0.1, 0.2],
-                                [0.3, 0.4],
+                                [0.1, 0.2, 0.3],
+                                [0.3, 0.4, 0.5],
                             ],
                             [
-                                [0.1, 0.2],
-                                [0.3, 0.4],
+                                [0.1, 0.2, 0.3],
+                                [0.3, 0.4, 0.5],
                             ],
                         ],
                     ],
-                    [1, 2, 2, 2]
+                    [1, 2, 2, 3]
                 ); // (1,nh,T,T)
 
                 // Custom op
-                const custom = tf.engine().runKernel('FusedSoftmax', { logits: x }, { dim: -1 });
+                //const custom = tf.engine().runKernel('FusedSoftmax', { logits: x }, { dim: -1 });
+                const custom = tf.softmax(x, -1);
                 const memEnd = tf.memory().numBytes;
                 console.log('CPU memory used:', memEnd - memStart);
                 return custom.array();
@@ -58,16 +59,16 @@
                     [
                         [
                             [
-                                [0.1, 0.2],
-                                [0.3, 0.4],
+                                [0.1, 0.2, 0.3],
+                                [0.3, 0.4, 0.5],
                             ],
                             [
-                                [0.1, 0.2],
-                                [0.3, 0.4],
+                                [0.1, 0.2, 0.3],
+                                [0.3, 0.4, 0.5],
                             ],
                         ],
                     ],
-                    [1, 2, 2, 2]
+                    [1, 2, 2, 3]
                 ); // (1,nh,T,T)
 
                 // Custom op
