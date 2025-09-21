@@ -1,10 +1,7 @@
-import { GPTConfig } from '../config';
 import CausalSelfAttention, { KVCache } from './CausalSelfAttention';
 import MLP from './MLP';
-import RoPECache from './RoPECache';
 import RMSNorm from './RMSNorm';
-import MemoryProfiler from '@base/utilities/profile';
-import BaseLayer from './BaseLayer';
+import BaseLayer, { GPTLayerConfig } from './BaseLayer';
 import { Tensor, tidy, Variable } from '@tensorflow/tfjs-core';
 
 // Transformer block
@@ -17,25 +14,17 @@ export default class Block extends BaseLayer {
     private _trainable: boolean = true;
     public skipped: boolean = false;
 
-    constructor(index: number, config: GPTConfig, ropeCache?: RoPECache) {
-        super();
+    constructor(index: number, config: GPTLayerConfig) {
+        super(config);
         this.index = index;
 
-        this.ln1 = new RMSNorm([config.nEmbed], 1e-8, `block_${this.index}_rms1`);
+        this.ln1 = new RMSNorm(config, 1e-8, `block_${this.index}_rms1`);
 
-        this.attn = new CausalSelfAttention(this.index, config, ropeCache);
+        this.attn = new CausalSelfAttention(this.index, config);
 
-        this.ln2 = new RMSNorm([config.nEmbed], 1e-8, `block_${this.index}_rms2`);
+        this.ln2 = new RMSNorm(config, 1e-8, `block_${this.index}_rms2`);
 
         this.mlp = new MLP(this.index, config);
-    }
-
-    override setProfiler(value: MemoryProfiler | undefined): void {
-        this._profiler = value;
-        this.attn.setProfiler(value);
-        this.mlp.setProfiler(value);
-        this.ln1.setProfiler(value);
-        this.ln2.setProfiler(value);
     }
 
     get variables(): Variable[] {

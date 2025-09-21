@@ -28,7 +28,7 @@
             const model = TeachableLLM.create('char', {
                 vocabSize: 20,
                 blockSize: 32, // Context window size
-                nLayer: 1,
+                nLayer: 2,
                 nHead: 2,
                 nEmbed: 32,
                 dropout: 0.1,
@@ -49,6 +49,8 @@
             await tokeniser.train(textData);
             await waitForModel(model);
 
+            model.model.checkpointing = true;
+
             const trainer = model.trainer();
 
             await trainer.train(textData, {
@@ -65,6 +67,7 @@
             document.body.innerText = 'PASS';
 
             model.getProfiler().printSummary();
+            console.log('Final memory:', tf.memory());
         </script>
     </body>
 </html>

@@ -20,8 +20,8 @@ export async function generateText(
     // Tokenise the prompt
     const tokenisedPrompt = await tokeniser.tokenise([prompt], true);
 
-    const cache: KVCache[] | undefined = model.config.useRope
-        ? new Array(model.config.nLayer).fill(undefined)
+    const cache: KVCache[] | undefined = model.config.gpt.useRope
+        ? new Array(model.config.gpt.nLayer).fill(undefined)
         : undefined;
 
     const inputTensor = tidy(() => {

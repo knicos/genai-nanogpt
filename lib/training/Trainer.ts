@@ -60,7 +60,7 @@ export default abstract class GPTTrainer {
         this.model = model;
         this.learningRate = learningRate;
         this.resetOptimizer();
-        this.datasetBuilder = new DatasetBuilder(tokenizer, model.config.blockSize);
+        this.datasetBuilder = new DatasetBuilder(tokenizer, model.config.gpt.blockSize);
     }
 
     setLearningRate(learningRate: number): void {
@@ -156,8 +156,8 @@ export default abstract class GPTTrainer {
 
     protected dummyPass(): void {
         // Send a dummy input to initialize the model
-        const dummyBatch = zeros([1, this.model.config.blockSize], 'int32');
-        const dummyTargets = zeros([1, this.model.config.blockSize], 'int32');
+        const dummyBatch = zeros([1, this.model.config.gpt.blockSize], 'int32');
+        const dummyTargets = zeros([1, this.model.config.gpt.blockSize], 'int32');
 
         try {
             const l = this.trainStep({ xs: dummyBatch, ys: dummyTargets }, true);

@@ -1,6 +1,5 @@
 import { Tensor, tidy, Variable } from '@tensorflow/tfjs-core';
-import { GPTConfig } from '../config';
-import BaseLayer from './BaseLayer';
+import BaseLayer, { GPTLayerConfig } from './BaseLayer';
 import { layers, initializers } from '@tensorflow/tfjs-layers';
 
 // Multi-layer perceptron
@@ -11,13 +10,13 @@ export default class MLP extends BaseLayer {
     private index: number;
     private _trainable: boolean = true;
 
-    constructor(index: number, config: GPTConfig) {
-        super();
+    constructor(index: number, config: GPTLayerConfig) {
+        super(config);
         this.index = index;
         this.cFc = layers.dense({
-            units: config.mlpFactor * config.nEmbed,
+            units: config.gpt.mlpFactor * config.gpt.nEmbed,
             activation: 'gelu',
-            useBias: config.biasInLinear,
+            useBias: config.gpt.biasInLinear,
             kernelInitializer: initializers.randomNormal({
                 mean: 0.0,
                 stddev: 0.02,
@@ -27,17 +26,17 @@ export default class MLP extends BaseLayer {
         });
 
         this.cProj = layers.dense({
-            units: config.nEmbed,
-            useBias: config.biasInLinear,
+            units: config.gpt.nEmbed,
+            useBias: config.gpt.biasInLinear,
             kernelInitializer: initializers.randomNormal({
                 mean: 0.0,
-                stddev: 0.02 / Math.sqrt(2 * config.nLayer),
+                stddev: 0.02 / Math.sqrt(2 * config.gpt.nLayer),
             }),
             biasInitializer: 'zeros',
             name: `block_${index}_mlp_cProj`,
         });
 
-        this.dropout = layers.dropout({ rate: config.dropout });
+        this.dropout = layers.dropout({ rate: config.gpt.dropout });
     }
 
     get variables(): Variable[] {

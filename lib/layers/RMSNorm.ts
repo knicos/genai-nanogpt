@@ -1,14 +1,14 @@
 import { ones, Tensor, tidy, variable, Variable } from '@tensorflow/tfjs-core';
-import BaseLayer from './BaseLayer';
+import BaseLayer, { GPTLayerConfig } from './BaseLayer';
 
 export default class RMSNorm extends BaseLayer {
     private gamma: Variable;
     private epsilon: number;
 
-    constructor(shape: number[], epsilon = 1e-8, name = '') {
-        super();
+    constructor(config: GPTLayerConfig, epsilon = 1e-8, name = '') {
+        super(config);
         this.epsilon = epsilon;
-        this.gamma = variable(ones(shape), true, `${name}_gamma`, 'float32');
+        this.gamma = variable(ones([config.gpt.nEmbed]), true, `${name}_gamma`, 'float32');
     }
 
     get trainableWeights(): Variable[] {

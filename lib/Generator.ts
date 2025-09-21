@@ -87,7 +87,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         let inputTensor = await this.tokenisePrompt(prompt);
         let outputText = prompt || '';
 
-        const cache: KVCache[] = new Array(this.model.config.nLayer).fill(undefined);
+        const cache: KVCache[] = new Array(this.model.config.gpt.nLayer).fill(undefined);
 
         const maxTokens = options?.maxLength ?? 1000;
 
@@ -128,11 +128,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
     public async generate(prompt?: string, options?: IGenerateOptions): Promise<string> {
         const slicePrompt =
-            prompt && prompt.length > this.model.config.blockSize ? prompt.slice(-this.model.config.blockSize) : prompt;
+            prompt && prompt.length > this.model.config.gpt.blockSize
+                ? prompt.slice(-this.model.config.gpt.blockSize)
+                : prompt;
         this.active = true;
         this.emit('start');
         const result =
-            this.model.config.useRope && !options?.noCache
+            this.model.config.gpt.useRope && !options?.noCache && !options?.includeAttention
                 ? this.generateCache(slicePrompt, options)
                 : this.generateNoCache(slicePrompt, options);
         const r = await result;

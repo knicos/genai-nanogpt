@@ -7,7 +7,6 @@ import RoPECache from './layers/RoPECache';
 import RMSNorm from './layers/RMSNorm';
 import { estimateParameterCount } from './utilities/parameters';
 import { createSoftmaxCrossEntropyWithGrad } from './training/sparseCrossEntropy';
-import MemoryProfiler from './utilities/profile';
 import BaseLayer from './layers/BaseLayer';
 import { layers, initializers } from '@tensorflow/tfjs-layers';
 import {
@@ -46,7 +45,6 @@ export interface GenerateOptions {
 
 // Main GPT model
 export default class NanoGPT extends BaseLayer {
-    public readonly config: GPTConfig;
     private wte: TiedEmbeddingOutputLayer; // Token embeddings
     private wpe?: layers.Layer; // Position embeddings
     private drop: layers.Layer; // Dropout
@@ -56,37 +54,46 @@ export default class NanoGPT extends BaseLayer {
     public log: TrainingLogEntry[] = []; // Training log
 
     constructor(config: Partial<GPTConfig> = {}) {
-        super();
-        this.config = { ...defaultConfig, ...config };
+        super({ gpt: { ...defaultConfig, ...config }, layerConfig: {} });
 
         // Token embeddings
         this.wte = new TiedEmbeddingOutputLayer({
-            vocabSize: this.config.vocabSize,
-            embedDim: this.config.nEmbed,
+            vocabSize: this.config.gpt.vocabSize,
+            embedDim: this.config.gpt.nEmbed,
             name: 'token_embedding',
         });
 
-        if (this.config.useRope === false) {
+        if (this.config.gpt.useRope === false) {
             this.wpe = layers.embedding({
-                inputDim: this.config.blockSize,
-                outputDim: this.config.nEmbed,
+                inputDim: this.config.gpt.blockSize,
+                outputDim: this.config.gpt.nEmbed,
                 name: 'positional_embedding',
                 embeddingsInitializer: initializers.randomNormal({ mean: 0.0, stddev: 0.02 }),
             });
         } else {
-            this.ropeCache = new RoPECache(this.config);
+            this.ropeCache = new RoPECache(this.config.gpt);
+            this.config.layerConfig.ropeCache = this.ropeCache;
         }
 
-        this.drop = layers.dropout({ rate: this.config.dropout });
+        this.drop = layers.dropout({ rate: this.config.gpt.dropout });
 
         // Transformer blocks
         this.blocks = [];
-        for (let i = 0; i < this.config.nLayer; i++) {
-            this.blocks.push(new Block(i, this.config, this.ropeCache));
+        for (let i = 0; i < this.config.gpt.nLayer; i++) {
+            this.blocks.push(new Block(i, this.config));
         }
 
         // Final layer norm
-        this.lnF = new RMSNorm([this.config.nEmbed], 1e-8, `final_rms_norm`);
+        this.lnF = new RMSNorm(this.config, 1e-8, `final_rms_norm`);
+    }
+
+    get checkpointing(): boolean {
+        return this.config.layerConfig.checkpointAttention === true || this.config.layerConfig.checkpointMLP === true;
+    }
+
+    set checkpointing(value: boolean) {
+        this.config.layerConfig.checkpointAttention = value;
+        this.config.layerConfig.checkpointMLP = value;
     }
 
     get variables(): Variable[] {
@@ -126,9 +133,9 @@ export default class NanoGPT extends BaseLayer {
 
             const tokEmb = this.wte.embed(idx) as Tensor; // (b, t, n_embd)
 
-            if (this.config.useRope === false) {
+            if (this.config.gpt.useRope === false) {
                 const [, seqLen] = idx.shape;
-                const maxCtx = this.config.blockSize;
+                const maxCtx = this.config.gpt.blockSize;
                 // position_ids = (pastLen + arange(T)) % maxCtx    // stays in [0, blockSize)
                 const rng = range(0, seqLen, 1, 'int32'); // (t,)
                 const posIdx = mod(add(rng, scalar(pastLen, 'int32')), scalar(maxCtx, 'int32')) as Tensor;
@@ -172,20 +179,12 @@ export default class NanoGPT extends BaseLayer {
         this.lnF.trainable = value;
     }
 
-    override setProfiler(value: MemoryProfiler | undefined) {
-        this._profiler = value;
-        for (const block of this.blocks) {
-            block.setProfiler(value);
-        }
-        this.lnF.setProfiler(value);
-    }
-
     private validateInput(idx: Tensor): void {
         if (idx.shape.length !== 2) {
             throw new Error(`Invalid input shape: expected [batch_size, sequence_length], got ${idx.shape}`);
         }
-        if (idx.shape[1] > this.config.blockSize) {
-            throw new Error(`Input sequence length ${idx.shape[1]} isn't block size ${this.config.blockSize}`);
+        if (idx.shape[1] > this.config.gpt.blockSize) {
+            throw new Error(`Input sequence length ${idx.shape[1]} isn't block size ${this.config.gpt.blockSize}`);
         }
         if (idx.dtype !== 'int32') {
             throw new Error(`Input tensor must be of type int32, got ${idx.dtype}`);
@@ -324,13 +323,13 @@ export default class NanoGPT extends BaseLayer {
             // Crop sequence if it exceeds block size
             const seqLen = currentIdx.shape[1]!;
             const cropIdx =
-                seqLen <= this.config.blockSize
+                seqLen <= this.config.gpt.blockSize
                     ? currentIdx
                     : currentIdx.slice(
-                          [0, seqLen - this.config.blockSize],
-                          [currentIdx.shape[0], this.config.blockSize]
+                          [0, seqLen - this.config.gpt.blockSize],
+                          [currentIdx.shape[0], this.config.gpt.blockSize]
                       );
-            const padding = usePadding ? this.config.blockSize - cropIdx.shape[1]! : 0;
+            const padding = usePadding ? this.config.gpt.blockSize - cropIdx.shape[1]! : 0;
             // In some cases padding is faster
             const padIdx =
                 padding > 0
@@ -372,7 +371,7 @@ export default class NanoGPT extends BaseLayer {
     }
 
     getNumParams(): number {
-        return estimateParameterCount(this.config);
+        return estimateParameterCount(this.config.gpt);
     }
 
     dispose() {

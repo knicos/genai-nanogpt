@@ -1,19 +1,20 @@
-import { GPTConfig } from '../config';
-import RoPECache from './RoPECache';
 import { attentionMask } from '../ops/attentionMask';
-import BaseLayer from './BaseLayer';
+import BaseLayer, { GPTLayerConfig } from './BaseLayer';
 import { qkv } from '../ops/qkv';
 import { rope } from '../ops/rope';
 import { appendCache } from '@base/ops/appendCache';
 import {
+    customGrad,
+    dropout,
+    engine,
     fill,
+    grads,
     keep,
     linalg,
     matMul,
     ones,
     randomNormal,
     reshape,
-    softmax,
     Tensor,
     tidy,
     variable,
@@ -21,8 +22,8 @@ import {
     where,
     zeros,
 } from '@tensorflow/tfjs-core';
-import { initializers, layers } from '@tensorflow/tfjs-layers';
 import { fusedSoftmax } from '@base/ops/fusedSoftmax';
+import { dot } from '@tensorflow/tfjs-layers/dist/backend/tfjs_backend';
 
 export type KVCache = {
     k: Tensor; // [B, nHead, T_cache, headDim]
@@ -33,67 +34,44 @@ export type KVCache = {
 
 // Multi-head self-attention implementation
 export default class CausalSelfAttention extends BaseLayer {
-    private config: GPTConfig;
     private cAttn: Variable | null = null;
-    private cProj: layers.Layer;
-    //private attnDropout: layers.Layer;
-    private residDropout: layers.Layer;
+    private cProj: Variable | null = null;
     private bias: Tensor;
     private maskInf: Tensor;
     private divisor: number;
     private index: number;
     private _trainable: boolean = true;
     private units: number;
+    private projUnits: number;
 
-    constructor(index: number, config: GPTConfig, private readonly ropeCache?: RoPECache) {
-        super();
-        this.config = config;
+    constructor(index: number, config: GPTLayerConfig) {
+        super(config);
         this.index = index;
-        this.units = config.nEmbed * 3;
-
-        // Key, query, value projections for all heads, but in a batch
-        /*this.cAttn = this.tf.layers.dense({
-            units: 3 * config.nEmbed,
-            useBias: config.biasInLinear,
-            name: `block_${index}_attn_cAttn`,
-            kernelInitializer: this.tf.initializers.randomNormal({
-                mean: 0.0,
-                stddev: 0.02,
-            }),
-            biasInitializer: 'zeros',
-        });*/
-
-        // Output projection
-        this.cProj = layers.dense({
-            units: config.nEmbed,
-            useBias: config.biasInLinear,
-            name: `block_${index}_attn_cProj`,
-            kernelInitializer: initializers.randomNormal({
-                mean: 0.0,
-                stddev: 0.02 / Math.sqrt(2 * config.nLayer),
-            }),
-            biasInitializer: 'zeros',
-        });
-
-        // Dropout layers
-        //this.attnDropout = layers.dropout({ rate: config.dropout });
-        this.residDropout = layers.dropout({ rate: config.dropout });
+        this.units = config.gpt.nEmbed * 3;
+        this.projUnits = config.gpt.nEmbed;
 
         // Causal mask to ensure that attention is only applied to the left in the input sequence
-        this.bias = linalg.bandPart(ones([config.blockSize, config.blockSize]), -1, 0).cast('bool');
-        this.divisor = 1 / Math.sqrt(config.nEmbed / config.nHead); // Scaling factor for attention scores
-        const zero = zeros([config.blockSize, config.blockSize]);
+        this.bias = linalg.bandPart(ones([config.gpt.blockSize, config.gpt.blockSize]), -1, 0).cast('bool');
+        this.divisor = 1 / Math.sqrt(config.gpt.nEmbed / config.gpt.nHead); // Scaling factor for attention scores
+        const zero = zeros([config.gpt.blockSize, config.gpt.blockSize]);
         // It must be negative infinity for softmax to ignore these positions
-        const negInf = fill([config.blockSize, config.blockSize], Number.NEGATIVE_INFINITY);
+        const negInf = fill([config.gpt.blockSize, config.gpt.blockSize], Number.NEGATIVE_INFINITY);
         this.maskInf = where(this.bias as Tensor, zero, negInf);
     }
 
     private build() {
         if (this.cAttn === null) {
             this.cAttn = variable(
-                randomNormal([this.config.nEmbed, this.units], 0, 0.02),
+                randomNormal([this.config.gpt.nEmbed, this.units], 0, 0.02),
                 true
                 //`block_${this.index}_attn_cAttn_kernel`
+            );
+        }
+        if (this.cProj === null) {
+            this.cProj = variable(
+                randomNormal([this.projUnits, this.config.gpt.nEmbed], 0, 0.02),
+                true
+                //`block_${this.index}_attn_cProj_kernel`
             );
         }
     }
@@ -102,7 +80,7 @@ export default class CausalSelfAttention extends BaseLayer {
         if (this.cAttn === null) {
             throw new Error('Layer not built yet');
         }
-        return [this.cAttn, ...this.cProj.trainableWeights.map((v) => v.read() as Variable)];
+        return [this.cAttn, this.cProj!];
     }
 
     get trainable(): boolean {
@@ -112,31 +90,34 @@ export default class CausalSelfAttention extends BaseLayer {
     set trainable(value: boolean) {
         this._trainable = value;
         if (this.cAttn) this.cAttn.trainable = value;
-        this.cProj.trainable = value;
+        if (this.cProj) this.cProj.trainable = value;
     }
 
     saveWeights(map: Map<string, Tensor[]>) {
         map.set(`block_${this.index}_cAttn`, this.cAttn ? [this.cAttn.clone()] : []);
-        map.set(`block_${this.index}_cProj`, this.cProj.getWeights());
+        map.set(`block_${this.index}_cProj`, this.cProj ? [this.cProj.clone()] : []);
     }
 
     loadWeights(weights: Map<string, Tensor[]>): void {
         const attnWeight = weights.get(`block_${this.index}_cAttn`)?.[0];
+        const projWeight = weights.get(`block_${this.index}_cProj`)?.[0];
         if (!attnWeight) throw new Error(`Weights for block_${this.index}_cAttn not found`);
+        if (!projWeight) throw new Error(`Weights for block_${this.index}_cProj not found`);
         if (this.cAttn) {
             this.cAttn.assign(attnWeight);
         } else {
             this.cAttn = variable(attnWeight, true); //, `block_${this.index}_attn_cAttn_kernel`);
         }
-        this.cProj.setWeights(weights.get(`block_${this.index}_cProj`) || []);
+        if (this.cProj) {
+            this.cProj.assign(projWeight);
+        } else {
+            this.cProj = variable(projWeight, true); //, `block_${this.index}_attn_cProj_kernel`);
+        }
     }
 
-    private getAttentionScores(q: Tensor, k: Tensor, training: boolean): Tensor {
+    private getAttentionScores(q: Tensor, k: Tensor, training: boolean, seed: number): Tensor {
         const maskedAtt = attentionMask(q, k, this.maskInf, this.divisor);
-        if (training && this.config.dropout > 0) {
-            return fusedSoftmax(maskedAtt, this.config.dropout);
-        }
-        return softmax(maskedAtt, -1);
+        return fusedSoftmax(maskedAtt, training ? this.config.gpt.dropout : 0, seed);
     }
 
     // Attention with optional past. If pastLen > 0 and T_cur == 1, no mask needed.
@@ -144,7 +125,8 @@ export default class CausalSelfAttention extends BaseLayer {
         q: Tensor, // [B, nh, T_cur, hs]
         kTotal: Tensor, // [B, nh, T_total, hs] where T_total=pastLen+T_cur
         training: boolean,
-        pastLen: number
+        pastLen: number,
+        seed: number
     ): Tensor {
         const Tcur = q.shape[2]!;
 
@@ -161,44 +143,34 @@ export default class CausalSelfAttention extends BaseLayer {
             att = att.add(mask);
         }
 
-        if (training && this.config.dropout > 0) {
-            return fusedSoftmax(att, this.config.dropout);
-        }
-        return softmax(att, -1);
+        return fusedSoftmax(att, training ? this.config.gpt.dropout : 0, seed);
     }
 
     private getQKV(x: Tensor): [Tensor, Tensor, Tensor] {
-        return qkv(x, this.cAttn!, this.config.nHead) as [Tensor, Tensor, Tensor];
+        return qkv(x, this.cAttn!, this.config.gpt.nHead) as [Tensor, Tensor, Tensor];
     }
 
-    private getOutputProjection(x: Tensor, training: boolean): Tensor {
+    private getOutputProjection(x: Tensor): Tensor {
         const B = x.shape[0]!; // batch size
         const T = x.shape[2]!; // sequence length
-        const C = this.config.nEmbed; // embedding dimensionality
+        const C = this.config.gpt.nEmbed; // embedding dimensionality
 
         // Re-assemble all head outputs side by side
         const yTransposed = x.transpose([0, 2, 1, 3]); // (B, T, nh, hs)
         const yReshaped = reshape(yTransposed, [B, T, C]); // (B, T, C)
 
         // Output projection
-        const output = this.cProj.apply(yReshaped) as Tensor;
-        const finalOutput = this.residDropout.apply(output, { training }) as Tensor;
-        return finalOutput;
+        const output = dot(yReshaped, this.cProj!); // this.cProj.apply(yReshaped) as Tensor;
+        return output;
     }
 
     private updateCache(kNew: Tensor, vNew: Tensor, pastKV?: KVCache): KVCache {
-        const maxCtx = this.config.blockSize;
+        const maxCtx = this.config.gpt.blockSize;
         const Tcur = kNew.shape[2]!;
         const pastLen = Math.min(pastKV?.length || 0, maxCtx - Tcur);
 
         const kTotal = pastKV ? appendCache(pastKV.k, kNew, maxCtx) : kNew;
         const vTotal = pastKV ? appendCache(pastKV.v, vNew, maxCtx) : vNew;
-
-        // Handled in the NanoGPTModel class
-        /*if (pastKV) {
-            pastKV.k.dispose();
-            pastKV.v.dispose();
-        }*/
 
         const presentKV: KVCache = {
             k: keep(kTotal),
@@ -209,30 +181,24 @@ export default class CausalSelfAttention extends BaseLayer {
         return presentKV;
     }
 
-    // Added optional KV cache support (pastKV). Returns presentKV for chaining.
-    call(
+    private forward(
         x: Tensor,
         training = false,
+        seed: number,
         includeAttention = false,
         pastKV?: KVCache
     ): { output: Tensor; attention?: Tensor; presentKV?: KVCache } {
-        if (pastKV && !this.config.useRope) {
-            throw new Error('Cannot use pastKV without RoPE enabled');
-        }
-
-        this.build();
-
         return tidy(() => {
             this.startMemory();
             const [qI, kNewI, vNew] = this.getQKV(x); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
 
             // Apply RoPE to current chunk before concatenating with past
             const pastLenInitial = pastKV ? pastKV.cumulativeLength : 0;
-            //const [q, kNew] = this.ropeCache ? this.ropeCache.applyRoPE(qI, kNewI, pastLenInitial) : [qI, kNewI];
-            const q = this.ropeCache ? rope(qI, this.ropeCache, pastLenInitial) : qI;
-            const kNew = this.ropeCache ? rope(kNewI, this.ropeCache, pastLenInitial) : kNewI;
+            const ropeCache = this.config.layerConfig.ropeCache;
+            const q = ropeCache ? rope(qI, ropeCache, pastLenInitial) : qI;
+            const kNew = ropeCache ? rope(kNewI, ropeCache, pastLenInitial) : kNewI;
 
-            if (this.ropeCache) {
+            if (ropeCache) {
                 qI.dispose();
                 kNewI.dispose();
             }
@@ -250,16 +216,16 @@ export default class CausalSelfAttention extends BaseLayer {
             // Attention scores: mask for full forward or multi-token chunk; skip for single-token incremental
             let attScores: Tensor;
             if (pastLen > 0) {
-                attScores = this.getAttentionScoresWithPast(q, kTotal, training, pastLen);
+                attScores = this.getAttentionScoresWithPast(q, kTotal, training, pastLen, seed);
             } else {
                 // No past: regular causal mask over a square (training/full forward)
-                attScores = this.getAttentionScores(q, kTotal, training);
+                attScores = this.getAttentionScores(q, kTotal, training, seed);
             }
 
             // Attention applied to values
             const y = matMul(attScores, vTotal); // (B, nh, T_cur, hs)
 
-            const output = this.getOutputProjection(y, training); // (B, T_cur, C)
+            const output = this.getOutputProjection(y); // (B, T_cur, C)
 
             const attention = includeAttention ? attScores.mean(1) : undefined;
             this.endMemory(`CausalSelfAttention`);
@@ -267,11 +233,85 @@ export default class CausalSelfAttention extends BaseLayer {
         });
     }
 
+    call(
+        x: Tensor,
+        training = false,
+        includeAttention = false,
+        pastKV?: KVCache
+    ): { output: Tensor; attention?: Tensor; presentKV?: KVCache } {
+        if (pastKV && !this.config.gpt.useRope) {
+            throw new Error('Cannot use pastKV without RoPE enabled');
+        }
+        if (training && pastKV) {
+            throw new Error('Cannot use pastKV during training');
+        }
+        if (x.shape.length !== 3) {
+            throw new Error(`Input tensor must be rank 3 [B, T, C], got shape ${x.shape}`);
+        }
+        if (x.shape[2] !== this.config.gpt.nEmbed) {
+            throw new Error(`Input tensor last dimension must be ${this.config.gpt.nEmbed}, got ${x.shape[2]}`);
+        }
+
+        this.build();
+
+        const seed = Math.random() * 1e9;
+
+        if (training && this.config.layerConfig.checkpointAttention) {
+            const cpAttention = customGrad(
+                // @ts-expect-error Invalid params
+                (norm: Tensor, attnVar: Tensor, projVar: Tensor, save: (tensors: Tensor[]) => void) => {
+                    const attnOut = this.forward(norm, true, seed);
+
+                    // We don't need to keep presentKV for training
+                    attnOut.presentKV?.k.dispose();
+                    attnOut.presentKV?.v.dispose();
+
+                    save([norm]);
+                    const gradFunc = (dy: Tensor, saved: Tensor[]) => {
+                        const [normSaved] = saved;
+
+                        // Hack to allow nested grads calls
+                        const savedTape = engine().state.activeTape;
+                        engine().state.activeTape = [];
+
+                        // Recompute forward pass
+                        // We need to pass attnVar and projVar to keep them in scope for the backward pass
+                        const g = grads((n: Tensor, attnVar: Tensor, projVar: Tensor) => {
+                            void attnVar;
+                            void projVar;
+                            const attnOut = this.forward(n, true, seed);
+                            attnOut.presentKV?.k.dispose();
+                            attnOut.presentKV?.v.dispose();
+                            return attnOut.output;
+                        })([normSaved, attnVar, projVar], dy);
+
+                        // Restore tape
+                        engine().state.activeTape = savedTape;
+
+                        return g;
+                    };
+                    return { value: attnOut.output, gradFunc };
+                }
+            );
+
+            const attnOut = cpAttention(x, this.cAttn!, this.cProj!);
+
+            // Dropout after checkpointing
+            if (this.config.gpt.dropout > 0) {
+                const finalOutput = dropout(attnOut, this.config.gpt.dropout);
+                attnOut.dispose();
+                return { output: finalOutput };
+            } else {
+                return { output: attnOut };
+            }
+        } else {
+            return this.forward(x, training, seed, includeAttention, pastKV);
+        }
+    }
+
     dispose() {
         this.cAttn?.dispose();
-        this.cProj.dispose();
-        //this.attnDropout.dispose();
-        this.residDropout.dispose();
+        this.cProj?.dispose();
         this.bias.dispose();
         this.maskInf.dispose();
     }

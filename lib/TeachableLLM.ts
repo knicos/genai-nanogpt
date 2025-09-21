@@ -11,13 +11,14 @@ import { CharTokeniser } from './main';
 import MemoryProfiler from './utilities/profile';
 import BPETokeniser from './tokeniser/bpe';
 import { TrainingProgress } from './training/Trainer';
+import { GPTLayerConfig } from './layers/BaseLayer';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded';
 
 export default class TeachableLLM {
     private ee = new EE<TeachableLLMEvents>();
-    private _config?: GPTConfig;
+    private _config?: GPTLayerConfig;
     private _model?: NanoGPT;
     private _tokeniser?: ITokeniser;
     private _status: TeachableLLMStatus = 'loading';
@@ -40,7 +41,7 @@ export default class TeachableLLM {
         if (!this._config) {
             throw new Error('Model configuration is not initialized.');
         }
-        return this._config;
+        return this._config.gpt;
     }
 
     get model(): NanoGPT {
@@ -145,15 +146,15 @@ export default class TeachableLLM {
 
     set enableProfiler(value: boolean) {
         if (value) {
-            if (!this._model) {
+            if (!this._config) {
                 throw new Error('Model is not initialized.');
             }
-            if (!this._model.getProfiler()) {
-                this._model.setProfiler(new MemoryProfiler());
+            if (!this._config.layerConfig.profiler) {
+                this._config.layerConfig.profiler = new MemoryProfiler();
             }
         } else {
-            if (this._model) {
-                this._model.setProfiler(undefined);
+            if (this._config?.layerConfig.profiler) {
+                this._config.layerConfig.profiler = undefined;
             }
         }
     }

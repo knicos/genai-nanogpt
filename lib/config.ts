@@ -14,14 +14,14 @@ export interface GPTConfig {
 
 // Default configuration
 export const defaultConfig: GPTConfig = {
-    vocabSize: 50304, // GPT-2 vocab size
-    blockSize: 1024, // Maximum sequence length
-    nLayer: 12, // Number of transformer layers
-    nHead: 12, // Number of attention heads
-    nEmbed: 768, // Embedding dimension
-    dropout: 0.0, // Dropout probability
+    vocabSize: 2000,
+    blockSize: 128, // Maximum sequence length
+    nLayer: 6, // Number of transformer layers
+    nHead: 4, // Number of attention heads
+    nEmbed: 256, // Embedding dimension
+    dropout: 0.1, // Dropout probability
     biasInLinear: false,
     biasInLayerNorm: false,
     mlpFactor: 4,
-    useRope: false, // Use Rotary Position Embeddings
+    useRope: true, // Use Rotary Position Embeddings
 };

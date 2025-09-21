@@ -1,21 +1,35 @@
+import { GPTConfig } from '@base/config';
 import MemoryProfiler from '@base/utilities/profile';
+import RoPECache from './RoPECache';
+
+export interface LayerConfig {
+    checkpointAttention?: boolean; // Whether to use gradient checkpointing for attention layers
+    checkpointMLP?: boolean; // Whether to use gradient checkpointing for MLP layers
+    profiler?: MemoryProfiler;
+    ropeCache?: RoPECache;
+}
+
+export interface GPTLayerConfig {
+    gpt: GPTConfig;
+    layerConfig: LayerConfig;
+}
 
 export default abstract class BaseLayer {
-    protected _profiler?: MemoryProfiler;
+    public readonly config: GPTLayerConfig;
 
-    getProfiler(): MemoryProfiler | undefined {
-        return this._profiler;
+    constructor(config: GPTLayerConfig) {
+        this.config = config;
     }
 
-    setProfiler(value: MemoryProfiler | undefined): void {
-        this._profiler = value;
+    public getProfiler(): MemoryProfiler | undefined {
+        return this.config.layerConfig.profiler;
     }
 
     public startMemory() {
-        this._profiler?.startMemory();
+        this.config.layerConfig.profiler?.startMemory();
     }
 
     public endMemory(label: string) {
-        this._profiler?.endMemory(label);
+        this.config.layerConfig.profiler?.endMemory(label);
     }
 }

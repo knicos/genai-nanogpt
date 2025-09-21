@@ -4,6 +4,6 @@ import './cpu/fusedSoftmax';
 import './webgl/fusedSoftmax';
 import './grads/fusedSoftmax';
 
-export function fusedSoftmax(logits: Tensor, dropoutRate: number): Tensor {
-    return engine().runKernel('FusedSoftmax', { logits }, { dim: -1, dropoutRate, seed: Math.random() * 1e9 });
+export function fusedSoftmax(logits: Tensor, dropoutRate: number, seed: number): Tensor {
+    return engine().runKernel('FusedSoftmax', { logits }, { dim: -1, dropoutRate, seed });
 }
