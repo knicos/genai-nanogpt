@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>EfficientScatterSub WebGL Test</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script
+            type="module"
+            src="../dist/ops/appendCache.js"
+        ></script>
+    </head>
+    <body>
+        <script type="module">
+            function arraysClose(a, b, epsilon = 1e-5) {
+                if (Array.isArray(a) && Array.isArray(b)) {
+                    if (a.length !== b.length) return false;
+                    for (let i = 0; i < a.length; ++i) {
+                        if (!arraysClose(a[i], b[i], epsilon)) return false;
+                    }
+                    return true;
+                } else if (typeof a === 'number' && typeof b === 'number') {
+                    if (a === -Infinity && b === -Infinity) return true;
+                    return Math.abs(a - b) < epsilon;
+                } else {
+                    return false;
+                }
+            }
+
+            async function cpuVersion() {
+                await tf.setBackend('cpu');
+                const cache = tf.tensor4d(
+                    [
+                        [
+                            [
+                                [0.1, 0.2, 0, 0],
+                                [0.1, 0.2, 0, 0],
+                                [0.0, 0.0, 0, 0],
+                                [0.0, 0.0, 0, 0],
+                            ],
+                        ],
+                    ],
+                    [1, 1, 4, 4]
+                );
+                const x = tf.tensor4d([[[[0.1, 0.2, 0.3, 0.4]]]], [1, 1, 1, 4]);
+
+                // Custom op
+                const custom = tf.engine().runKernel('AppendCache', { cache, item: x }, { maxSize: 4, pastLen: 2 });
+                const customArr = await custom.array();
+                return customArr;
+            }
+
+            async function gpuVersion() {
+                await tf.setBackend('webgl');
+                const cache = tf.tensor4d(
+                    [
+                        [
+                            [
+                                [0.1, 0.2, 0, 0],
+                                [0.1, 0.2, 0, 0],
+                                [0.0, 0.0, 0, 0],
+                                [0.0, 0.0, 0, 0],
+                            ],
+                        ],
+                    ],
+                    [1, 1, 4, 4]
+                );
+                const x = tf.tensor4d([[[[0.1, 0.2, 0.3, 0.4]]]], [1, 1, 1, 4]);
+
+                // Custom op
+                const custom = tf.engine().runKernel('AppendCache', { cache, item: x }, { maxSize: 4, pastLen: 2 });
+                const customArr = await custom.array();
+                return customArr;
+            }
+
+            async function runTest() {
+                const customArr = await gpuVersion();
+                const manualArr = await cpuVersion();
+
+                // Compare arrays
+                const match = arraysClose(manualArr, customArr);
+                console.log({ match, manualArr, customArr });
+                document.body.innerText = match ? 'PASS' : 'FAIL';
+                window.testResult = { match, manualArr, customArr };
+            }
+            runTest();
+        </script>
+    </body>
+</html>

@@ -36,7 +36,7 @@ describe('Generator', () => {
             vocabSize: 20,
             nEmbed: 64,
             nLayer: 1,
-            nHead: 2,
+            nHead: 4,
             blockSize: 32,
             dropout: 0.1,
         });

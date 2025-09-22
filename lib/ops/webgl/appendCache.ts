@@ -36,9 +36,10 @@ class AppendCacheProgram implements GPGPUProgram {
             float val = 0.0;
             if (srcT < cacheT) {
                 val = getCache(b, h, srcT, d);
-            } else {
+            } else if (srcT == cacheT) {
                 val = getItem(b, h, 0, d);
-            }
+            } else {
+                val = 0.0;}
             setOutput(val);
         }
         `;
@@ -47,7 +48,7 @@ class AppendCacheProgram implements GPGPUProgram {
 
 function appendCacheGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { cache, item } = args.inputs as { cache: Tensor; item: Tensor };
-    const { maxSize } = args.attrs as { maxSize: number };
+    const { maxSize, pastLen } = args.attrs as { maxSize: number; pastLen: number };
 
     const backend = args.backend as MathBackendWebGL;
 
@@ -56,7 +57,7 @@ function appendCacheGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
     const nh = cache.shape[1]!; // Number of heads
 
     const program = new AppendCacheProgram(batchSize, nh, T, item.shape[3]!, maxSize);
-    return backend.runWebGLProgram(program, [cache, item], 'float32', [[T]]);
+    return backend.runWebGLProgram(program, [cache, item], 'float32', [[pastLen]]);
 }
 
 const kernelConfig: KernelConfig = {

@@ -1,4 +1,4 @@
-import { Tensor, engine } from '@tensorflow/tfjs-core';
+import { Tensor } from '@tensorflow/tfjs-core';
 import {
     registerKernel,
     KernelConfig,
@@ -8,22 +8,33 @@ import {
     concat,
 } from '@tensorflow/tfjs-core';
 
-// CPU fallback implementation
+// Always returns [B, H, maxSize, HS], inserts item at pastLen, shifts if full
 function appendCacheCPU(args: { inputs: NamedTensorInfoMap; attrs?: NamedAttrMap }): TensorInfo {
     const { cache, item } = args.inputs as { cache: Tensor; item: Tensor };
-    const { maxSize } = args.attrs as { maxSize: number };
+    const { maxSize, pastLen } = args.attrs as { maxSize: number; pastLen: number };
 
-    const newCache = concat([cache, item], 2); // [B,nh,T_total,hs]
-    const Ttotal = newCache.shape[2]!;
-    if (Ttotal > maxSize) {
-        const start = Ttotal - maxSize;
-        const B = newCache.shape[0]!;
-        const H = newCache.shape[1]!;
-        const HS = newCache.shape[3]!;
-        const sliced = newCache.slice([0, 0, start, 0], [B, H, maxSize, HS]);
-        newCache.dispose();
-        return sliced;
+    const B = cache.shape[0]!;
+    const H = cache.shape[1]!;
+    const HS = cache.shape[3]!;
+    const Titem = item.shape[2]!; // usually 1
+
+    // If not full, just insert at pastLen
+    if (pastLen + Titem <= maxSize) {
+        const before = cache.slice([0, 0, 0, 0], [B, H, pastLen, HS]);
+        const after = cache.slice([0, 0, pastLen + Titem, 0], [B, H, maxSize - pastLen - Titem, HS]);
+        const itemToInsert = Titem < Titem ? item.slice([0, 0, 0, 0], [B, H, Titem, HS]) : item;
+        const newCache = concat([before, itemToInsert, after], 2);
+        before.dispose();
+        after.dispose();
+        if (itemToInsert !== item) itemToInsert.dispose();
+        return newCache;
     }
+
+    // If full, shift left and insert at the end
+    // Drop the first Titem tokens, append item at the end
+    const shifted = cache.slice([0, 0, Titem, 0], [B, H, maxSize - Titem, HS]);
+    const newCache = concat([shifted, item], 2);
+    shifted.dispose();
     return newCache;
 }
 
@@ -42,7 +53,3 @@ const tensorflowKernelConfig: KernelConfig = {
 };
 
 registerKernel(tensorflowKernelConfig);
-
-export function appendCache(cache: Tensor, item: Tensor, maxSize: number): Tensor {
-    return engine().runKernel('AppendCache', { cache, item }, { maxSize });
-}

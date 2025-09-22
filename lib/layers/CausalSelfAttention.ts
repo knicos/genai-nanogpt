@@ -151,19 +151,19 @@ export default class CausalSelfAttention extends BaseLayer {
         return output;
     }
 
-    private updateCache(kNew: Tensor, vNew: Tensor, pastKV?: KVCache): KVCache {
+    private updateCache(kNew: Tensor, vNew: Tensor, skip: boolean, pastKV?: KVCache): KVCache {
         const maxCtx = this.config.gpt.blockSize;
         const Tcur = kNew.shape[2]!;
-        const pastLen = Math.min(pastKV?.length || 0, maxCtx - Tcur);
+        const pastLen = pastKV?.length || 0;
 
         // Append and trim cache to max context size
-        const kTotal = pastKV ? appendCache(pastKV.k, kNew, maxCtx) : kNew;
-        const vTotal = pastKV ? appendCache(pastKV.v, vNew, maxCtx) : vNew;
+        const kTotal = skip ? kNew : appendCache(kNew, maxCtx, pastLen, pastKV?.k);
+        const vTotal = skip ? vNew : appendCache(vNew, maxCtx, pastLen, pastKV?.v);
 
         const presentKV: KVCache = {
             k: keep(kTotal),
             v: keep(vTotal),
-            length: pastLen + Tcur,
+            length: Math.min(pastLen + Tcur, maxCtx),
             cumulativeLength: pastKV ? pastKV.cumulativeLength + Tcur : Tcur,
         };
         return presentKV;
@@ -193,7 +193,7 @@ export default class CausalSelfAttention extends BaseLayer {
             }
 
             const pastLen = pastKV ? pastKV.length : 0;
-            const presentKV = this.updateCache(kNew, vNew, pastKV);
+            const presentKV = this.updateCache(kNew, vNew, training, pastKV);
             const kTotal = presentKV.k;
             const vTotal = presentKV.v;
 

@@ -101,8 +101,8 @@ describe('CausalSelfAttention', () => {
 
         const input = tf.randomNormal([1, 1, 16]);
         const cache: KVCache = {
-            k: tf.randomNormal([1, 2, 2, 8]),
-            v: tf.randomNormal([1, 2, 2, 8]),
+            k: tf.randomNormal([1, 2, 4, 8]),
+            v: tf.randomNormal([1, 2, 4, 8]),
             length: 2,
             cumulativeLength: 2,
         };
@@ -110,8 +110,8 @@ describe('CausalSelfAttention', () => {
         expect(output).toBeInstanceOf(tf.Tensor);
         expect(output.shape).toEqual([1, 1, 16]);
         expect(presentKV).toBeDefined();
-        expect(presentKV!.k.shape).toEqual([1, 2, 3, 8]);
-        expect(presentKV!.v.shape).toEqual([1, 2, 3, 8]);
+        expect(presentKV!.k.shape).toEqual([1, 2, 4, 8]);
+        expect(presentKV!.v.shape).toEqual([1, 2, 4, 8]);
         expect(presentKV!.length).toEqual(3);
         expect(presentKV!.cumulativeLength).toEqual(3);
         layer.dispose();

@@ -221,19 +221,17 @@ export default class NanoGPT extends BaseLayer {
                 }
             }
 
-            if (Q === K) {
-                // Full square attentions: standard rollout
-                const ey = eye(K, K).expandDims(0); // (1,K,K)
-                let rollout = ey.tile([B, 1, 1]); // (B,K,K)
-                for (const att of attentions) {
-                    const a = att.add(ey);
-                    const aNorm = a.div(a.sum(-1, true)); // (B,K,K)
-                    rollout = aNorm.matMul(rollout); // (B,K,K)
-                }
-                return rollout;
-            }
+            // Always slice to [B, Q, Q] for rollout
+            const attentionsSliced = attentions.map((att) => att.slice([0, 0, 0], [B, Q, Q]));
 
-            throw new Error(`Unsupported attention shapes for rollout: [B=${B}, Q=${Q}, K=${K}]`);
+            const ey = eye(Q, Q).expandDims(0); // (1,Q,Q)
+            let rollout = ey.tile([B, 1, 1]); // (B,Q,Q)
+            for (const att of attentionsSliced) {
+                const a = att.add(ey);
+                const aNorm = a.div(a.sum(-1, true)); // (B,Q,Q)
+                rollout = aNorm.matMul(rollout); // (B,Q,Q)
+            }
+            return rollout;
         });
     }
 

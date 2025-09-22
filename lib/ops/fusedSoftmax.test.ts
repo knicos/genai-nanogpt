@@ -2,7 +2,7 @@ import { describe, it } from 'vitest';
 import * as tf from '@tensorflow/tfjs';
 import { fusedSoftmax } from './fusedSoftmax';
 
-describe('rope', () => {
+describe('fusedSoftmax', () => {
     it('produces equivalent gradients', async ({ expect }) => {
         const x = tf.tensor4d(
             [
@@ -21,7 +21,7 @@ describe('rope', () => {
         ); // (1,nh,T,T)
 
         const f = () => {
-            const r = fusedSoftmax(x, 0);
+            const r = fusedSoftmax(x, 0, 0);
             return r;
         };
         const grads = tf.grad(f)(x);
