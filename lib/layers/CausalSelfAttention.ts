@@ -55,6 +55,8 @@ export default class CausalSelfAttention extends BaseLayer {
         this.divisor = 1 / Math.sqrt(config.gpt.nEmbed / config.gpt.nHead); // Scaling factor for attention scores
         const zero = zeros([config.gpt.blockSize, config.gpt.blockSize]);
         // It must be negative infinity for softmax to ignore these positions
+        // Using any other number results in small but non-zero attention weights
+        // Which leaks information from the future
         const negInf = fill([config.gpt.blockSize, config.gpt.blockSize], Number.NEGATIVE_INFINITY);
         this.maskInf = where(this.bias as Tensor, zero, negInf);
     }
@@ -116,7 +118,7 @@ export default class CausalSelfAttention extends BaseLayer {
     }
 
     private getAttentionScores(q: Tensor, k: Tensor, training: boolean, seed: number): Tensor {
-        const maskedAtt = attentionMask(q, k, this.maskInf, this.divisor);
+        const maskedAtt = attentionMask(q, k, this.divisor, this.maskInf);
         return fusedSoftmax(maskedAtt, training ? this.config.gpt.dropout : 0, seed);
     }
 
@@ -126,21 +128,7 @@ export default class CausalSelfAttention extends BaseLayer {
         kTotal: Tensor, // [B, nh, T_total, hs] where T_total=pastLen+T_cur
         pastLen: number
     ): Tensor {
-        const Tcur = q.shape[2]!;
-
-        const attUnscaled = matMul(q, kTotal, false, true); // (B, nh, T_cur, T_total)
-        let att = attUnscaled.mul(this.divisor);
-
-        if (Tcur > 1 && pastLen > 0) {
-            throw new Error('Cannot use past with T_cur > 1'); // This should not happen
-        }
-
-        // Mask only needed if there is more than one token in the current chunk
-        if (Tcur > 1) {
-            const mask = this.maskInf.slice([0, 0], [Tcur, Tcur]).expandDims(0).expandDims(0); // (1,1,T_cur,T_cur)
-            att = att.add(mask);
-        }
-
+        const att = attentionMask(q, kTotal, this.divisor, undefined, pastLen);
         return fusedSoftmax(att, 0, 0);
     }
 
@@ -158,7 +146,8 @@ export default class CausalSelfAttention extends BaseLayer {
         const yReshaped = reshape(yTransposed, [B, T, C]); // (B, T, C)
 
         // Output projection
-        const output = dot(yReshaped, this.cProj!); // this.cProj.apply(yReshaped) as Tensor;
+        // This dot is used by dense layers so it should be optimized
+        const output = dot(yReshaped, this.cProj!);
         return output;
     }
 
@@ -167,6 +156,7 @@ export default class CausalSelfAttention extends BaseLayer {
         const Tcur = kNew.shape[2]!;
         const pastLen = Math.min(pastKV?.length || 0, maxCtx - Tcur);
 
+        // Append and trim cache to max context size
         const kTotal = pastKV ? appendCache(pastKV.k, kNew, maxCtx) : kNew;
         const vTotal = pastKV ? appendCache(pastKV.v, vNew, maxCtx) : vNew;
 
@@ -191,6 +181,7 @@ export default class CausalSelfAttention extends BaseLayer {
             const [qI, kNewI, vNew] = this.getQKV(x); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
 
             // Apply RoPE to current chunk before concatenating with past
+            // The rope operator ensures the cache is large enough
             const pastLenInitial = pastKV ? pastKV.cumulativeLength : 0;
             const ropeCache = this.config.layerConfig.ropeCache;
             const q = ropeCache ? rope(qI, ropeCache, pastLenInitial) : qI;
@@ -219,15 +210,26 @@ export default class CausalSelfAttention extends BaseLayer {
                 // No past: regular causal mask over a square (training/full forward)
                 attScores = this.getAttentionScores(q, kTotal, training, seed);
             }
+            q.dispose();
+            if (training) {
+                kTotal.dispose();
+            }
 
             // Attention applied to values
             const y = matMul(attScores, vTotal); // (B, nh, T_cur, hs)
+            if (!includeAttention) {
+                attScores.dispose();
+            }
+            if (training) {
+                vTotal.dispose();
+            }
 
             const output = this.getOutputProjection(y); // (B, T_cur, C)
+            y.dispose();
 
             const attention = includeAttention ? attScores.mean(1) : undefined;
             this.endMemory(`CausalSelfAttention`);
-            return { output, attention, presentKV };
+            return { output, attention, presentKV: training ? undefined : presentKV };
         });
     }
 
@@ -260,10 +262,6 @@ export default class CausalSelfAttention extends BaseLayer {
                 (norm: Tensor, attnVar: Tensor, projVar: Tensor, save: (tensors: Tensor[]) => void) => {
                     const attnOut = this.forward(norm, true, seed);
 
-                    // We don't need to keep presentKV for training
-                    attnOut.presentKV?.k.dispose();
-                    attnOut.presentKV?.v.dispose();
-
                     save([norm]);
                     const gradFunc = (dy: Tensor, saved: Tensor[]) => {
                         const [normSaved] = saved;
@@ -278,8 +276,6 @@ export default class CausalSelfAttention extends BaseLayer {
                             void attnVar;
                             void projVar;
                             const attnOut = this.forward(n, true, seed);
-                            attnOut.presentKV?.k.dispose();
-                            attnOut.presentKV?.v.dispose();
                             return attnOut.output;
                         })([normSaved, attnVar, projVar], dy);
 
@@ -303,7 +299,15 @@ export default class CausalSelfAttention extends BaseLayer {
                 return { output: attnOut };
             }
         } else {
-            return this.forward(x, training, seed, includeAttention, pastKV);
+            const output = this.forward(x, training, seed, includeAttention, pastKV);
+            // Dropout after checkpointing
+            if (this.config.gpt.dropout > 0) {
+                const finalOutput = dropout(output.output, this.config.gpt.dropout);
+                output.output.dispose();
+                return { output: finalOutput, attention: output.attention, presentKV: output.presentKV };
+            } else {
+                return output;
+            }
         }
     }
 

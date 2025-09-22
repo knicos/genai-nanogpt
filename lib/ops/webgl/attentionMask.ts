@@ -10,13 +10,16 @@ import {
 } from '@tensorflow/tfjs-core';
 
 class AttentionMaskProgram implements GPGPUProgram {
-    variableNames = ['q', 'k', 'mask'];
+    variableNames = ['q', 'k'];
     outputShape: number[];
     userCode: string;
-    customUniforms = [{ name: 'divisor', type: 'float' as UniformType }];
+    customUniforms = [
+        { name: 'divisor', type: 'float' as UniformType },
+        { name: 'pastLen', type: 'int' as UniformType },
+    ];
 
-    constructor(batch: number, nh: number, T: number, hs: number) {
-        this.outputShape = [batch, nh, T, T];
+    constructor(batch: number, nh: number, T1: number, T2: number, hs: number) {
+        this.outputShape = [batch, nh, T1, T2];
 
         this.userCode = `
         void main() {
@@ -29,34 +32,34 @@ class AttentionMaskProgram implements GPGPUProgram {
             float sum = 0.0;
             for (int i = 0; i < ${hs}; ++i) {
                 float qv = getQ(b, h, t1, i);
-                float kv = getK(b, h, t2, i); // k is transposed on last two dims
+                float kv = getK(b, h, t2, i);
                 sum += qv * kv;
             }
 
             // Scale by divisor
             float scaled = sum * divisor;
 
-            // Add mask
-            float maskVal = getMask(t1, t2); // mask is [T,T]
-
-            setOutput(scaled + maskVal);
+            // Mask out future positions
+            setOutput((t2 > t1 + pastLen) ? -1.0/0.0 : scaled);
         }
         `;
     }
 }
 
 function attentionMaskGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
-    const { q, k, mask } = args.inputs as { q: Tensor; k: Tensor; mask: Tensor };
-    const { divisor } = args.attrs as { divisor: number };
+    const { q, k } = args.inputs as { q: Tensor; k: Tensor };
+    const { divisor, pastLen } = args.attrs as { divisor: number; pastLen: number };
 
     const backend = args.backend as MathBackendWebGL;
 
     const batchSize = q.shape[0];
-    const T = q.shape[2]!; // Sequence length
+    const T1 = q.shape[2]!; // Sequence length
+    const T2 = k.shape[2]!; // Sequence length
     const nh = q.shape[1]!; // Number of heads
+    const hs = q.shape[3]!; // Head size
 
-    const program = new AttentionMaskProgram(batchSize, nh, T, q.shape[3]!);
-    return backend.runWebGLProgram(program, [q, k, mask], 'float32', [[divisor]]);
+    const program = new AttentionMaskProgram(batchSize, nh, T1, T2, hs);
+    return backend.runWebGLProgram(program, [q, k], 'float32', [[divisor], [pastLen]]);
 }
 
 const kernelConfig: KernelConfig = {

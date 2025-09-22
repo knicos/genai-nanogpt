@@ -11,7 +11,7 @@ import {
 
 // CPU fallback implementation
 function attentionMaskCPU(args: { inputs: NamedTensorInfoMap; attrs?: NamedAttrMap }): TensorInfo {
-    const { q, k, mask } = args.inputs as { q: Tensor; k: Tensor; mask: Tensor };
+    const { q, k, mask } = args.inputs as { q: Tensor; k: Tensor; mask?: Tensor };
     const { divisor } = args.attrs as { divisor: number };
 
     const T = q.shape[2]!; // Sequence length
@@ -19,9 +19,12 @@ function attentionMaskCPU(args: { inputs: NamedTensorInfoMap; attrs?: NamedAttrM
     // Causal self-attention
     const attUnscaled = matMul(q, k, false, true); // (B, nh, T, T)
     const att = attUnscaled.mul(scalar(divisor)); // Scale by sqrt(d_k)
-    const mask2 = mask.slice([0, 0], [T, T]).expandDims(0).expandDims(0); // (1,1,T,T)
-    const maskedAtt = att.add(mask2);
-    return maskedAtt;
+    if (mask) {
+        const mask2 = mask.slice([0, 0], [T, T]).expandDims(0).expandDims(0); // (1,1,T,T)
+        const maskedAtt = att.add(mask2);
+        return maskedAtt;
+    }
+    return att;
 }
 
 const cpuKernelConfig: KernelConfig = {
