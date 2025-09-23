@@ -12,7 +12,7 @@ import {
     Variable,
 } from '@tensorflow/tfjs-core';
 import BaseLayer, { GPTLayerConfig } from './BaseLayer';
-import { gelu } from '@base/ops/gelu';
+import { matMulGelu } from '@base/ops/matMulGelu';
 
 // Multi-layer perceptron
 export default class MLP extends BaseLayer {
@@ -91,11 +91,11 @@ export default class MLP extends BaseLayer {
             this.startMemory();
             const [B, T, C] = x.shape;
             const x2d = reshape(x, [B! * T!, C!]); // (B*T, C)
-            const h = matMul(x2d, this.cFc!); // (B*T, hidden)
-            const act = gelu(h);
+            //const h = matMul(x2d, this.cFc!); // (B*T, hidden)
+            //const act = gelu(h);
+            const h = matMulGelu(x2d, this.cFc!); // (B*T, hidden)
+            const out2d = matMul(h, this.cProj!); // (B*T, C)
             h.dispose();
-            const out2d = matMul(act, this.cProj!); // (B*T, C)
-            act.dispose();
             const projected = reshape(out2d, [B!, T!, C!]);
             this.endMemory('MLP');
             return projected;
