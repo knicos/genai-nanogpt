@@ -57,8 +57,10 @@ export default async function loadTextData(file: File, options?: DataOptions): P
             papa.parse<string[]>(data, {
                 header: false,
                 skipEmptyLines: true,
+                delimiter: ',',
                 complete: (results) => {
                     if (results.errors.length > 0) {
+                        console.error(results.errors);
                         reject(new Error('Error parsing file'));
                     } else {
                         const column = checkForTextColumn(results.data[0], options?.column || 'text');

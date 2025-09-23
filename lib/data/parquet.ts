@@ -10,10 +10,17 @@ export async function loadParquet(file: File, maxSize = MAX_SIZE, column = 'text
 
     while (true) {
         const record = (await cursor.next()) as { [key: string]: string };
-        if (!record || !record[column] || typeof record[column] !== 'string') break;
+        if (!record || record[column] === undefined || typeof record[column] !== 'string') {
+            break;
+        }
+        if (record[column].length === 0) {
+            continue;
+        }
         result.push(record[column]);
         totalSize += record[column].length;
-        if (totalSize > maxSize) break;
+        if (totalSize > maxSize) {
+            break;
+        }
     }
     reader.close();
     return result;

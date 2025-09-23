@@ -28,6 +28,10 @@
                 if (file) {
                     const textData = await loadTextData(file);
                     console.log(textData);
+                    console.log(
+                        'Sample count',
+                        textData.reduce((sum, row) => sum + row.length, 0)
+                    );
                 }
             });
         </script>
