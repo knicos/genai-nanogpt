@@ -18,11 +18,11 @@ export default class Block extends BaseLayer {
         super(config);
         this.index = index;
 
-        this.ln1 = new RMSNorm(config, 1e-8, `block_${this.index}_rms1`);
+        this.ln1 = new RMSNorm(config, `block_${this.index}_rms1`);
 
         this.attn = new CausalSelfAttention(this.index, config);
 
-        this.ln2 = new RMSNorm(config, 1e-8, `block_${this.index}_rms2`);
+        this.ln2 = new RMSNorm(config, `block_${this.index}_rms2`);
 
         this.mlp = new MLP(this.index, config);
     }

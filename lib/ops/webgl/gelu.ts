@@ -25,18 +25,6 @@ const GELU =
     return x;
 `;
 
-/*const RELU_PACKED = `
-  vec4 result = x * vec4(greaterThanEqual(x, vec4(0.0)));
-  bvec4 isNaN = isnan(x);
-
-  result.r = isNaN.r ? x.r : result.r;
-  result.g = isNaN.g ? x.g : result.g;
-  result.b = isNaN.b ? x.b : result.b;
-  result.a = isNaN.a ? x.a : result.a;
-
-  return result;
-`;*/
-
 export const gelu = unaryKernelFunc({ opSnippet: GELU });
 
 const geluConfig: KernelConfig = {

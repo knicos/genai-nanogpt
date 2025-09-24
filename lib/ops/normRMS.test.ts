@@ -1,7 +1,6 @@
 import { describe, it } from 'vitest';
 import * as tf from '@tensorflow/tfjs';
-import { matMulGelu } from './matMulGelu';
-import { gelu } from './gelu';
+import { normRMS } from './normRMS';
 
 function arraysClose(a: unknown, b: unknown, epsilon = 1e-5) {
     if (Array.isArray(a) && Array.isArray(b)) {
@@ -18,30 +17,31 @@ function arraysClose(a: unknown, b: unknown, epsilon = 1e-5) {
     }
 }
 
-describe('matMulGelu', () => {
+describe('normRMS', () => {
     it('produces equivalent gradients', async ({ expect }) => {
         const batch = 2;
-        const inDim = 8;
-        const outDim = 16;
+        const seqLen = 8;
+        const channels = 16;
 
-        const kernel = tf.variable(tf.randomNormal([inDim, outDim]), true);
-
-        const input = tf.randomNormal([batch, inDim]);
-        const target = tf.randomNormal([batch, outDim]);
+        const gamma = tf.variable(tf.randomNormal([channels]), true);
+        const input = tf.randomNormal([batch, seqLen, channels]);
+        const target = tf.randomNormal([batch, seqLen, channels]);
 
         //const optimizer = tf.train.adam(0.01);
 
         const f = () => {
-            const h = matMulGelu(input, kernel);
+            const h = normRMS(input, gamma);
             const loss = tf.losses.meanSquaredError(target, h);
             return loss as tf.Scalar;
         };
         const { grads } = tf.variableGrads(f);
 
         const f2 = () => {
-            const m = tf.matMul(input, kernel);
-            const h = gelu(m);
-            const loss = tf.losses.meanSquaredError(target, h);
+            const meanSquare = input.square().mean(-1, true);
+            const invRms = meanSquare.add(1e-8).rsqrt();
+            const normalized = input.mul(invRms);
+            const result = normalized.mul(gamma);
+            const loss = tf.losses.meanSquaredError(target, result);
             return loss as tf.Scalar;
         };
         const { grads: grads2 } = tf.variableGrads(f2);

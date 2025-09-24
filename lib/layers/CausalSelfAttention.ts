@@ -158,7 +158,16 @@ export default class CausalSelfAttention extends BaseLayer {
 
         // Append and trim cache to max context size
         const kTotal = skip ? kNew : appendCache(kNew, maxCtx, pastLen, pastKV?.k);
+        if (!skip) {
+            kNew.dispose();
+            pastKV?.k.dispose();
+        }
+
         const vTotal = skip ? vNew : appendCache(vNew, maxCtx, pastLen, pastKV?.v);
+        if (!skip) {
+            vNew.dispose();
+            pastKV?.v.dispose();
+        }
 
         const presentKV: KVCache = {
             k: keep(kTotal),
@@ -196,11 +205,6 @@ export default class CausalSelfAttention extends BaseLayer {
             const presentKV = this.updateCache(kNew, vNew, training, pastKV);
             const kTotal = presentKV.k;
             const vTotal = presentKV.v;
-
-            if (pastKV) {
-                kNew.dispose();
-                vNew.dispose();
-            }
 
             // Attention scores: mask for full forward or multi-token chunk; skip for single-token incremental
             let attScores: Tensor;

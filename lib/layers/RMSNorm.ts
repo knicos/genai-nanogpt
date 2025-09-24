@@ -1,13 +1,12 @@
 import { ones, Tensor, tidy, variable, Variable } from '@tensorflow/tfjs-core';
 import BaseLayer, { GPTLayerConfig } from './BaseLayer';
+import { normRMS } from '@base/ops/normRMS';
 
 export default class RMSNorm extends BaseLayer {
     private gamma: Variable;
-    private epsilon: number;
 
-    constructor(config: GPTLayerConfig, epsilon = 1e-8, name = '') {
+    constructor(config: GPTLayerConfig, name = '') {
         super(config);
-        this.epsilon = epsilon;
         this.gamma = variable(ones([config.gpt.nEmbed]), true, `${name}_gamma`, 'float32');
     }
 
@@ -31,10 +30,11 @@ export default class RMSNorm extends BaseLayer {
         return tidy(() => {
             this.startMemory();
             // RMSNorm: x / sqrt(mean(x^2) + epsilon), then scale by gamma
-            const meanSquare = x.square().mean(-1, true);
+            /*const meanSquare = x.square().mean(-1, true);
             const invRms = meanSquare.add(this.epsilon).rsqrt();
             const normalized = x.mul(invRms);
-            const result = normalized.mul(this.gamma);
+            const result = normalized.mul(this.gamma);*/
+            const result = normRMS(x, this.gamma);
             this.endMemory('RMSNorm');
             return result;
         });

@@ -27,5 +27,6 @@ junit.xml
 coverage
 playwright-report
 .last-run.json
+test-results
 
 *.zip

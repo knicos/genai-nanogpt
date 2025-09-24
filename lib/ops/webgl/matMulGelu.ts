@@ -9,7 +9,6 @@ import {
     upcastType,
     util,
     tidy,
-    mul,
     matMul,
     engine,
 } from '@tensorflow/tfjs-core';
@@ -44,14 +43,14 @@ const GELU_PACKED = `
 `;
 
 const DGELU_PACKED = `
-    vec4 x2 = x * x;
-    vec4 x3 = x2 * x;
-    vec4 u  = ${K} * (x + ${A} * x3);
+    vec4 a2 = a * a;
+    vec4 a3 = a2 * a;
+    vec4 u  = ${K} * (a + ${A} * a3);
     vec4 t  = tanh(u);
     vec4 sech2 = 1.0 - t * t;
-    vec4 du_dx = ${K} * (1.0 + 3.0 * ${A} * x2);
-    vec4 dgelu = 0.5 * (1.0 + t) + 0.5 * x * sech2 * du_dx;
-    return dgelu;
+    vec4 du_dx = ${K} * (1.0 + 3.0 * ${A} * a2);
+    vec4 dgelu = 0.5 * (1.0 + t) + 0.5 * a * sech2 * du_dx;
+    return dgelu * b;
 `;
 
 // Empirically determined minimal shared dimension in matmul before we forward
@@ -65,7 +64,8 @@ type BatchMatMulConfig = {
     transposeA: boolean;
     transposeB: boolean;
     backend: MathBackendWebGL;
-    activationSnippet: string;
+    activationSnippet?: string;
+    multiplier?: TensorInfo;
 };
 
 /*
@@ -79,6 +79,7 @@ export function batchMatMulGeluImpl({
     transposeB,
     backend,
     activationSnippet,
+    multiplier,
 }: BatchMatMulConfig): TensorInfo {
     const aRank = a.shape.length;
     const bRank = b.shape.length;
@@ -134,11 +135,15 @@ export function batchMatMulGeluImpl({
         transposeB,
         false,
         fusedActivation,
-        false,
+        !!multiplier,
         false
     );
 
     const inputs: TensorInfo[] = [a3d, b3d];
+
+    if (multiplier) {
+        inputs.push(multiplier);
+    }
 
     const out = backend.runWebGLProgram(program, inputs, dtype);
 
@@ -188,7 +193,8 @@ function matMulGeluGradKernelFunc(args: { inputs: NamedTensorInfoMap; backend: u
     return tidy(() => {
         // 1. Compute m = x @ kernel
         // 2. Compute dgelu/dm at m using DGELU_PACKED
-        const dgelu = engine().makeTensorFromTensorInfo(
+        // 3. dL/dm = dy * dgelu/dm with the multiplier
+        const dL_dm = engine().makeTensorFromTensorInfo(
             batchMatMulGeluImpl({
                 a: x,
                 b: kernel,
@@ -196,12 +202,9 @@ function matMulGeluGradKernelFunc(args: { inputs: NamedTensorInfoMap; backend: u
                 transposeB: false,
                 backend,
                 activationSnippet: DGELU_PACKED,
+                multiplier: dy,
             })
         );
-
-        // 3. dL/dm = dy * dgelu/dm
-        const dL_dm = mul(dy, dgelu as Tensor);
-        dgelu.dispose();
 
         // 4. dx = dL_dm @ kernel^T
         const dx = matMul(dL_dm, kernel, false, true);

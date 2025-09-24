@@ -84,7 +84,7 @@ export default class NanoGPT extends BaseLayer {
         }
 
         // Final layer norm
-        this.lnF = new RMSNorm(this.config, 1e-8, `final_rms_norm`);
+        this.lnF = new RMSNorm(this.config, `final_rms_norm`);
     }
 
     get checkpointing(): boolean {

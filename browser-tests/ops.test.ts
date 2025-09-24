@@ -35,3 +35,15 @@ test('fusedSoftmax operation', async ({ page }) => {
     const body = page.locator('body');
     await expect(body).toHaveText('PASS');
 });
+
+test('rmsNorm operation', async ({ page }) => {
+    await page.goto('/browser-tests/normRMS.html');
+    const body = page.locator('body');
+    await expect(body).toHaveText('PASS');
+});
+
+test('appendCache operation', async ({ page }) => {
+    await page.goto('/browser-tests/appendCache.html');
+    const body = page.locator('body');
+    await expect(body).toHaveText('PASS');
+});

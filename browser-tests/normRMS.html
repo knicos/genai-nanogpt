@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>EfficientScatterSub WebGL Test</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script
+            type="module"
+            src="../dist/ops/normRMS.js"
+        ></script>
+    </head>
+    <body>
+        <script type="module">
+            function arraysClose(a, b, epsilon = 1e-5) {
+                if (Array.isArray(a) && Array.isArray(b)) {
+                    if (a.length !== b.length) return false;
+                    for (let i = 0; i < a.length; ++i) {
+                        if (!arraysClose(a[i], b[i], epsilon)) return false;
+                    }
+                    return true;
+                } else if (typeof a === 'number' && typeof b === 'number') {
+                    return Math.abs(a - b) < epsilon;
+                } else {
+                    return false;
+                }
+            }
+
+            async function runVersion(backend) {
+                await tf.setBackend(backend);
+                const gamma = tf.tensor1d([0.1, 0.2, 0.3, 0.4]);
+                const x = tf.tensor3d([[[0.5, 0.6, 0.7, 0.8]]], [1, 1, 4]);
+
+                // Use valueAndGrads for both value and gradients
+                const fn = (x, gamma) => tf.engine().runKernel('RMSNorm', { x, gamma });
+                const { value, grads } = tf.valueAndGrads(fn)([x, gamma]);
+
+                console.log(grads);
+
+                const valueArr = await value.array();
+                const gradXArr = await grads[0].array();
+                const gradGammaArr = await grads[1].array();
+
+                return { valueArr, gradXArr, gradGammaArr };
+            }
+
+            async function runTest() {
+                const cpu = await runVersion('cpu');
+                const gpu = await runVersion('webgl');
+
+                console.log('CPU:', cpu);
+                console.log('GPU:', gpu);
+
+                const forwardMatch = arraysClose(cpu.valueArr, gpu.valueArr);
+                const gradXMatch = arraysClose(cpu.gradXArr, gpu.gradXArr);
+                const gradGammaMatch = arraysClose(cpu.gradGammaArr, gpu.gradGammaArr);
+
+                const allMatch = forwardMatch && gradXMatch && gradGammaMatch;
+                document.body.innerText = allMatch
+                    ? 'PASS'
+                    : `FAIL\nforward: ${forwardMatch}\ngradX: ${gradXMatch}\ngradGamma: ${gradGammaMatch}`;
+                window.testResult = { forwardMatch, gradXMatch, gradGammaMatch, cpu, gpu };
+            }
+            runTest();
+        </script>
+    </body>
+</html>
