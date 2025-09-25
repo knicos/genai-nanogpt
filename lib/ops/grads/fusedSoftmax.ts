@@ -17,7 +17,12 @@ export const softmaxGradConfig: GradConfig = {
         // Mul dy by dropout mask if dropout was applied
         const dyTimesY = dropoutRate && seed ? mulDrop(dy as Tensor, y, dropoutRate, seed) : mul(dy as Tensor, y);
         return {
-            logits: () => sub(dyTimesY, mul(sum(dyTimesY, [dim], keepDims), y)),
+            logits: () => {
+                const sumDyTimesY = sum(dyTimesY, [dim], keepDims);
+                const sumMulYTimesY = mul(sumDyTimesY, y);
+                sumDyTimesY.dispose();
+                return sub(dyTimesY, sumMulYTimesY);
+            },
         };
     },
 };

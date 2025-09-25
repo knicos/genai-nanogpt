@@ -16,6 +16,7 @@ class AttentionMaskProgram implements GPGPUProgram {
     customUniforms = [
         { name: 'divisor', type: 'float' as UniformType },
         { name: 'pastLen', type: 'int' as UniformType },
+        { name: 'inf', type: 'float' as UniformType },
     ];
 
     constructor(batch: number, nh: number, T1: number, T2: number, hs: number) {
@@ -40,7 +41,7 @@ class AttentionMaskProgram implements GPGPUProgram {
             float scaled = sum * divisor;
 
             // Mask out future positions
-            setOutput((t2 > t1 + pastLen) ? -1.0/0.0 : scaled);
+            setOutput((t2 > t1 + pastLen) ? inf : scaled);
         }
         `;
     }
@@ -59,7 +60,7 @@ function attentionMaskGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; 
     const hs = q.shape[3]!; // Head size
 
     const program = new AttentionMaskProgram(batchSize, nh, T1, T2, hs);
-    return backend.runWebGLProgram(program, [q, k], 'float32', [[divisor], [pastLen]]);
+    return backend.runWebGLProgram(program, [q, k], 'float32', [[divisor], [pastLen], [Number.NEGATIVE_INFINITY]]);
 }
 
 const kernelConfig: KernelConfig = {

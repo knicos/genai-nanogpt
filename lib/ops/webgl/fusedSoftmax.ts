@@ -97,6 +97,7 @@ export function softmax(args: { inputs: SoftmaxInputs; backend: unknown; attrs: 
     // program, rather than doing it in two steps.
     const subExp = new SubExpProgram(logits.shape);
     const expTensor = backend.runWebGLProgram(subExp, [logits, maxLogit], 'float32');
+    backend.disposeIntermediateTensorInfo(maxLogit);
 
     const sumExp = sum({ inputs: { x: expTensor }, backend, attrs: { axis: axes, keepDims: false } });
     const sumExpReshaped = reshape({ inputs: { x: sumExp }, backend, attrs: { shape: expandedShape } });
@@ -107,7 +108,7 @@ export function softmax(args: { inputs: SoftmaxInputs; backend: unknown; attrs: 
             [dropoutRate],
             [seed ?? Math.random() * 10000],
         ]);
-        backend.disposeIntermediateTensorInfo(maxLogit);
+
         backend.disposeIntermediateTensorInfo(expTensor);
         backend.disposeIntermediateTensorInfo(sumExp);
         backend.disposeIntermediateTensorInfo(sumExpReshaped);
@@ -116,7 +117,6 @@ export function softmax(args: { inputs: SoftmaxInputs; backend: unknown; attrs: 
 
     const res = realDiv({ inputs: { a: expTensor, b: sumExpReshaped }, backend }) as TensorInfo;
 
-    backend.disposeIntermediateTensorInfo(maxLogit);
     backend.disposeIntermediateTensorInfo(expTensor);
     backend.disposeIntermediateTensorInfo(sumExp);
     backend.disposeIntermediateTensorInfo(sumExpReshaped);

@@ -1,4 +1,5 @@
-import { NamedAttrMap, registerGradient, GradConfig, Tensor } from '@tensorflow/tfjs-core';
+import { NamedAttrMap, registerGradient, GradConfig, Tensor, scalar } from '@tensorflow/tfjs-core';
+import { matMulMul } from '../matMulMul';
 
 const attentionMaskGradConfig: GradConfig = {
     kernelName: 'AttentionMask',
@@ -12,12 +13,19 @@ const attentionMaskGradConfig: GradConfig = {
         const { divisor } = attrs as { divisor: number };
 
         return {
-            q: () => dy.matMul(k).mul(divisor),
-            k: () => q.transpose([0, 1, 3, 2]).matMul(dy).mul(divisor).transpose([0, 1, 3, 2]),
+            q: () => matMulMul(dy, k, scalar(divisor)),
+            k: () => {
+                const qt = q.transpose([0, 1, 3, 2]);
+                const result = matMulMul(qt, dy, scalar(divisor));
+                qt.dispose();
+                return result.transpose([0, 1, 3, 2]);
+            },
             mask: () => dy,
             divisor: () => {
                 const attUnscaled = q.matMul(k, false, true);
-                return dy.mul(attUnscaled).sum();
+                const dyAtt = dy.mul(attUnscaled);
+                attUnscaled.dispose();
+                return dyAtt.sum();
             },
         };
     },

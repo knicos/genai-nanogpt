@@ -112,16 +112,28 @@ function rmsNormGradGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
     const seqLength = x.shape[1]!;
     const C = x.shape[2]!;
 
-    const meanSquare = x.square().mean(-1, true);
     const dyGamma = dy.mul(gamma);
-    const dyXMean = dyGamma.mul(x).sum(-1, true);
+    const dyGammaX = dyGamma.mul(x);
+    const dyXMean = dyGammaX.sum(-1, true);
+    dyGammaX.dispose();
+
+    const x2 = x.square();
+    const meanSquare = x2.mean(-1, true);
+    x2.dispose();
 
     const dxProgram = new RMSNormGradXProgram(batchSize, seqLength, C);
     const dx = backend.runWebGLProgram(dxProgram, [x, meanSquare, dyGamma, dyXMean], 'float32');
 
+    dyGamma.dispose();
+    dyXMean.dispose();
+
     const gammaProgram = new RMSNormGradGammaProgram(batchSize, seqLength, C);
     const dGammaFull = backend.runWebGLProgram(gammaProgram, [x, meanSquare, dy], 'float32');
+
+    meanSquare.dispose();
+
     const dGamma = sum(engine().makeTensorFromTensorInfo(dGammaFull), [0, 1]);
+    backend.disposeIntermediateTensorInfo(dGammaFull);
 
     return [dx, dGamma];
 }

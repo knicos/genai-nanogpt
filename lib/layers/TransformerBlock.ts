@@ -65,7 +65,10 @@ export default class Block extends BaseLayer {
     private getMLPOutput(x: Tensor, training: boolean): Tensor {
         const norm = this.ln2.apply(x) as Tensor;
         const mlpOut = this.mlp.call(norm, training);
+        norm.dispose();
         const residual = x.add(mlpOut);
+        x.dispose(); // Safe to dispose in this case
+        mlpOut.dispose();
         return residual;
     }
 
@@ -83,7 +86,9 @@ export default class Block extends BaseLayer {
             // Pre-normalization residual connections
             const norm1 = this.ln1.apply(x) as Tensor;
             const attnOut = this.attn.call(norm1, training, includeAttention, cache);
+            norm1.dispose();
             const residual1 = x.add(attnOut.output);
+            attnOut.output.dispose();
 
             return {
                 output: this.getMLPOutput(residual1, training),
