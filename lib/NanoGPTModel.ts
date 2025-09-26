@@ -2,7 +2,7 @@
 import { defaultConfig, GPTConfig } from './config';
 import Block from './layers/TransformerBlock';
 import TiedEmbeddingOutputLayer from './layers/TiedEmbedding';
-import { KVCache } from './layers/CausalSelfAttention';
+import { AttentionScores, KVCache } from './layers/CausalSelfAttention';
 import RoPECache from './layers/RoPECache';
 import RMSNorm from './layers/RMSNorm';
 import { estimateParameterCount } from './utilities/parameters';
@@ -11,7 +11,6 @@ import BaseLayer, { ForwardAttributes } from './layers/BaseLayer';
 import { layers, initializers } from '@tensorflow/tfjs-layers';
 import {
     add,
-    eye,
     gather,
     keep,
     mod,
@@ -39,14 +38,13 @@ export interface GenerateOptions {
     temperature?: number;
     topK?: number;
     usePadding?: boolean;
-    includeAttention?: boolean;
+    attentionScores?: AttentionScores;
     includeProbabilities?: boolean;
 }
 
 export interface ModelForwardAttributes extends ForwardAttributes {
-    includeAttention?: boolean;
     cache?: KVCache[];
-    attentionOut?: Tensor;
+    attentionScores?: AttentionScores;
     seed?: number;
 }
 
@@ -168,7 +166,7 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
 
     // Attention rollout per Abnar & Zuidema (2020)
     // Expects list of (B, T, T) attention matrices already averaged over heads.
-    private computeAttentionRollout(attentions: Tensor[]): Tensor {
+    /*private computeAttentionRollout(attentions: Tensor[]): Tensor {
         return tidy(() => {
             if (attentions.length === 0) {
                 throw new Error('No attentions for rollout');
@@ -197,7 +195,7 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
             }
             return rollout;
         });
-    }
+    }*/
 
     forward(attrs: ModelForwardAttributes, idx: Tensor, targets?: Tensor): Tensor[] {
         this.validateInput(idx);
@@ -208,14 +206,14 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
             const pastLen = attrs.cache?.[0]?.length ?? 0;
             let x = this.inputPhase(idx, pastLen, attrs.training);
 
-            const perLayerAtt: Tensor[] = [];
-
             if (attrs.cache && attrs.cache.length !== this.blocks.length) {
                 console.error('Cache', attrs.cache);
                 throw new Error(
                     `Cache length ${attrs.cache.length} does not match number of blocks ${this.blocks.length}`
                 );
             }
+
+            let attentionOut: Tensor | undefined = undefined;
 
             // Transformer blocks
             for (let i = 0; i < this.blocks.length; i++) {
@@ -224,9 +222,8 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
                 const blockAttrs = {
                     training: attrs.training,
                     seed,
-                    includeAttention: attrs.includeAttention,
+                    attentionScores: attrs.attentionScores,
                     pastKV: attrs.cache ? attrs.cache[i] : undefined,
-                    attentionOut: undefined as Tensor | undefined,
                 };
 
                 const output =
@@ -236,14 +233,9 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
                 x.dispose();
                 x = output as Tensor;
 
-                if (attrs.includeAttention && blockAttrs.attentionOut) {
-                    perLayerAtt.push(blockAttrs.attentionOut); // (B,T,T) already head-averaged
+                if (blockAttrs.attentionScores?.attentionOut) {
+                    attentionOut = blockAttrs.attentionScores.attentionOut;
                 }
-            }
-
-            let aggregatedAttention: Tensor | undefined;
-            if (attrs.includeAttention && perLayerAtt.length > 0) {
-                aggregatedAttention = this.computeAttentionRollout(perLayerAtt);
             }
 
             // Final layer norm
@@ -260,7 +252,9 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
 
             this.endMemory('Forward');
 
-            attrs.attentionOut = aggregatedAttention ? keep(aggregatedAttention) : undefined;
+            if (attrs.attentionScores) {
+                attrs.attentionScores.attentionOut = attentionOut ? keep(attentionOut) : undefined;
+            }
 
             return loss ? [logits, loss] : [logits];
         });
@@ -274,7 +268,6 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
         const temperature = options?.temperature ?? 1.0;
         const tK = options?.topK;
         const usePadding = options?.usePadding ?? false;
-        const includeAttention = options?.includeAttention ?? false;
 
         return tidy(() => {
             const currentIdx = idx;
@@ -300,7 +293,7 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
 
             const attrs: ModelForwardAttributes = {
                 training: false,
-                includeAttention,
+                attentionScores: options?.attentionScores,
                 cache,
             };
             const [logits] = this.forward(attrs, padIdx);
@@ -308,10 +301,10 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
             // Focus only on the last time step
             const lastTimeStep = logits.shape[1]! - 1 - padding;
             const lastLogits = logits.slice([0, lastTimeStep, 0], [logits.shape[0], 1, logits.shape[2]!]); // (b, 1, vocab_size)
-            const lastAttention = attrs.attentionOut
-                ? attrs.attentionOut.slice(
+            const lastAttention = attrs.attentionScores?.attentionOut
+                ? attrs.attentionScores.attentionOut.slice(
                       [0, lastTimeStep, 0],
-                      [attrs.attentionOut.shape[0], 1, attrs.attentionOut.shape[2]!]
+                      [attrs.attentionScores.attentionOut.shape[0], 1, attrs.attentionScores.attentionOut.shape[2]!]
                   )
                 : undefined;
             logits.dispose();

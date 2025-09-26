@@ -137,7 +137,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         this.active = true;
         this.emit('start');
         const result =
-            this.model.config.gpt.useRope && !options?.noCache && !options?.includeAttention
+            this.model.config.gpt.useRope && !options?.noCache
                 ? this.generateCache(slicePrompt, options)
                 : this.generateNoCache(slicePrompt, options);
         const r = await result;

@@ -1,14 +1,13 @@
-import CausalSelfAttention, { KVCache } from './CausalSelfAttention';
+import CausalSelfAttention, { AttentionScores, KVCache } from './CausalSelfAttention';
 import MLP from './MLP';
 import RMSNorm from './RMSNorm';
 import BaseLayer, { ForwardAttributes, GPTLayerConfig } from './BaseLayer';
 import { Tensor, tidy } from '@tensorflow/tfjs-core';
 
 interface BlockAttributes extends ForwardAttributes {
-    includeAttention?: boolean;
     pastKV?: KVCache;
     seed?: number;
-    attentionOut?: Tensor;
+    attentionScores?: AttentionScores;
 }
 
 // Transformer block

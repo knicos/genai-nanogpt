@@ -14,11 +14,16 @@ export type KVCache = {
     cumulativeLength: number;
 };
 
+export interface AttentionScores {
+    head: number;
+    block: number;
+    attentionOut?: Tensor; // [B, T, T] attention weights if requested
+}
+
 interface AttentionForwardAttributes extends ForwardAttributes {
-    includeAttention?: boolean; // Whether to return the attention weights
+    attentionScores?: AttentionScores;
     pastKV?: KVCache; // Optional past key/value cache for incremental decoding
     seed?: number; // Optional seed for dropout randomness
-    attentionOut?: Tensor;
 }
 
 // Multi-head self-attention implementation
@@ -172,7 +177,11 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
 
             // Attention applied to values
             const y = matMul(attScores, vTotal); // (B, nh, T_cur, hs)
-            if (!attr.includeAttention) {
+
+            const shouldOutputAttention =
+                attr.attentionScores !== undefined && attr.attentionScores.block === this.index;
+
+            if (!shouldOutputAttention) {
                 attScores.dispose();
             }
             if (!attr.pastKV) {
@@ -182,8 +191,19 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             const output = this.getOutputProjection(y); // (B, T_cur, C)
             y.dispose();
 
-            if (attr.includeAttention) {
-                attr.attentionOut = keep(attScores.mean(1));
+            // Optionally return attention scores for a head
+            if (
+                shouldOutputAttention &&
+                attr.attentionScores &&
+                attr.attentionScores.head >= 0 &&
+                attr.attentionScores.head < this.config.gpt.nHead
+            ) {
+                const B = attScores.shape[0]!;
+                const T_cur = attScores.shape[2]!;
+                // Return only the attention for the requested head
+                attr.attentionScores.attentionOut = keep(
+                    attScores.slice([0, attr.attentionScores.head, 0, 0], [-1, 1, -1, -1]).reshape([B, T_cur, -1])
+                );
             }
             this.endMemory(`CausalSelfAttention`);
             return output;

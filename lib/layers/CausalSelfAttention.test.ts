@@ -76,11 +76,10 @@ describe('CausalSelfAttention', () => {
         const input = tf.randomNormal([1, 4, 16]);
         const attr = {
             training: false,
-            includeAttention: true,
-            attentionOut: undefined as tf.Tensor | undefined,
+            attentionScores: { head: 0, block: 0, attentionOut: undefined as tf.Tensor | undefined },
         };
         layer.call(attr, input);
-        const attention = attr.attentionOut;
+        const attention = attr.attentionScores?.attentionOut;
         expect(attention).toBeInstanceOf(tf.Tensor);
         expect(attention!.shape).toEqual([1, 4, 4]);
 
@@ -112,7 +111,14 @@ describe('CausalSelfAttention', () => {
             length: 2,
             cumulativeLength: 2,
         };
-        const output = layer.call({ training: false, includeAttention: false, pastKV: cache }, input) as tf.Tensor;
+        const output = layer.call(
+            {
+                training: false,
+                attentionScores: { head: 0, block: 0, attentionOut: undefined as tf.Tensor | undefined },
+                pastKV: cache,
+            },
+            input
+        ) as tf.Tensor;
         expect(output).toBeInstanceOf(tf.Tensor);
         expect(output.shape).toEqual([1, 1, 16]);
         const presentKV = cache;

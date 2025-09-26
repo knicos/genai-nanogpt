@@ -77,11 +77,15 @@ describe('Generator', () => {
         });
 
         const prompt = 'abcde';
-        await generator.generate(prompt, { maxLength: 10, includeAttention: true });
+        await generator.generate(prompt, { maxLength: 10, attentionScores: { head: 0, block: 0 } });
+
+        console.log('Attention', emittedAttention[0][0]);
 
         expect(emittedAttention).toHaveLength(emittedTokens.length);
         expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
-        expect(emittedAttention[0][0]).toHaveLength(prompt.length);
+
+        // When cache is used the attention output is full block size.
+        expect(emittedAttention[0][0]).toHaveLength(model.config.gpt.blockSize);
     });
 
     it('emits attention with RoPE', async ({ expect }) => {
@@ -107,7 +111,7 @@ describe('Generator', () => {
         });
 
         const prompt = 'abcde';
-        await generator.generate(prompt, { maxLength: 10, includeAttention: true, noCache: true });
+        await generator.generate(prompt, { maxLength: 10, attentionScores: { head: 0, block: 0 }, noCache: true });
 
         expect(emittedAttention).toHaveLength(emittedTokens.length);
         expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
