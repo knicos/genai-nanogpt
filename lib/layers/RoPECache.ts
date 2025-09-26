@@ -37,15 +37,17 @@ export default class RoPECache {
     }
 
     public ensureRopeCache(needed: number) {
-        if (needed <= this.ropeCacheLen) return;
-        if (this.ropeCos) this.ropeCos.dispose();
-        if (this.ropeSin) this.ropeSin.dispose();
-        const nextSize = Math.max(needed, this.ropeCacheLen + this.config.blockSize * 4);
-        const positions = range(0, nextSize, 1, 'float32').expandDims(1); // [L,1]
-        const freqs = positions.mul(this.ropeInvFreq.expandDims(0)); // [L, rd/2]
-        this.ropeCos = keep(cos(freqs).expandDims(-1)); // [L, rd/2, 1]
-        this.ropeSin = keep(sin(freqs).expandDims(-1)); // [L, rd/2, 1]
-        this.ropeCacheLen = nextSize;
+        tidy(() => {
+            if (needed <= this.ropeCacheLen) return;
+            if (this.ropeCos) this.ropeCos.dispose();
+            if (this.ropeSin) this.ropeSin.dispose();
+            const nextSize = Math.max(needed, this.ropeCacheLen + this.config.blockSize * 4);
+            const positions = range(0, nextSize, 1, 'float32').expandDims(1); // [L,1]
+            const freqs = positions.mul(this.ropeInvFreq.expandDims(0)); // [L, rd/2]
+            this.ropeCos = keep(cos(freqs).expandDims(-1)); // [L, rd/2, 1]
+            this.ropeSin = keep(sin(freqs).expandDims(-1)); // [L, rd/2, 1]
+            this.ropeCacheLen = nextSize;
+        });
     }
 
     public getCos(): Tensor | null {

@@ -87,7 +87,10 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         let inputTensor = await this.tokenisePrompt(prompt);
         let outputText = prompt || '';
 
-        const cache: KVCache[] = new Array(this.model.config.gpt.nLayer).fill(undefined);
+        const cache: KVCache[] = new Array(this.model.config.gpt.nLayer);
+        for (let i = 0; i < this.model.config.gpt.nLayer; i++) {
+            cache[i] = { k: undefined, v: undefined, length: 0, cumulativeLength: 0 };
+        }
 
         const maxTokens = options?.maxLength ?? 1000;
 
@@ -117,8 +120,8 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
         cache.forEach((c) => {
             if (c) {
-                c.k.dispose();
-                c.v.dispose();
+                if (c.k) c.k.dispose();
+                if (c.v) c.v.dispose();
             }
         });
 

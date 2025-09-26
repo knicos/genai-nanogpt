@@ -118,7 +118,7 @@ export default abstract class GPTTrainer {
             const { xs, ys } = batch;
 
             const f = () => {
-                const { loss, logits } = this.model.forward(xs, ys, true);
+                const [logits, loss] = this.model.forward({ training: true }, xs, ys);
                 //console.log('Logits', logits.toString());
                 logits.dispose();
                 return loss! as Scalar;

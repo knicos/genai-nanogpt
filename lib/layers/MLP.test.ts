@@ -19,7 +19,7 @@ describe('MLP', () => {
         const mlp = new MLP(0, { gpt: config, layerConfig: {} });
 
         const input = tf.randomNormal([1, 4, 16]);
-        const output = mlp.call(input, false);
+        const output = mlp.call({ training: false }, input) as tf.Tensor;
 
         expect(output).toBeInstanceOf(tf.Tensor);
         expect(output.shape).toEqual([1, 4, 16]);
@@ -40,17 +40,17 @@ describe('MLP', () => {
         };
         const mlp = new MLP(0, { gpt: config, layerConfig: {} });
         const input = tf.randomNormal([1, 4, 16]);
-        mlp.call(input, false); // Initialize the layer
+        mlp.call({ training: false }, input); // Initialize the layer
 
         const weightsMap = new Map<string, tf.Tensor[]>();
         mlp.saveWeights(weightsMap);
 
         const newMlp = new MLP(0, { gpt: config, layerConfig: {} });
-        newMlp.call(input, false); // Initialize the layer
+        newMlp.call({ training: false }, input); // Initialize the layer
         newMlp.loadWeights(weightsMap);
 
-        const originalOutput = mlp.call(input, false);
-        const newOutput = newMlp.call(input, false);
+        const originalOutput = mlp.call({ training: false }, input) as tf.Tensor;
+        const newOutput = newMlp.call({ training: false }, input) as tf.Tensor;
         expect(originalOutput.shape).toEqual(newOutput.shape);
         expect(originalOutput.dataSync()).toEqual(newOutput.dataSync());
     });

@@ -7,12 +7,13 @@ import RoPECache from './layers/RoPECache';
 import RMSNorm from './layers/RMSNorm';
 import { estimateParameterCount } from './utilities/parameters';
 import { createSoftmaxCrossEntropyWithGrad } from './training/sparseCrossEntropy';
-import BaseLayer from './layers/BaseLayer';
+import BaseLayer, { ForwardAttributes } from './layers/BaseLayer';
 import { layers, initializers } from '@tensorflow/tfjs-layers';
 import {
     add,
     eye,
     gather,
+    keep,
     mod,
     multinomial,
     pad,
@@ -23,7 +24,6 @@ import {
     Tensor1D,
     tidy,
     topk,
-    Variable,
 } from '@tensorflow/tfjs-core';
 
 export interface TrainingLogEntry {
@@ -43,8 +43,15 @@ export interface GenerateOptions {
     includeProbabilities?: boolean;
 }
 
+export interface ModelForwardAttributes extends ForwardAttributes {
+    includeAttention?: boolean;
+    cache?: KVCache[];
+    attentionOut?: Tensor;
+    seed?: number;
+}
+
 // Main GPT model
-export default class NanoGPT extends BaseLayer {
+export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
     private wte: TiedEmbeddingOutputLayer; // Token embeddings
     private wpe?: layers.Layer; // Position embeddings
     private drop: layers.Layer; // Dropout
@@ -57,11 +64,7 @@ export default class NanoGPT extends BaseLayer {
         super({ gpt: { ...defaultConfig, ...config }, layerConfig: {} });
 
         // Token embeddings
-        this.wte = new TiedEmbeddingOutputLayer({
-            vocabSize: this.config.gpt.vocabSize,
-            embedDim: this.config.gpt.nEmbed,
-            name: 'token_embedding',
-        });
+        this.wte = new TiedEmbeddingOutputLayer(this.config, 'token_embedding', this);
 
         if (this.config.gpt.useRope === false) {
             this.wpe = layers.embedding({
@@ -80,49 +83,19 @@ export default class NanoGPT extends BaseLayer {
         // Transformer blocks
         this.blocks = [];
         for (let i = 0; i < this.config.gpt.nLayer; i++) {
-            this.blocks.push(new Block(i, this.config));
+            this.blocks.push(new Block(i, this.config, this));
         }
 
         // Final layer norm
-        this.lnF = new RMSNorm(this.config, `final_rms_norm`);
+        this.lnF = new RMSNorm(this.config, `final_rms_norm`, this);
     }
 
     get checkpointing(): boolean {
-        return this.config.layerConfig.checkpointAttention === true || this.config.layerConfig.checkpointMLP === true;
+        return this.config.layerConfig.checkpointing === true;
     }
 
     set checkpointing(value: boolean) {
-        this.config.layerConfig.checkpointAttention = value;
-        this.config.layerConfig.checkpointMLP = value;
-    }
-
-    get variables(): Variable[] {
-        return [
-            //...this.wpe.trainableWeights.map((v) => v.read() as TF.Variable),
-            ...this.blocks.flatMap((b) => b.variables),
-            ...this.lnF.trainableWeights.map((v) => v as Variable),
-            ...this.wte.variables,
-        ];
-    }
-
-    public saveWeights(): Map<string, Tensor[]> {
-        const map = new Map<string, Tensor[]>();
-        map.set('token_embedding', this.wte.getWeights());
-        if (this.wpe) map.set('positional_embedding', this.wpe.getWeights());
-        for (let i = 0; i < this.blocks.length; i++) {
-            this.blocks[i].saveWeights(map);
-        }
-        map.set('final_rms_norm', this.lnF.getWeights());
-        return map;
-    }
-
-    public loadWeights(weights: Map<string, Tensor[]>): void {
-        this.wte.setWeights(weights.get('token_embedding') || []);
-        if (this.wpe) this.wpe.setWeights(weights.get('positional_embedding') || []);
-        for (let i = 0; i < this.blocks.length; i++) {
-            this.blocks[i].loadWeights(weights);
-        }
-        this.lnF.setWeights(weights.get('final_rms_norm') || []);
+        this.config.layerConfig.checkpointing = value;
     }
 
     private inputPhase(idx: Tensor, pastLen: number, training: boolean = false): Tensor {
@@ -168,15 +141,6 @@ export default class NanoGPT extends BaseLayer {
         for (let i = 0; i < this.blocks.length; i++) {
             this.blocks[i].trainable = mask[i];
         }
-    }
-
-    set trainable(value: boolean) {
-        for (const block of this.blocks) {
-            block.trainable = value;
-        }
-
-        //this.wpe.trainable = value;
-        this.lnF.trainable = value;
     }
 
     private validateInput(idx: Tensor): void {
@@ -235,64 +199,59 @@ export default class NanoGPT extends BaseLayer {
         });
     }
 
-    forward(
-        idx: Tensor,
-        targets?: Tensor,
-        training = false,
-        includeAttention = false,
-        cache?: (KVCache | undefined)[]
-    ): { logits: Tensor; loss?: Tensor; attention?: Tensor } {
+    forward(attrs: ModelForwardAttributes, idx: Tensor, targets?: Tensor): Tensor[] {
         this.validateInput(idx);
 
         return tidy(() => {
             this.startMemory();
             // Token and position embeddings
-            const pastLen = cache?.[0]?.length ?? 0;
-            let x = this.inputPhase(idx, pastLen, training);
+            const pastLen = attrs.cache?.[0]?.length ?? 0;
+            let x = this.inputPhase(idx, pastLen, attrs.training);
 
             const perLayerAtt: Tensor[] = [];
 
-            if (cache && cache.length !== this.blocks.length) {
-                console.error('Cache', cache);
-                throw new Error(`Cache length ${cache.length} does not match number of blocks ${this.blocks.length}`);
+            if (attrs.cache && attrs.cache.length !== this.blocks.length) {
+                console.error('Cache', attrs.cache);
+                throw new Error(
+                    `Cache length ${attrs.cache.length} does not match number of blocks ${this.blocks.length}`
+                );
             }
 
             // Transformer blocks
             for (let i = 0; i < this.blocks.length; i++) {
-                const oldX = x;
-
                 const block = this.blocks[i];
-                const {
-                    output,
-                    attention,
-                    cache: newCache,
-                } = block.call(x, training, includeAttention, cache ? cache[i] : undefined);
-                x = output;
-                oldX.dispose();
-                if (includeAttention && attention) {
-                    perLayerAtt.push(attention); // (B,T,T) already head-averaged
-                }
+                const seed = Math.random() * 1e9;
+                const blockAttrs = {
+                    training: attrs.training,
+                    seed,
+                    includeAttention: attrs.includeAttention,
+                    pastKV: attrs.cache ? attrs.cache[i] : undefined,
+                    attentionOut: undefined as Tensor | undefined,
+                };
 
-                if (cache && newCache) {
-                    cache[i]?.k.dispose();
-                    cache[i]?.v.dispose();
-                    cache[i] = newCache; // Update cache for this block
-                } else if (newCache) {
-                    newCache.k.dispose();
-                    newCache.v.dispose();
+                const output =
+                    this.config.layerConfig.checkpointing && attrs.training
+                        ? block.callCheckpoint(blockAttrs, x)
+                        : block.call(blockAttrs, x);
+                x.dispose();
+                x = output as Tensor;
+
+                if (attrs.includeAttention && blockAttrs.attentionOut) {
+                    perLayerAtt.push(blockAttrs.attentionOut); // (B,T,T) already head-averaged
                 }
             }
 
             let aggregatedAttention: Tensor | undefined;
-            if (includeAttention && perLayerAtt.length > 0) {
+            if (attrs.includeAttention && perLayerAtt.length > 0) {
                 aggregatedAttention = this.computeAttentionRollout(perLayerAtt);
             }
 
             // Final layer norm
-            x = this.lnF.apply(x) as Tensor;
+            x = this.lnF.call(attrs, x) as Tensor;
 
             // Embedding to logits
             const logits = this.wte.project(x) as Tensor;
+            x.dispose();
 
             let loss: Tensor | undefined;
             if (targets) {
@@ -301,13 +260,15 @@ export default class NanoGPT extends BaseLayer {
 
             this.endMemory('Forward');
 
-            return { logits, loss, attention: includeAttention ? aggregatedAttention : undefined };
+            attrs.attentionOut = aggregatedAttention ? keep(aggregatedAttention) : undefined;
+
+            return loss ? [logits, loss] : [logits];
         });
     }
 
     generate(
         idx: Tensor,
-        cache?: (KVCache | undefined)[],
+        cache?: KVCache[],
         options?: GenerateOptions
     ): { output: Tensor; attention?: Tensor; probabilities?: Tensor } {
         const temperature = options?.temperature ?? 1.0;
@@ -337,14 +298,23 @@ export default class NanoGPT extends BaseLayer {
                       ])
                     : cropIdx;
 
-            const { logits, attention } = this.forward(padIdx, undefined, false, includeAttention, cache);
+            const attrs: ModelForwardAttributes = {
+                training: false,
+                includeAttention,
+                cache,
+            };
+            const [logits] = this.forward(attrs, padIdx);
 
             // Focus only on the last time step
             const lastTimeStep = logits.shape[1]! - 1 - padding;
             const lastLogits = logits.slice([0, lastTimeStep, 0], [logits.shape[0], 1, logits.shape[2]!]); // (b, 1, vocab_size)
-            const lastAttention = attention
-                ? attention.slice([0, lastTimeStep, 0], [attention.shape[0], 1, attention.shape[2]!])
+            const lastAttention = attrs.attentionOut
+                ? attrs.attentionOut.slice(
+                      [0, lastTimeStep, 0],
+                      [attrs.attentionOut.shape[0], 1, attrs.attentionOut.shape[2]!]
+                  )
                 : undefined;
+            logits.dispose();
 
             const scaledLogits = lastLogits.div(temperature);
 

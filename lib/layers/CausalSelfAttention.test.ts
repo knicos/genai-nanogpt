@@ -24,7 +24,7 @@ describe('CausalSelfAttention', () => {
         expect(layer).toBeInstanceOf(CausalSelfAttention);
 
         const input = tf.randomNormal([1, 4, 16]);
-        const { output } = layer.call(input, false);
+        const output = layer.call({ training: false }, input) as tf.Tensor;
         expect(output).toBeInstanceOf(tf.Tensor);
         expect(output.shape).toEqual([1, 4, 16]);
         layer.dispose();
@@ -50,7 +50,7 @@ describe('CausalSelfAttention', () => {
         expect(layer).toBeInstanceOf(CausalSelfAttention);
 
         const input = tf.randomNormal([1, 4, 16]);
-        const { output } = layer.call(input, true);
+        const output = layer.call({ training: true }, input) as tf.Tensor;
         expect(output).toBeInstanceOf(tf.Tensor);
         expect(output.shape).toEqual([1, 4, 16]);
         layer.dispose();
@@ -74,7 +74,13 @@ describe('CausalSelfAttention', () => {
         });
 
         const input = tf.randomNormal([1, 4, 16]);
-        const { attention } = layer.call(input, false, true);
+        const attr = {
+            training: false,
+            includeAttention: true,
+            attentionOut: undefined as tf.Tensor | undefined,
+        };
+        layer.call(attr, input);
+        const attention = attr.attentionOut;
         expect(attention).toBeInstanceOf(tf.Tensor);
         expect(attention!.shape).toEqual([1, 4, 4]);
 
@@ -106,14 +112,15 @@ describe('CausalSelfAttention', () => {
             length: 2,
             cumulativeLength: 2,
         };
-        const { output, presentKV } = layer.call(input, false, false, cache);
+        const output = layer.call({ training: false, includeAttention: false, pastKV: cache }, input) as tf.Tensor;
         expect(output).toBeInstanceOf(tf.Tensor);
         expect(output.shape).toEqual([1, 1, 16]);
+        const presentKV = cache;
         expect(presentKV).toBeDefined();
-        expect(presentKV!.k.shape).toEqual([1, 2, 4, 8]);
-        expect(presentKV!.v.shape).toEqual([1, 2, 4, 8]);
-        expect(presentKV!.length).toEqual(3);
-        expect(presentKV!.cumulativeLength).toEqual(3);
+        expect(presentKV.k?.shape).toEqual([1, 2, 4, 8]);
+        expect(presentKV.v?.shape).toEqual([1, 2, 4, 8]);
+        expect(presentKV.length).toEqual(3);
+        expect(presentKV.cumulativeLength).toEqual(3);
         layer.dispose();
     });
 
@@ -135,7 +142,7 @@ describe('CausalSelfAttention', () => {
             },
             layerConfig: {},
         });
-        layer.call(input, false); // Initialize the layer
+        layer.call({ training: false }, input); // Initialize the layer
 
         const weightsMap = new Map<string, tf.Tensor[]>();
         layer.saveWeights(weightsMap);
@@ -155,11 +162,11 @@ describe('CausalSelfAttention', () => {
             },
             layerConfig: {},
         });
-        newLayer.call(input, false); // Initialize the layer
+        newLayer.call({ training: false }, input); // Initialize the layer
         newLayer.loadWeights(weightsMap);
 
-        const { output: originalOutput } = layer.call(input, false);
-        const { output: newOutput } = newLayer.call(input, false);
+        const originalOutput = layer.call({ training: false }, input) as tf.Tensor;
+        const newOutput = newLayer.call({ training: false }, input) as tf.Tensor;
         expect(originalOutput.shape).toEqual(newOutput.shape);
         expect(originalOutput.dataSync()).toEqual(newOutput.dataSync());
 
@@ -186,12 +193,12 @@ describe('CausalSelfAttention', () => {
         const input = tf.randomNormal([1, 4, 16]);
         const target = tf.randomNormal([1, 4, 16]);
 
-        layer.call(input, false);
+        layer.call({ training: false }, input);
 
         //const optimizer = tf.train.adam(0.01);
 
         const f = () => {
-            const { output } = layer.call(input, true);
+            const output = layer.call({ training: true }, input) as tf.Tensor;
             const loss = tf.losses.meanSquaredError(target, output);
             return loss as tf.Scalar;
         };

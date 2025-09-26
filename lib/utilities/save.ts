@@ -3,6 +3,7 @@ import type { ITokeniser } from '@base/tokeniser/type';
 import zip from 'jszip';
 import { exportWeights, ITensorSpec } from './weights';
 import CharTokeniser from '../tokeniser/CharTokeniser';
+import { Tensor } from '@tensorflow/tfjs-core';
 
 const VERSION = '1.0.0';
 
@@ -15,7 +16,8 @@ export interface SaveOptions {
 
 export async function saveModel(model: NanoGPT, tokeniser: ITokeniser, options?: SaveOptions): Promise<Blob> {
     const includeLog = options?.includeLog ?? true;
-    const weights = model.saveWeights();
+    const weights = new Map<string, Tensor[]>();
+    model.saveWeights(weights);
     const zipFile = new zip();
 
     const spec: Record<string, ITensorSpec[]> = {};

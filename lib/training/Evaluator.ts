@@ -21,7 +21,7 @@ export default class Evaluator {
             const batch = result.value;
             const { xs, ys } = batch as { xs: Tensor; ys: Tensor };
 
-            const { loss, logits } = this.model.forward(xs, ys, false, false);
+            const [logits, loss] = this.model.forward({ training: false }, xs, ys);
             logits.dispose();
             xs.dispose();
             ys.dispose();

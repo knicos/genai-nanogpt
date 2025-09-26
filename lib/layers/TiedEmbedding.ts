@@ -1,58 +1,39 @@
 import { Initializer } from '@tensorflow/tfjs-layers/dist/initializers';
 import { initializers } from '@tensorflow/tfjs-layers';
-import { gather, Tensor, variable, Variable } from '@tensorflow/tfjs-core';
+import { gather, Tensor, variable } from '@tensorflow/tfjs-core';
 import { dot } from '@tensorflow/tfjs-layers/dist/backend/tfjs_backend';
+import BaseLayer, { ForwardAttributes, GPTLayerConfig } from './BaseLayer';
 
-export default class TiedEmbeddingOutputLayer {
+export default class TiedEmbeddingOutputLayer extends BaseLayer {
     private vocabSize: number;
     private embedDim: number;
-    private tiedWeights: Variable;
     private initializer: Initializer;
+    private WEIGHTS: string;
 
-    constructor(config: { vocabSize: number; embedDim: number; name?: string }, name?: string) {
-        this.vocabSize = config.vocabSize;
-        this.embedDim = config.embedDim;
+    constructor(config: GPTLayerConfig, name: string, parent?: BaseLayer) {
+        super(config, parent);
+        this.WEIGHTS = name;
+        this.vocabSize = config.gpt.vocabSize;
+        this.embedDim = config.gpt.nEmbed;
 
         this.initializer = initializers.randomNormal({
             mean: 0.0,
             stddev: 0.02,
         });
 
-        this.tiedWeights = variable(
-            this.initializer.apply([this.vocabSize, this.embedDim]),
-            true,
-            name || 'tied_embedding'
-        );
-    }
-
-    get variables(): Variable[] {
-        return [this.tiedWeights];
+        this.addVariable(this.WEIGHTS, variable(this.initializer.apply([this.vocabSize, this.embedDim]), true));
     }
 
     embed(inputs: Tensor): Tensor {
-        return gather(this.tiedWeights, inputs, 0);
+        return gather(this.getVariable(this.WEIGHTS), inputs, 0);
     }
 
     project(inputs: Tensor): Tensor {
-        return dot(inputs, this.tiedWeights.transpose());
+        return dot(inputs, this.getVariable(this.WEIGHTS).transpose());
     }
 
-    getWeights(): Tensor[] {
-        return [this.tiedWeights];
-    }
-
-    setWeights(weights: Tensor[]): void {
-        this.tiedWeights.assign(weights[0]);
-    }
-
-    getConfig() {
-        return {
-            vocabSize: this.vocabSize,
-            embedDim: this.embedDim,
-        };
-    }
-
-    dispose() {
-        this.tiedWeights.dispose();
+    // Dummy, should not be used.
+    forward(_: ForwardAttributes, x: Tensor): Tensor {
+        return this.project(x);
     }
 }
