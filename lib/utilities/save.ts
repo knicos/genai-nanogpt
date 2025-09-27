@@ -31,7 +31,7 @@ export async function saveModel(model: NanoGPT, tokeniser: ITokeniser, options?:
         'manifest.json',
         JSON.stringify({
             weightSpec: spec,
-            config: model.config,
+            config: model.config.gpt,
             version: VERSION,
             application: '@genai-fi/nanogpt',
             meta: options?.metadata,
