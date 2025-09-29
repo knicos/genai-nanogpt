@@ -38,7 +38,7 @@ export interface GenerateOptions {
     temperature?: number;
     topK?: number;
     usePadding?: boolean;
-    attentionScores?: AttentionScores;
+    attentionScores?: boolean;
     includeProbabilities?: boolean;
 }
 
@@ -213,8 +213,6 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
                 );
             }
 
-            let attentionOut: Tensor | undefined = undefined;
-
             // Transformer blocks
             for (let i = 0; i < this.blocks.length; i++) {
                 const block = this.blocks[i];
@@ -232,10 +230,6 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
                         : block.call(blockAttrs, x);
                 x.dispose();
                 x = output as Tensor;
-
-                if (blockAttrs.attentionScores?.attentionOut) {
-                    attentionOut = blockAttrs.attentionScores.attentionOut;
-                }
             }
 
             // Final layer norm
@@ -252,10 +246,6 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
 
             this.endMemory('Forward');
 
-            if (attrs.attentionScores) {
-                attrs.attentionScores.attentionOut = attentionOut ? keep(attentionOut) : undefined;
-            }
-
             return loss ? [logits, loss] : [logits];
         });
     }
@@ -264,7 +254,7 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
         idx: Tensor,
         cache?: KVCache[],
         options?: GenerateOptions
-    ): { output: Tensor; attention?: Tensor; probabilities?: Tensor } {
+    ): { output: Tensor; probabilities?: Tensor; attention?: Tensor[] } {
         const temperature = options?.temperature ?? 1.0;
         const tK = options?.topK;
         const usePadding = options?.usePadding ?? false;
@@ -293,7 +283,11 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
 
             const attrs: ModelForwardAttributes = {
                 training: false,
-                attentionScores: options?.attentionScores,
+                attentionScores: options?.attentionScores
+                    ? {
+                          attentionOut: [],
+                      }
+                    : undefined,
                 cache,
             };
             const [logits] = this.forward(attrs, padIdx);
@@ -301,12 +295,19 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
             // Focus only on the last time step
             const lastTimeStep = logits.shape[1]! - 1 - padding;
             const lastLogits = logits.slice([0, lastTimeStep, 0], [logits.shape[0], 1, logits.shape[2]!]); // (b, 1, vocab_size)
-            const lastAttention = attrs.attentionScores?.attentionOut
-                ? attrs.attentionScores.attentionOut.slice(
-                      [0, lastTimeStep, 0],
-                      [attrs.attentionScores.attentionOut.shape[0], 1, attrs.attentionScores.attentionOut.shape[2]!]
-                  )
-                : undefined;
+
+            // Double check that attention output is only the last step
+            if (attrs.attentionScores?.attentionOut) {
+                attrs.attentionScores.attentionOut.forEach((a, i) => {
+                    if (a.shape[1]! !== 1) {
+                        attrs.attentionScores!.attentionOut![i] = keep(
+                            a.slice([0, lastTimeStep, 0], [a.shape[0], 1, a.shape[2]!])
+                        );
+                        a.dispose();
+                    }
+                });
+            }
+
             logits.dispose();
 
             const scaledLogits = lastLogits.div(temperature);
@@ -327,7 +328,7 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
             }
 
             nextToken = nextToken.reshape([1, 1]);
-            return { output: nextToken, attention: lastAttention?.squeeze([1]), probabilities };
+            return { output: nextToken, probabilities, attention: attrs.attentionScores?.attentionOut };
         });
     }
 

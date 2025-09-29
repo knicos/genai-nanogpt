@@ -33,6 +33,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             if (!this.active) {
                 break;
             }
+
             const {
                 output: generatedToken,
                 attention,
@@ -58,7 +59,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
     private async processResponse(
         generatedToken: Tensor,
-        attention: Tensor | undefined,
+        attention: Tensor[] | undefined,
         probabilities: Tensor | undefined
     ): Promise<string | null> {
         const newToken = ((await generatedToken.array()) as number[][])[0][0];
@@ -67,10 +68,10 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         }
         const newText = await this.tokeniser.decode([newToken]);
 
-        let attentionArray: number[][] | undefined;
+        let attentionArray: number[][][] | undefined;
         if (attention) {
-            attentionArray = (await attention.array()) as number[][];
-            attention.dispose();
+            attentionArray = await Promise.all(attention.map((a) => a.array().then((arr) => arr as number[][])));
+            attention.forEach((a) => a.dispose());
         }
 
         let probabilitiesArray: number[][] | undefined;
@@ -99,10 +100,11 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             if (!this.active) {
                 break;
             }
+
             const {
                 output: generatedToken,
-                attention,
                 probabilities,
+                attention,
             } = this.model.generate(inputTensor, cache, {
                 ...options,
                 usePadding: false,

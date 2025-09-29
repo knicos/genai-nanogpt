@@ -15,9 +15,8 @@ export type KVCache = {
 };
 
 export interface AttentionScores {
-    head: number;
-    block: number;
-    attentionOut?: Tensor; // [B, T, T] attention weights if requested
+    meanOfHeads?: boolean; // If true, average attention weights over heads
+    attentionOut?: Tensor[]; // [H, T, T] attention weights if requested
 }
 
 interface AttentionForwardAttributes extends ForwardAttributes {
@@ -179,7 +178,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             const y = matMul(attScores, vTotal); // (B, nh, T_cur, hs)
 
             const shouldOutputAttention =
-                attr.attentionScores !== undefined && attr.attentionScores.block === this.index;
+                attr.attentionScores !== undefined && attr.attentionScores.attentionOut !== undefined;
 
             if (!shouldOutputAttention) {
                 attScores.dispose();
@@ -192,17 +191,12 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             y.dispose();
 
             // Optionally return attention scores for a head
-            if (
-                shouldOutputAttention &&
-                attr.attentionScores &&
-                attr.attentionScores.head >= 0 &&
-                attr.attentionScores.head < this.config.gpt.nHead
-            ) {
-                const B = attScores.shape[0]!;
+            if (shouldOutputAttention && attr.attentionScores && attr.attentionScores.attentionOut !== undefined) {
+                const H = attScores.shape[1]!;
                 const T_cur = attScores.shape[2]!;
-                // Return only the attention for the requested head
-                attr.attentionScores.attentionOut = keep(
-                    attScores.slice([0, attr.attentionScores.head, 0, 0], [-1, 1, -1, -1]).reshape([B, T_cur, -1])
+
+                attr.attentionScores.attentionOut?.push(
+                    keep(attScores.slice([0, 0, 0, 0], [1, -1, -1, -1]).reshape([H, T_cur, -1]))
                 );
             }
             this.endMemory(`CausalSelfAttention`);

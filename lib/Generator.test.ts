@@ -67,7 +67,7 @@ describe('Generator', () => {
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
 
-        const emittedAttention: number[][][] = [];
+        const emittedAttention: number[][][][] = [];
         const emittedTokens: number[][] = [];
         generator.on('tokens', (tokens, _1, attention) => {
             emittedTokens.push(tokens);
@@ -77,7 +77,7 @@ describe('Generator', () => {
         });
 
         const prompt = 'abcde';
-        await generator.generate(prompt, { maxLength: 10, attentionScores: { head: 0, block: 0 } });
+        await generator.generate(prompt, { maxLength: 10, attentionScores: true });
 
         console.log('Attention', emittedAttention[0][0]);
 
@@ -85,7 +85,7 @@ describe('Generator', () => {
         expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
 
         // When cache is used the attention output is full block size.
-        expect(emittedAttention[0][0]).toHaveLength(model.config.gpt.blockSize);
+        expect(emittedAttention[0][0][0][0]).toHaveLength(model.config.gpt.blockSize);
     });
 
     it('emits attention with RoPE', async ({ expect }) => {
@@ -101,7 +101,7 @@ describe('Generator', () => {
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
 
-        const emittedAttention: number[][][] = [];
+        const emittedAttention: number[][][][] = [];
         const emittedTokens: number[][] = [];
         generator.on('tokens', (tokens, _1, attention) => {
             emittedTokens.push(tokens);
@@ -111,11 +111,11 @@ describe('Generator', () => {
         });
 
         const prompt = 'abcde';
-        await generator.generate(prompt, { maxLength: 10, attentionScores: { head: 0, block: 0 }, noCache: true });
+        await generator.generate(prompt, { maxLength: 10, attentionScores: true, noCache: true });
 
         expect(emittedAttention).toHaveLength(emittedTokens.length);
         expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
-        expect(emittedAttention[0][0]).toHaveLength(prompt.length);
+        expect(emittedAttention[0][0][0][0]).toHaveLength(prompt.length);
     });
 
     it('should emit probabilities when requested', async ({ expect }) => {
