@@ -136,7 +136,7 @@ export default class BPETokeniser extends EE<'trainStatus'> implements ITokenise
             this.targetSize = vocab.length;
         } else {
             this.vocab.add('<eos>');
-            this.vocab.add('<unk>');
+            this.vocab.add('');
             this.targetSize = vocab;
         }
     }
@@ -160,6 +160,10 @@ export default class BPETokeniser extends EE<'trainStatus'> implements ITokenise
         return this.vocabIndex.get('<eos>') ?? 0;
     }
 
+    public get unkToken(): number {
+        return this.vocabIndex.get('') ?? 1;
+    }
+
     public async train(text: string[]): Promise<number> {
         const pretokens = text.map((t) => parseTokens(t)).flat(1);
         const preTokenSet = new Set<string>(pretokens);
@@ -169,6 +173,7 @@ export default class BPETokeniser extends EE<'trainStatus'> implements ITokenise
         this.merges = [];
 
         this.vocab.add('<eos>');
+        this.vocab.add('');
 
         const pretokensArray = Array.from(preTokenSet);
         const tokens = pretokensArray.map((token) => {
@@ -247,9 +252,9 @@ export default class BPETokeniser extends EE<'trainStatus'> implements ITokenise
     public async tokenise(text: string[], numeric?: boolean): Promise<number[][] | string[][]> {
         const tokens = this.tokeniseStrings(text);
         if (numeric) {
-            return tokens.map((ts) => ts.map((t) => this.vocabIndex.get(t) ?? -1));
+            return tokens.map((ts) => ts.map((t) => this.vocabIndex.get(t) ?? this.unkToken));
         } else {
-            return tokens;
+            return tokens.map((ts) => ts.map((t) => (this.vocab.has(t) ? t : '')));
         }
     }
 

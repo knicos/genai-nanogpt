@@ -34,6 +34,28 @@ describe('BPE Tokeniser Tests', () => {
         ]);
     });
 
+    it('handles an unknown token', async ({ expect }) => {
+        const bpe = new BPETokeniser(100);
+
+        const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
+
+        bpe.train(textData);
+
+        const tokens = await bpe.tokenise(['@']);
+        expect(tokens).toEqual([['']]);
+    });
+
+    it('handles an unknown token when numeric', async ({ expect }) => {
+        const bpe = new BPETokeniser(100);
+
+        const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
+
+        bpe.train(textData);
+
+        const tokens = await bpe.tokenise(['@'], true);
+        expect(tokens).toEqual([[bpe.unkToken]]);
+    });
+
     it('can decode tokens back to text', async ({ expect }) => {
         const bpe = new BPETokeniser(100);
 

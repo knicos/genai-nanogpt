@@ -20,8 +20,11 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
             if (this.vocab.length > 0) {
                 this.vocabSize = this.vocab.length;
                 this.eosToken = this.vocab.indexOf('<eos>');
-                this.unkToken = this.vocab.indexOf('<unk>');
+                this.unkToken = this.vocab.indexOf('');
                 // Try a few common fallback tokens if <unk> is not found
+                if (this.unkToken === -1) {
+                    this.unkToken = this.vocab.indexOf('<unk>');
+                }
                 if (this.unkToken === -1) {
                     this.unkToken = this.vocab.indexOf('<pad>');
                 }
@@ -34,6 +37,10 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
                 if (this.unkToken === -1) {
                     this.unkToken = this.eosToken;
                 }
+
+                // Replace <pad> tokens with ''
+                this.vocab = this.vocab.map((token) => (token === '<pad>' ? '' : token));
+
                 this.vocab.forEach((token, index) => {
                     this.cache.set(token, index);
                 });
@@ -43,13 +50,13 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
             this._trained = true;
         } else {
             this.vocabSize = vocabSizeOrVocab;
-            this.vocab = new Array<string>(this.vocabSize).fill('<pad>');
+            this.vocab = new Array<string>(this.vocabSize).fill('');
             this.vocab[0] = '<eos>';
-            this.vocab[1] = '<unk>';
+            this.vocab[1] = '';
             this.eosToken = 0;
             this.unkToken = 1;
             this.cache.set('<eos>', 0);
-            this.cache.set('<unk>', 1);
+            this.cache.set('', 1);
         }
     }
 
@@ -63,7 +70,7 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
         const flatText = text.map((t) => t.split('')).flat();
         const charSet = new Set(flatText);
         const charArray = Array.from(charSet);
-        const firstPadIndex = this.vocab.indexOf('<pad>');
+        const firstPadIndex = this.vocab.indexOf('', this.unkToken + 1);
         const actualSize = this.vocabSize - specialTokens.length;
 
         if (firstPadIndex === -1) {
@@ -92,7 +99,7 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
                 if (!existingTokens.has(char)) {
                     this.vocab[padIndex] = char;
                     existingTokens.add(char);
-                    padIndex = this.vocab.indexOf('<pad>', padIndex + 1);
+                    padIndex = this.vocab.indexOf('', padIndex + 1);
                     if (padIndex === -1) {
                         break;
                     }
@@ -122,7 +129,7 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
             } else {
                 return t.split('').map((char) => {
                     const index = this.cache.get(char);
-                    return index !== undefined ? this.vocab[index] : '<unk>';
+                    return index !== undefined ? this.vocab[index] : '';
                 });
             }
         });

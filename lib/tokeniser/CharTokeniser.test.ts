@@ -24,7 +24,8 @@ describe('CharTokeniser Tests', () => {
         await charTokeniser.train(textData);
 
         expect(charTokeniser.vocabSize).toBe(10);
-        expect(charTokeniser.vocab).toContain('<pad>');
+        expect(charTokeniser.vocab.length).toBe(10);
+        expect(charTokeniser.vocab.filter((token) => token === '')).toHaveLength(4);
         expect(charTokeniser.vocab).toContain('<eos>');
         expect(charTokeniser.vocab).toHaveLength(10);
     });
@@ -35,8 +36,6 @@ describe('CharTokeniser Tests', () => {
         const textData = ['a', 'b', 'c', 'c', 'a', 'b', 'd', 'd', 'e', 'e', 'f', 'g'];
 
         await charTokeniser.train(textData);
-
-        console.log('Vocab:', charTokeniser.vocab);
 
         expect(charTokeniser.vocabSize).toBe(5);
         expect(charTokeniser.vocab).not.toContain('f');
@@ -54,7 +53,7 @@ describe('CharTokeniser Tests', () => {
 
         const tokens = (await charTokeniser.tokenise(textData)).flat();
 
-        expect(tokens).toContain('<unk>');
+        expect(tokens).toContain('');
     });
 
     it('replaces <pad> if train called again', async ({ expect }) => {
@@ -76,6 +75,8 @@ describe('CharTokeniser Tests', () => {
         expect(vocabAfterSecondTrain).toContain('o');
         expect(vocabAfterSecondTrain).toContain('r');
         expect(vocabAfterSecondTrain).toContain('t');
+        expect(vocabAfterSecondTrain).toContain('');
+        expect(vocabAfterSecondTrain[1]).toBe('');
         expect(vocabAfterFirstTrain).toHaveLength(20);
         expect(vocabAfterSecondTrain).toHaveLength(20);
     });
