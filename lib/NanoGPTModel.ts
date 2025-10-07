@@ -20,7 +20,9 @@ import {
     scalar,
     softmax,
     Tensor,
+    tensor1d,
     Tensor1D,
+    Tensor2D,
     tidy,
     topk,
 } from '@tensorflow/tfjs-core';
@@ -37,6 +39,7 @@ export interface TrainingLogEntry {
 export interface GenerateOptions {
     temperature?: number;
     topK?: number;
+    topP?: number;
     usePadding?: boolean;
     attentionScores?: boolean;
     includeProbabilities?: boolean;
@@ -257,6 +260,7 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
     ): { output: Tensor; probabilities?: Tensor; attention?: Tensor[] } {
         const temperature = options?.temperature ?? 1.0;
         const tK = options?.topK;
+        const tP = options?.topP;
         const usePadding = options?.usePadding ?? false;
 
         return tidy(() => {
@@ -314,7 +318,32 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
 
             let nextToken: Tensor;
 
-            if (tK) {
+            if (tP) {
+                // Top-p (nucleus) sampling
+                const probs = softmax(scaledLogits.squeeze([1]) as Tensor2D);
+
+                // TODO: This can be optimized to avoid arraySync
+                const probsArray = (probs.arraySync() as number[][])[0];
+                probs.dispose();
+                const sorted = probsArray.map((p, i) => ({ prob: p, index: i })).sort((a, b) => b.prob - a.prob);
+
+                let cumulativeProb = 0;
+                const masked = new Array<number>(sorted.length).fill(0);
+                for (const item of sorted) {
+                    cumulativeProb += item.prob;
+                    masked[item.index] = item.prob;
+                    if (cumulativeProb >= tP) {
+                        break;
+                    }
+                }
+
+                // Renormalize
+                const sumMasked = masked.reduce((a, b) => a + b, 0);
+                const renormProbs = masked.map((p) => p / sumMasked);
+
+                // Sample from filtered tokens
+                nextToken = multinomial(tensor1d(renormProbs), 1, undefined, true);
+            } else if (tK) {
                 const { values: topKValues, indices: topKIndices } = topk(scaledLogits, tK);
                 const sampledIdx = multinomial(topKValues.squeeze([1]) as Tensor1D, 1);
                 nextToken = gather(topKIndices.squeeze([1]), sampledIdx, 1);

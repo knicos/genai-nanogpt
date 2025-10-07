@@ -40,11 +40,9 @@
                         maxLength: 128 * 4 * 2,
                         temperature: 0.7,
                         attentionScores: true,
+                        topP: 0.8,
                     };
                     const generator = model.generator();
-                    generator.on('tokens', (token, text, attention) => {
-                        console.log('Attention scores:', attention);
-                    });
                     const generated = await generator.generate(prompt, options);
                     output.innerText += '\n\nGenerated Text:\n' + generated;
                     console.log('Attention', options.attentionScores);

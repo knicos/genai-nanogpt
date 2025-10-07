@@ -31,6 +31,26 @@ describe('Generator', () => {
         expect(output).toContain(prompt);
     });
 
+    it('supports topP', async ({ expect }) => {
+        const model = new NanoGPT({
+            vocabSize: 20, // Example vocab size
+            nEmbed: 64, // Example embedding size
+            nLayer: 1, // Example number of layers
+            nHead: 2, // Example number of attention heads
+            blockSize: 32, // Example block size
+            dropout: 0.1, // Example dropout rate
+        });
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const prompt = 'abcde';
+        const output = await generator.generate(prompt, { maxLength: 50, topP: 0.8 });
+        expect(output).toBeDefined();
+        expect(typeof output).toBe('string');
+        expect(output.length).toBeGreaterThan(prompt.length);
+        expect(output).toContain(prompt);
+    });
+
     it('can handle an untrained tokeniser', async ({ expect }) => {
         const model = new NanoGPT({
             vocabSize: 20, // Example vocab size
