@@ -3,6 +3,25 @@ import type { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import { KVCache } from './layers/CausalSelfAttention';
 import { concat, Tensor, tensor2d } from '@tensorflow/tfjs-core';
+import { CharTokeniser } from './main';
+
+const CHARS = [
+    ...Array.from({ length: 95 }, (_, i) => String.fromCharCode(i + 32)), // ASCII
+    // Spanish accented letters and punctuation
+    ...'áéíóúüñ¿¡',
+    // Finnish accented letters
+    ...'äöÄÖÅå',
+    // Greek letters
+    ...'αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ',
+    // Cyrillic letters
+    ...'абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ',
+];
+
+function padArray(arr: string[], length: number): string[] {
+    if (arr.length === length) return arr;
+    if (arr.length > length) return arr.slice(0, length);
+    return arr.concat(Array(length - arr.length).fill(''));
+}
 
 export interface IGenerateOptions extends GenerateOptions {
     maxLength?: number; /// Maximum length of the generated text
@@ -16,14 +35,14 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         super();
     }
 
-    private async tokenisePrompt(prompt?: string): Promise<Tensor> {
-        const tokenisedPrompt = prompt ? await this.tokeniser.tokenise([prompt], true) : [[this.tokeniser.eosToken]];
+    private async tokenisePrompt(tokeniser: ITokeniser, prompt?: string): Promise<Tensor> {
+        const tokenisedPrompt = prompt ? await tokeniser.tokenise([prompt], true) : [[tokeniser.eosToken]];
         const inputTensor: Tensor = tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
         return inputTensor;
     }
 
-    private async generateNoCache(prompt?: string, options?: IGenerateOptions): Promise<string> {
-        let inputTensor = await this.tokenisePrompt(prompt);
+    private async generateNoCache(tokeniser: ITokeniser, prompt?: string, options?: IGenerateOptions): Promise<string> {
+        let inputTensor = await this.tokenisePrompt(tokeniser, prompt);
         let outputText = prompt || '';
 
         const maxTokens = options?.maxLength ?? 1000;
@@ -44,7 +63,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             inputTensor = concat([inputTensor, generatedToken], 1);
             oldInput.dispose();
 
-            const newText = await this.processResponse(generatedToken, attention, probabilities);
+            const newText = await this.processResponse(tokeniser, generatedToken, attention, probabilities);
             generatedToken.dispose();
 
             if (newText === null) {
@@ -58,6 +77,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     }
 
     private async processResponse(
+        tokeniser: ITokeniser,
         generatedToken: Tensor,
         attention: Tensor[] | undefined,
         probabilities: Tensor | undefined
@@ -66,7 +86,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         if (newToken === this.tokeniser.eosToken) {
             return null;
         }
-        const newText = await this.tokeniser.decode([newToken]);
+        const newText = await tokeniser.decode([newToken]);
 
         let attentionArray: number[][][] | undefined;
         if (attention) {
@@ -84,8 +104,8 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         return newText;
     }
 
-    private async generateCache(prompt?: string, options?: IGenerateOptions): Promise<string> {
-        let inputTensor = await this.tokenisePrompt(prompt);
+    private async generateCache(tokeniser: ITokeniser, prompt?: string, options?: IGenerateOptions): Promise<string> {
+        let inputTensor = await this.tokenisePrompt(tokeniser, prompt);
         let outputText = prompt || '';
 
         const cache: KVCache[] = new Array(this.model.config.gpt.nLayer);
@@ -113,7 +133,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             inputTensor.dispose();
             inputTensor = generatedToken;
 
-            const newText = await this.processResponse(generatedToken, attention, probabilities);
+            const newText = await this.processResponse(tokeniser, generatedToken, attention, probabilities);
             if (newText === null) {
                 break;
             }
@@ -138,10 +158,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
                 : prompt;
         this.active = true;
         this.emit('start');
+        const tokeniser = this.tokeniser.trained
+            ? this.tokeniser
+            : new CharTokeniser(padArray(CHARS, this.tokeniser.vocabSize));
         const result =
             this.model.config.gpt.useRope && !options?.noCache
-                ? this.generateCache(slicePrompt, options)
-                : this.generateNoCache(slicePrompt, options);
+                ? this.generateCache(tokeniser, slicePrompt, options)
+                : this.generateNoCache(tokeniser, slicePrompt, options);
         const r = await result;
         this.active = false;
         this.emit('stop');

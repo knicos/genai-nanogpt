@@ -31,6 +31,27 @@ describe('Generator', () => {
         expect(output).toContain(prompt);
     });
 
+    it('can handle an untrained tokeniser', async ({ expect }) => {
+        const model = new NanoGPT({
+            vocabSize: 20, // Example vocab size
+            nEmbed: 64, // Example embedding size
+            nLayer: 1, // Example number of layers
+            nHead: 2, // Example number of attention heads
+            blockSize: 32, // Example block size
+            dropout: 0.1, // Example dropout rate
+        });
+        const tokeniser = new CharTokeniser(20);
+        const generator = new Generator(model, tokeniser);
+
+        const prompt = 'abcde';
+        const output = await generator.generate(prompt, { maxLength: 50 });
+        console.log('Output with untrained tokeniser:', output);
+        expect(output).toBeDefined();
+        expect(typeof output).toBe('string');
+        expect(output.length).toBeGreaterThan(prompt.length);
+        expect(output).toContain(prompt);
+    });
+
     it('should emit tokens during generation', async ({ expect }) => {
         const model = new NanoGPT({
             vocabSize: 20,
@@ -78,8 +99,6 @@ describe('Generator', () => {
 
         const prompt = 'abcde';
         await generator.generate(prompt, { maxLength: 10, attentionScores: true });
-
-        console.log('Attention', emittedAttention[0][0]);
 
         expect(emittedAttention).toHaveLength(emittedTokens.length);
         expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
