@@ -8,11 +8,23 @@ export default function parseTokens(text: string): string[] {
         const char = normalizedText[i];
 
         if (char === ' ') {
-            tokens.push(currentToken);
-            currentToken = char;
+            const charNext = normalizedText[i + 1] ?? '';
+            if (charNext !== ' ') {
+                tokens.push(currentToken);
+                currentToken = char;
+            } else {
+                currentToken += char;
+            }
         } else if (char.match(regex)) {
             tokens.push(currentToken);
-            tokens.push(char);
+
+            // Repeated identical punctuation should be merged
+            let charString = char;
+            while (i + 1 < normalizedText.length && normalizedText[i + 1] === char) {
+                charString += normalizedText[i + 1];
+                i++;
+            }
+            tokens.push(charString);
             currentToken = '';
         } else {
             currentToken += char;

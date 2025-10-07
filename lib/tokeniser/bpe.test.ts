@@ -56,6 +56,30 @@ describe('BPE Tokeniser Tests', () => {
         expect(tokens).toEqual([[bpe.unkToken]]);
     });
 
+    it('merges white space', async ({ expect }) => {
+        const bpe = new BPETokeniser(40);
+
+        const textData = ['    hello', '    is a test', '    hello again'];
+
+        bpe.train(textData);
+
+        const vocab = bpe.getVocab();
+        expect(vocab).toContain('   ');
+    });
+
+    it('merges repeated punctuation', async ({ expect }) => {
+        const bpe = new BPETokeniser(40);
+
+        const textData = ['hello!!!', 'this is a test...', 'hello again!!!', '\t\t\twow'];
+
+        bpe.train(textData);
+
+        const vocab = bpe.getVocab();
+        expect(vocab).toContain('!!!');
+        expect(vocab).toContain('...');
+        expect(vocab).toContain('\t\t\t');
+    });
+
     it('can decode tokens back to text', async ({ expect }) => {
         const bpe = new BPETokeniser(100);
 
