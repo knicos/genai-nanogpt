@@ -1,5 +1,5 @@
 import type { ITokeniser } from '../tokeniser/type';
-import { DatasetBuilder } from './DatasetBuilder';
+import { DatasetBuilder, flattenTokens, PAGE_FACTOR } from './DatasetBuilder';
 import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import AdamExt from './AdamExt';
 import { NamedVariableMap, TensorContainer } from '@tensorflow/tfjs-core/dist/tensor_types';
@@ -209,19 +209,33 @@ export default abstract class GPTTrainer {
         trainDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
         validationDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
     }> {
-        const trainDataset = await this.datasetBuilder.createTextDataset(textData, batchSize, 0, 1 - validationSplit);
+        const allTokens = await flattenTokens(textData, this.tokenizer);
+
+        const validationMask = new Set<number>();
+        if (validationSplit > 0) {
+            const totalPages = Math.floor(allTokens.length / (this.datasetBuilder.blockSize * PAGE_FACTOR));
+            const numValidationPages = Math.max(1, Math.floor(totalPages * validationSplit));
+
+            while (validationMask.size < numValidationPages) {
+                const pageIndex = Math.floor(Math.random() * totalPages);
+                validationMask.add(pageIndex);
+            }
+        }
+
+        const trainDataset = await this.datasetBuilder.createTextDataset(allTokens, batchSize, validationMask, false);
         const validationDataset = await this.datasetBuilder.createTextDataset(
-            textData,
+            allTokens,
             batchSize,
-            1 - validationSplit,
-            1
+            validationMask,
+            true
         );
 
         return { trainDataset, validationDataset };
     }
 
     async createDataset(textData: string[], batchSize: number = 32): Promise<Dataset<TensorContainer>> {
-        const trainDataset = await this.datasetBuilder.createTextDataset(textData, batchSize);
+        const allTokens = await flattenTokens(textData, this.tokenizer);
+        const trainDataset = await this.datasetBuilder.createTextDataset(allTokens, batchSize);
         return trainDataset;
     }
 

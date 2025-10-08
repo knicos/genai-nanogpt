@@ -1,5 +1,5 @@
 import { describe, it, vi } from 'vitest';
-import { DatasetBuilder } from './DatasetBuilder';
+import { DatasetBuilder, flattenTokens } from './DatasetBuilder';
 import * as tf from '@tensorflow/tfjs';
 import type { ITokeniser } from '../tokeniser/type';
 
@@ -18,7 +18,8 @@ describe('DatasetBuilder', () => {
 
         // Test createTextDataset method
         const textData = ['hello world', 'this is a test'];
-        const dataset = await datasetBuilder.createTextDataset(textData, 2);
+        const allTokens = await flattenTokens(textData, mockTokenizer);
+        const dataset = await datasetBuilder.createTextDataset(allTokens, 2);
 
         // Assertions
         expect(dataset).toBeDefined();
@@ -55,7 +56,36 @@ describe('DatasetBuilder', () => {
 
         // Test createTextDataset method with a single text input
         const textData = ['hello world'];
-        const dataset = await datasetBuilder.createTextDataset(textData, 2);
+        const allTokens = await flattenTokens(textData, mockTokenizer);
+        const dataset = await datasetBuilder.createTextDataset(allTokens, 2);
+
+        // Assertions
+        expect(dataset).toBeDefined();
+
+        const iterator = await dataset.iterator();
+        const firstBatch = await iterator.next();
+        const value: { xs: tf.Tensor; ys: tf.Tensor } = firstBatch.value;
+        expect(value).toBeDefined();
+        expect(value.xs.shape).toEqual([2, blockSize]);
+        expect(value.ys.shape).toEqual([2, blockSize]); //, mockTokenizer.vocabSize]);
+    });
+
+    it('masks validation pages', async ({ expect }) => {
+        const mockTokenizer = {
+            vocabSize: 256,
+            encode: vi.fn(async (text: string) => text.split('').map((c) => c.charCodeAt(0))),
+        } as unknown as ITokeniser;
+        const blockSize = 1;
+
+        // Create instance of DatasetBuilder
+        const datasetBuilder = new DatasetBuilder(mockTokenizer, blockSize);
+
+        // Test createTextDataset method with a single text input
+        const textData = ['hello world hello world hello world hello world'];
+        const allTokens = await flattenTokens(textData, mockTokenizer);
+        const maskSet = new Set<number>();
+        maskSet.add(0); // Mask the first page
+        const dataset = await datasetBuilder.createTextDataset(allTokens, 2, maskSet, false);
 
         // Assertions
         expect(dataset).toBeDefined();

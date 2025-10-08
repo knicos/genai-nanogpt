@@ -27,7 +27,7 @@
 
             const model = TeachableLLM.create('char', {
                 vocabSize: 20,
-                blockSize: 32, // Context window size
+                blockSize: 8, // Context window size
                 nLayer: 2,
                 nHead: 2,
                 nEmbed: 32,
@@ -57,7 +57,7 @@
                 //prompt: 'What a great movie. It',
                 maxSteps: 100,
                 logInterval: 10,
-                validationSplit: 0.2,
+                validationSplit: 0.1,
                 desiredLoss: 0.1,
                 batchSize: 8,
                 learningRate: 0.001,
