@@ -16,12 +16,19 @@ import { GPTLayerConfig } from './layers/BaseLayer';
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded';
 
+interface TeachableLLMMeta {
+    name?: string;
+    id?: string;
+    [key: string]: unknown;
+}
+
 export default class TeachableLLM {
     private ee = new EE<TeachableLLMEvents>();
     private _config?: GPTLayerConfig;
     private _model?: NanoGPT;
     private _tokeniser?: ITokeniser;
     private _status: TeachableLLMStatus = 'loading';
+    public meta: TeachableLLMMeta = {};
 
     constructor(tokeniser?: ITokeniser, model?: NanoGPT) {
         this._config = model?.config;
@@ -77,7 +84,10 @@ export default class TeachableLLM {
         if (!this._model || !this._tokeniser) {
             throw new Error('Model or tokeniser is not initialized.');
         }
-        return saveModel(this._model, this._tokeniser, options);
+        return saveModel(this._model, this._tokeniser, {
+            ...options,
+            name: options?.name || this.meta.name,
+        });
     }
 
     static loadModel(data: Blob | Buffer | string): TeachableLLM {
