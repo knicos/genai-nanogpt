@@ -34,6 +34,8 @@ export interface TrainingLogEntry {
     time: number;
     example?: string;
     batchSize: number;
+    gradientNorm?: number;
+    learningRate?: number;
 }
 
 export interface GenerateOptions {

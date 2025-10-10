@@ -12,6 +12,7 @@ export interface ITrainerOptions {
     logInterval?: number; // Interval for logging training progress
     prompt?: string; // Prompt for generating text during training
     validationSplit?: number; // Fraction of data to use for validation
+    advancedMetrics?: boolean; // Whether to compute advanced metrics during training
 }
 
 export default class Trainer extends EE<'start' | 'stop' | 'log'> {
@@ -57,6 +58,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                 logInterval: options?.logInterval || 10,
                 desiredLoss: options?.desiredLoss || 0.01,
                 maxSteps: options?.maxSteps || 1000,
+                advancedMetrics: options?.advancedMetrics || false,
                 onStep: async (log: TrainingLogEntry, progress: TrainingProgress) => {
                     const listeners = this.listeners('log');
                     for (const listener of listeners) {

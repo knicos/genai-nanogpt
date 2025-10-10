@@ -53,6 +53,10 @@
 
             const trainer = model.trainer();
 
+            trainer.on('log', (log, progress) => {
+                console.log('Step', log, progress);
+            });
+
             await trainer.train(textData, {
                 //prompt: 'What a great movie. It',
                 maxSteps: 100,
@@ -61,6 +65,7 @@
                 desiredLoss: 0.1,
                 batchSize: 8,
                 learningRate: 0.001,
+                advancedMetrics: false,
             });
 
             console.log('Training complete');

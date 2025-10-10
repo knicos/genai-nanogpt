@@ -5,6 +5,7 @@ import GPTTrainer, { TrainingOptions, TrainingProgress } from './Trainer';
 import Evaluator from './Evaluator';
 import { dispose, Tensor } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
+import MemoryProfiler from '@base/utilities/profile';
 
 interface TrainingState {
     step: number;
@@ -14,6 +15,7 @@ interface TrainingState {
     validationLosses: number[];
     logStartTime: number;
     trainingDuration: number;
+    gradientNorm?: number;
 }
 
 const DEFAULT_OPTIONS: TrainingOptions = {
@@ -56,6 +58,12 @@ export default class FullTrainer extends GPTTrainer {
         this.dummyPass();
         this.model.trainable = true;
 
+        if (options?.advancedMetrics) {
+            if (!this.model.getProfiler()) {
+                this.model.config.layerConfig.profiler = new MemoryProfiler();
+            }
+        }
+
         this.running = true;
         state.logStartTime = startTime;
 
@@ -71,13 +79,15 @@ export default class FullTrainer extends GPTTrainer {
                 if (result.done) break;
                 const batch = result.value;
 
-                const lossPromise = this.trainBatch(state, batch);
+                const lossPromise = this.trainBatch(state, batch, options.advancedMetrics || false);
 
                 const entry: TrainingLogEntry = {
                     loss: state.lastLoss,
                     step: state.step,
                     time: Date.now() - startTime,
                     batchSize: batch.xs.shape[0],
+                    learningRate: options?.advancedMetrics ? this.optimizer.lr : undefined,
+                    gradientNorm: options?.advancedMetrics ? state.gradientNorm : undefined,
                 };
                 this.model.log.push(entry);
 
@@ -107,6 +117,9 @@ export default class FullTrainer extends GPTTrainer {
                             duration: state.trainingDuration,
                             totalSamples: state.totalSteps * entry.batchSize,
                             samplesPerSecond: (state.totalSteps * entry.batchSize) / (state.trainingDuration / 1000),
+                            memory: options.advancedMetrics
+                                ? this.model.getProfiler()?.getPeakMemory() || 0
+                                : undefined,
                         };
 
                         await onStep(entry, progress);

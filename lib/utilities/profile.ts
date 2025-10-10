@@ -13,6 +13,10 @@ export default class MemoryProfiler {
         this.lastMemInfo.push(memory());
     }
 
+    public getPeakMemory() {
+        return this.peakMemory;
+    }
+
     public endMemory(label: string) {
         if (this.lastMemInfo.length === 0) {
             console.warn('MemoryProfiler: endMemory called without matching startMemory');

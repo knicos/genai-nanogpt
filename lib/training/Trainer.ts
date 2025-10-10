@@ -3,19 +3,7 @@ import { DatasetBuilder, flattenTokens, PAGE_FACTOR } from './DatasetBuilder';
 import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import AdamExt from './AdamExt';
 import { NamedVariableMap, TensorContainer } from '@tensorflow/tfjs-core/dist/tensor_types';
-import {
-    dispose,
-    max,
-    mean,
-    min,
-    moments,
-    norm,
-    Scalar,
-    Tensor,
-    tidy,
-    variableGrads,
-    zeros,
-} from '@tensorflow/tfjs-core';
+import { dispose, norm, Scalar, Tensor, tidy, variableGrads, zeros } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
 
 export interface TrainingState {
@@ -24,12 +12,14 @@ export interface TrainingState {
     totalSteps: number;
     losses: number[];
     validationLosses: number[];
+    gradientNorm?: number;
 }
 
 export interface TrainingProgress {
     duration: number;
     totalSamples: number;
     samplesPerSecond: number;
+    memory?: number;
 }
 
 export interface AdamConfig {
@@ -44,6 +34,7 @@ export interface TrainingOptions {
     logInterval: number;
     prompt?: string;
     maxSteps: number;
+    advancedMetrics?: boolean;
     onStep?: (log: TrainingLogEntry, progress: TrainingProgress) => Promise<void> | void;
 }
 
@@ -98,21 +89,27 @@ export default abstract class GPTTrainer {
         this.optimizer = adam;
     }
 
-    private printGradients(grads: NamedVariableMap): void {
+    private maxGradNorm(grads: NamedVariableMap): number {
+        let maxNorm = 0;
         // Print all gradients
         Object.keys(grads).forEach((varName) => {
             const grad = grads[varName];
-            console.log(`${varName}:`);
-            console.log(`  Shape: ${grad.shape}`);
-            console.log(`  Mean: ${mean(grad).dataSync()[0]}`);
-            console.log(`  Std: ${moments(grad).variance.sqrt().dataSync()[0]}`);
-            console.log(`  Min: ${min(grad).dataSync()[0]}`);
-            console.log(`  Max: ${max(grad).dataSync()[0]}`);
-            console.log(`  Norm: ${norm(grad).dataSync()[0]}`);
+            const temp = norm(grad);
+            const gradNorm = temp.dataSync()[0];
+            temp.dispose();
+            if (gradNorm > maxNorm) {
+                maxNorm = gradNorm;
+            }
         });
+        return maxNorm;
     }
 
-    protected trainStep(batch: { xs: Tensor; ys: Tensor }, dummy = false, print = false): Scalar {
+    protected trainStep(
+        state: Partial<TrainingState>,
+        batch: { xs: Tensor; ys: Tensor },
+        dummy = false,
+        calcNorm = false
+    ): Scalar {
         return tidy(() => {
             this.model.getProfiler()?.startMemory();
             const { xs, ys } = batch;
@@ -134,10 +131,9 @@ export default abstract class GPTTrainer {
                     clippedGrads[variableName] = this.tf.clipByValue(grads[variableName], -1.0, 1.0);
                 }*/
 
-                if (print) {
-                    console.log('-------');
-                    this.printGradients(grads as NamedVariableMap);
-                    console.log('-------');
+                if (calcNorm) {
+                    const maxNorm = this.maxGradNorm(grads as NamedVariableMap);
+                    state.gradientNorm = maxNorm;
                 }
                 //this.tf.dispose(grads);
                 // Apply gradients
@@ -160,7 +156,7 @@ export default abstract class GPTTrainer {
         const dummyTargets = zeros([1, this.model.config.gpt.blockSize], 'int32');
 
         try {
-            const l = this.trainStep({ xs: dummyBatch, ys: dummyTargets }, true);
+            const l = this.trainStep({}, { xs: dummyBatch, ys: dummyTargets }, true);
             l.dataSync(); // Ensure loss is computed
             l.dispose(); // Dispose loss to free memory
         } catch (error) {
@@ -171,10 +167,14 @@ export default abstract class GPTTrainer {
         }
     }
 
-    protected async trainBatch(state: TrainingState, batch: { xs: Tensor; ys: Tensor }): Promise<number> {
+    protected async trainBatch(
+        state: TrainingState,
+        batch: { xs: Tensor; ys: Tensor },
+        calcNorm = false
+    ): Promise<number> {
         try {
             //console.log('Batch XS', batch.xs.toString());
-            const lossScalar = this.trainStep(batch, false, false);
+            const lossScalar = this.trainStep(state, batch, false, calcNorm);
             batch.xs.dispose();
             batch.ys.dispose();
 
