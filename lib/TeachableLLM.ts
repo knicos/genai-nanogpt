@@ -183,11 +183,11 @@ export default class TeachableLLM {
         const trainer = new Trainer(this._model, this._tokeniser);
         trainer.on('start', () => this.setStatus('training'));
         trainer.on('stop', () => this.setStatus('ready'));
-        trainer.on('log', async (step: TrainingLogEntry) => {
+        trainer.on('log', async (step: TrainingLogEntry, progress: TrainingProgress) => {
             const listeners = this.ee.listeners('trainStep');
             for (const listener of listeners) {
                 // These listeners can be async, so we await them
-                await listener(step);
+                await listener(step, progress);
             }
         });
         return trainer;
