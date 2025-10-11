@@ -1,11 +1,10 @@
 import NanoGPT from '@base/NanoGPTModel';
 import type { ITokeniser } from '@base/tokeniser/type';
 import zip from 'jszip';
-import { exportWeights, ITensorSpec } from './weights';
 import CharTokeniser from '../tokeniser/CharTokeniser';
 import { Tensor } from '@tensorflow/tfjs-core';
-
-const VERSION = '1.0.0';
+import { save_safetensors } from './safetensors';
+import { TransformersConfig, VERSION } from './load';
 
 export interface SaveOptions {
     includeLog?: boolean;
@@ -16,27 +15,50 @@ export interface SaveOptions {
 
 export async function saveModel(model: NanoGPT, tokeniser: ITokeniser, options?: SaveOptions): Promise<Blob> {
     const includeLog = options?.includeLog ?? true;
-    const weights = new Map<string, Tensor[]>();
-    model.saveWeights(weights);
+    const weightsMap = new Map<string, Tensor[]>();
+    model.saveWeights(weightsMap);
     const zipFile = new zip();
 
-    const spec: Record<string, ITensorSpec[]> = {};
+    const weights: Record<string, Tensor> = {};
+    weightsMap.forEach((tensorList, name) => {
+        if (tensorList.length === 1) {
+            weights[name] = tensorList[0];
+        }
+    });
 
-    for (const [name, tensorList] of weights) {
-        const data = await exportWeights(tensorList);
-        spec[name] = data.spec;
-        zipFile.file(`${name}.bin`, data.data.buffer as ArrayBuffer, { binary: true });
-    }
+    const weightsBin = await save_safetensors(weights);
+    zipFile.file('model.safetensors', weightsBin as ArrayBuffer, { binary: true });
+
+    const transformersConfig: TransformersConfig = {
+        model_type: 'GenAI_NanoGPT_1',
+        vocab_size: tokeniser.getVocab().length,
+        hidden_size: model.config.gpt.nEmbed,
+        num_hidden_layers: model.config.gpt.nLayer,
+        num_attention_heads: model.config.gpt.nHead,
+        block_size: model.config.gpt.blockSize,
+        dropout: model.config.gpt.dropout,
+        biasInLinear: model.config.gpt.biasInLinear,
+        biasInLayerNorm: model.config.gpt.biasInLayerNorm,
+        mlpFactor: model.config.gpt.mlpFactor,
+        useRope: model.config.gpt.useRope,
+    };
+
+    zipFile.file('config.json', JSON.stringify(transformersConfig, undefined, 4), {
+        binary: false,
+    });
+
     zipFile.file(
-        'manifest.json',
-        JSON.stringify({
-            weightSpec: spec,
-            config: model.config.gpt,
-            version: VERSION,
-            application: '@genai-fi/nanogpt',
-            meta: options?.metadata,
-            name: options?.name,
-        }),
+        'meta.json',
+        JSON.stringify(
+            {
+                version: VERSION,
+                application: '@genai-fi/nanogpt',
+                meta: options?.metadata,
+                name: options?.name,
+            },
+            undefined,
+            4
+        ),
         {
             binary: false,
         }

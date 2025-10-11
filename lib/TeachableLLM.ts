@@ -93,10 +93,13 @@ export default class TeachableLLM {
     static loadModel(data: Blob | Buffer | string): TeachableLLM {
         const teachableLLM = new TeachableLLM();
         loadModel(data)
-            .then(({ model, tokeniser }) => {
+            .then(({ model, tokeniser, name }) => {
                 teachableLLM._model = model;
                 teachableLLM._tokeniser = tokeniser;
                 teachableLLM._config = model.config;
+                if (name) {
+                    teachableLLM.meta.name = name;
+                }
                 teachableLLM.setStatus('warmup');
                 dummyPassAsync(model)
                     .then(() => {
