@@ -2,6 +2,10 @@ import { memory, MemoryInfo } from '@tensorflow/tfjs-core';
 
 const MB = 1024 * 1024;
 
+interface ExtendedMemoryInfo extends MemoryInfo {
+    numBytesInGPUAllocated?: number;
+}
+
 export default class MemoryProfiler {
     private log = new Map<string, number>();
     private maxMemory = 0;
@@ -22,7 +26,7 @@ export default class MemoryProfiler {
             console.warn('MemoryProfiler: endMemory called without matching startMemory');
             return;
         }
-        const memoryInfo = memory();
+        const memoryInfo = memory() as ExtendedMemoryInfo;
         const usedBytes = memoryInfo.numBytes - (this.lastMemInfo.pop()?.numBytes || 0);
         this.log.set(label, Math.max(this.log.get(label) || 0, usedBytes));
         if (usedBytes > this.maxMemory) {
@@ -30,7 +34,7 @@ export default class MemoryProfiler {
             this.maxLabel = label;
         }
 
-        this.peakMemory = Math.max(this.peakMemory, memoryInfo.numBytes);
+        this.peakMemory = Math.max(this.peakMemory, memoryInfo.numBytesInGPUAllocated || memoryInfo.numBytes);
     }
 
     public printSummary() {

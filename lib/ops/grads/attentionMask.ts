@@ -18,14 +18,18 @@ const attentionMaskGradConfig: GradConfig = {
                 const qt = q.transpose([0, 1, 3, 2]);
                 const result = matMulMul(qt, dy, scalar(divisor));
                 qt.dispose();
-                return result.transpose([0, 1, 3, 2]);
+                const resultT = result.transpose([0, 1, 3, 2]);
+                result.dispose();
+                return resultT;
             },
             mask: () => dy,
             divisor: () => {
                 const attUnscaled = q.matMul(k, false, true);
                 const dyAtt = dy.mul(attUnscaled);
                 attUnscaled.dispose();
-                return dyAtt.sum();
+                const dyAttSum = dyAtt.sum();
+                dyAtt.dispose();
+                return dyAttSum;
             },
         };
     },

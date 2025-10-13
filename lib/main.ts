@@ -28,3 +28,4 @@ import './ops/fusedSoftmax';
 import './ops/matMulGelu';
 import './ops/gelu';
 import './ops/normRMS';
+import './ops/log';

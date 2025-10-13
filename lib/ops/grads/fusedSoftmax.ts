@@ -21,7 +21,9 @@ export const softmaxGradConfig: GradConfig = {
                 const sumDyTimesY = sum(dyTimesY, [dim], keepDims);
                 const sumMulYTimesY = mul(sumDyTimesY, y);
                 sumDyTimesY.dispose();
-                return sub(dyTimesY, sumMulYTimesY);
+                const result = sub(dyTimesY, sumMulYTimesY);
+                sumMulYTimesY.dispose();
+                return result;
             },
         };
     },
