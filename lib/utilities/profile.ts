@@ -2,7 +2,7 @@ import { memory, MemoryInfo } from '@tensorflow/tfjs-core';
 
 const MB = 1024 * 1024;
 
-interface ExtendedMemoryInfo extends MemoryInfo {
+export interface ExtendedMemoryInfo extends MemoryInfo {
     numBytesInGPUAllocated?: number;
 }
 
@@ -21,20 +21,27 @@ export default class MemoryProfiler {
         return this.peakMemory;
     }
 
+    public getMaxMemory() {
+        return this.maxMemory;
+    }
+
     public endMemory(label: string) {
         if (this.lastMemInfo.length === 0) {
             console.warn('MemoryProfiler: endMemory called without matching startMemory');
             return;
         }
         const memoryInfo = memory() as ExtendedMemoryInfo;
-        const usedBytes = memoryInfo.numBytes - (this.lastMemInfo.pop()?.numBytes || 0);
+        const popped = this.lastMemInfo.pop() as ExtendedMemoryInfo;
+        const usedBytes =
+            (memoryInfo.numBytesInGPUAllocated ?? memoryInfo.numBytes) -
+            (popped?.numBytes ?? popped?.numBytesInGPUAllocated ?? 0);
         this.log.set(label, Math.max(this.log.get(label) || 0, usedBytes));
         if (usedBytes > this.maxMemory) {
             this.maxMemory = usedBytes;
             this.maxLabel = label;
         }
 
-        this.peakMemory = Math.max(this.peakMemory, memoryInfo.numBytesInGPUAllocated || memoryInfo.numBytes);
+        this.peakMemory = Math.max(this.peakMemory, memoryInfo.numBytesInGPUAllocated ?? memoryInfo.numBytes);
     }
 
     public printSummary() {

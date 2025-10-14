@@ -24,18 +24,11 @@
         "test:gl": "playwright test",
         "ci:test": "vitest --coverage --reporter=junit --outputFile=junit.xml",
         "coverage": "vitest run --coverage",
-        "train": "tsx scripts/train.ts",
-        "generate": "tsx scripts/generate.ts",
-        "evaluate": "tsx scripts/evaluate.ts",
         "debug": "tsx scripts/debug.ts"
-    },
-    "peerDependencies": {
-        "@tensorflow/tfjs": "^4.22.0"
     },
     "devDependencies": {
         "@eslint/js": "^9.32.0",
         "@playwright/test": "^1.55.0",
-        "@tensorflow/tfjs-node-gpu": "^4.22.0",
         "@types/node": "^22.13.14",
         "@types/papaparse": "^5.3.16",
         "@types/yargs": "^17.0.33",
@@ -59,6 +52,7 @@
         "eventemitter3": "^5.0.1",
         "jszip": "^3.10.1",
         "papaparse": "^5.5.3",
-        "pdfjs-dist": "^5.4.149"
+        "pdfjs-dist": "^5.4.149",
+        "@tensorflow/tfjs": "^4.22.0"
     }
 }

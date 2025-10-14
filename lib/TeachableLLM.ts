@@ -6,7 +6,7 @@ import { loadModel } from './utilities/load';
 import Generator, { IGenerateOptions } from './Generator';
 import Trainer, { ITrainerOptions } from './Trainer';
 import EE from 'eventemitter3';
-import { dummyPassAsync } from './utilities/dummy';
+import { dummyPassTrainAsync, MemoryRequirements } from './utilities/dummy';
 import { CharTokeniser } from './main';
 import MemoryProfiler from './utilities/profile';
 import BPETokeniser from './tokeniser/bpe';
@@ -28,6 +28,7 @@ export default class TeachableLLM {
     private _model?: NanoGPT;
     private _tokeniser?: ITokeniser;
     private _status: TeachableLLMStatus = 'loading';
+    private _memoryRequirements?: MemoryRequirements;
     public meta: TeachableLLMMeta = {};
 
     constructor(tokeniser?: ITokeniser, model?: NanoGPT) {
@@ -73,6 +74,13 @@ export default class TeachableLLM {
         return this._status === 'ready' && !!this._model && !!this._tokeniser && this.tokeniser.trained;
     }
 
+    public estimateTrainingMemoryUsage(batchSize: number): number {
+        const memReq = this._memoryRequirements ?? { perBatch: 0, tapeSize: 0, gradients: 0 };
+        const batchMem = memReq.perBatch * batchSize;
+        const gradientSize = memReq.gradients;
+        return batchMem * 0.66 + gradientSize * 4;
+    }
+
     private setStatus(status: TeachableLLMStatus) {
         if (this._status !== status) {
             this._status = status;
@@ -101,8 +109,10 @@ export default class TeachableLLM {
                     teachableLLM.meta.name = name;
                 }
                 teachableLLM.setStatus('warmup');
-                dummyPassAsync(model)
-                    .then(() => {
+
+                dummyPassTrainAsync(model)
+                    .then((memoryReqs) => {
+                        teachableLLM._memoryRequirements = memoryReqs;
                         teachableLLM.setStatus('ready');
                         teachableLLM.ee.emit('loaded');
                     })
@@ -127,8 +137,10 @@ export default class TeachableLLM {
         const tmodel = new TeachableLLM(tokeniser, model);
         tmodel.setStatus('warmup');
 
-        dummyPassAsync(model)
-            .then(() => {
+        dummyPassTrainAsync(model)
+            .then((memoryReqs) => {
+                tmodel._memoryRequirements = memoryReqs;
+
                 if (tmodel.tokeniser.trained) {
                     tmodel.setStatus('ready');
                     tmodel.ee.emit('loaded');

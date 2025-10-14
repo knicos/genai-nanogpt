@@ -40,7 +40,7 @@ export default defineConfig({
     build: {
         copyPublicDir: true,
         rollupOptions: {
-            external: ['@tensorflow/tfjs', 'crypto'],
+            external: ['crypto'],
             output: {
                 assetFileNames: 'assets/[name][extname]',
                 entryFileNames: '[name].js',
