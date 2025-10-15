@@ -1,0 +1,55 @@
+<html>
+    <head>
+        <title>TM Language Model</title>
+        <script
+            type="module"
+            src="/dist/main.js"
+        ></script>
+        <style>
+            body {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+        </style>
+    </head>
+    <body>
+        <input
+            type="text"
+            id="modelName"
+            placeholder="Enter hugging face model name"
+        />
+        <button id="loadModel">Load Model</button>
+        <div id="output"></div>
+        <script type="module">
+            import { TeachableLLM, waitForModel } from '/dist/main.js';
+
+            const modelNameInput = document.getElementById('modelName');
+            const loadModelButton = document.getElementById('loadModel');
+            const output = document.getElementById('output');
+
+            loadModelButton.addEventListener('click', async () => {
+                const modelName = modelNameInput.value;
+                if (modelName) {
+                    const model = await TeachableLLM.loadModel(modelName);
+                    await waitForModel(model);
+                    model.enableProfiler = true;
+
+                    const prompt = 'Once upon a time';
+                    console.log('Generating text for prompt:', prompt);
+                    const options = {
+                        maxLength: 128 * 4 * 2,
+                        temperature: 0.7,
+                        attentionScores: true,
+                        topP: 0.8,
+                    };
+                    const generator = model.generator();
+                    const generated = await generator.generate(prompt, options);
+                    output.innerText += '\n\nGenerated Text:\n' + generated;
+                    console.log('Attention', options.attentionScores);
+                    model.getProfiler().printSummary();
+                }
+            });
+        </script>
+    </body>
+</html>

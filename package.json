@@ -49,10 +49,10 @@
     },
     "dependencies": {
         "@dsnp/parquetjs": "^1.8.7",
+        "@tensorflow/tfjs": "^4.22.0",
         "eventemitter3": "^5.0.1",
         "jszip": "^3.10.1",
         "papaparse": "^5.5.3",
-        "pdfjs-dist": "^5.4.149",
-        "@tensorflow/tfjs": "^4.22.0"
+        "pdfjs-dist": "^5.4.149"
     }
 }

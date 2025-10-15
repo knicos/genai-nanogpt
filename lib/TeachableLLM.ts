@@ -2,7 +2,7 @@ import { defaultConfig, GPTConfig } from './config';
 import type { ITokeniser } from './tokeniser/type';
 import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
 import { saveModel, SaveOptions } from './utilities/save';
-import { loadModel } from './utilities/load';
+import { loadModel } from './loader/load';
 import Generator, { IGenerateOptions } from './Generator';
 import Trainer, { ITrainerOptions } from './Trainer';
 import EE from 'eventemitter3';
