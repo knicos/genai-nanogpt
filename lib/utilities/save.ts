@@ -4,7 +4,8 @@ import zip from 'jszip';
 import CharTokeniser from '../tokeniser/CharTokeniser';
 import { Tensor } from '@tensorflow/tfjs-core';
 import { save_safetensors } from './safetensors';
-import { TransformersConfig, VERSION } from '../loader/load';
+import { VERSION } from '../loader/load';
+import { TransformersConfig } from '@base/loader/loadTransformers';
 
 export interface SaveOptions {
     includeLog?: boolean;

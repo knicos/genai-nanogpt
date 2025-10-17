@@ -32,25 +32,6 @@ export function sparseSoftmaxCrossEntropy(logits: tf.Tensor, labels: tf.Tensor):
  * This ensures proper backpropagation
  */
 export function createSoftmaxCrossEntropyWithGrad() {
-    if (tf.engine().backendName === 'tensorflow') {
-        // Use native implementation if available
-        // @ts-expect-error Invalid params
-        return tf.customGrad((logits: tf.Tensor, labels: tf.Tensor, save: (tensor: tf.Tensor[]) => void) => {
-            const logits2d =
-                logits.shape.length > 2 ? logits.reshape([-1, logits.shape[logits.shape.length - 1]]) : logits;
-            const labels1d = labels.shape.length > 1 ? labels.reshape([-1]).cast('int32') : labels.cast('int32');
-            const [loss, grad] = tf
-                .engine()
-                .runKernel(
-                    'NativeSparseSoftmaxCrossEntropy',
-                    { logits: logits2d, labels: labels1d },
-                    {}
-                ) as tf.Tensor[];
-            save([grad.reshape(logits.shape)]);
-            return { value: loss, gradFunc: (_, saved: tf.NamedTensorMap) => [saved[0], tf.zerosLike(labels)] };
-        });
-    }
-
     const sparseSoftmaxCrossEntropyGrad = tf.customGrad(
         // @ts-expect-error Invalid params
         (logits: tf.Tensor, labels: tf.Tensor, save: (tensor: tf.Tensor[]) => void) => {

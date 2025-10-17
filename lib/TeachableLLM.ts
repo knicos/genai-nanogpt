@@ -41,27 +41,28 @@ export default class TeachableLLM {
         return this._tokeniser?.getVocab() || [];
     }
 
+    /** Model is fully loaded */
     get loaded(): boolean {
         return !!this._model && !!this._tokeniser && !!this._config;
     }
 
     get config(): GPTConfig {
         if (!this._config) {
-            throw new Error('Model configuration is not initialized.');
+            throw new Error('configuration_not_initialized.');
         }
         return this._config.gpt;
     }
 
     get model(): NanoGPT {
         if (!this._model) {
-            throw new Error('Model is not initialized.');
+            throw new Error('model_not_initialized.');
         }
         return this._model;
     }
 
     get tokeniser(): ITokeniser {
         if (!this._tokeniser) {
-            throw new Error('Tokeniser is not initialized.');
+            throw new Error('tokeniser_not_initialized.');
         }
         return this._tokeniser;
     }
@@ -70,8 +71,13 @@ export default class TeachableLLM {
         return this._status;
     }
 
+    /** Model is both ready and not busy */
     get ready(): boolean {
-        return this._status === 'ready' && !!this._model && !!this._tokeniser && this.tokeniser.trained;
+        return this._status === 'ready' && !!this._model && !!this._tokeniser;
+    }
+
+    get busy(): boolean {
+        return this._status === 'busy' || this._status === 'training';
     }
 
     public estimateTrainingMemoryUsage(batchSize: number): number {
@@ -90,7 +96,7 @@ export default class TeachableLLM {
 
     saveModel(options?: SaveOptions): Promise<Blob> {
         if (!this._model || !this._tokeniser) {
-            throw new Error('Model or tokeniser is not initialized.');
+            throw new Error('model_or_tokeniser_not_initialized.');
         }
         return saveModel(this._model, this._tokeniser, {
             ...options,
@@ -172,7 +178,7 @@ export default class TeachableLLM {
     set enableProfiler(value: boolean) {
         if (value) {
             if (!this._config) {
-                throw new Error('Model is not initialized.');
+                return;
             }
             if (!this._config.layerConfig.profiler) {
                 this._config.layerConfig.profiler = new MemoryProfiler();
@@ -186,14 +192,14 @@ export default class TeachableLLM {
 
     getNumParams(): number {
         if (!this._model) {
-            throw new Error('Model is not initialized.');
+            return 0;
         }
         return this._model.getNumParams();
     }
 
     trainer() {
         if (!this._model || !this._tokeniser) {
-            throw new Error('Model or tokeniser is not initialized.');
+            throw new Error('model_or_tokeniser_not_initialized.');
         }
         const trainer = new Trainer(this._model, this._tokeniser);
         trainer.on('start', () => this.setStatus('training'));
