@@ -33,3 +33,11 @@ const tensorflowKernelConfig: KernelConfig = {
 };
 
 registerKernel(tensorflowKernelConfig);
+
+const webgpuKernelConfig: KernelConfig = {
+    kernelName: 'MatMulMul',
+    backendName: 'webgpu',
+    kernelFunc: matMulMul as unknown as KernelFunc,
+};
+
+registerKernel(webgpuKernelConfig);

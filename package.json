@@ -50,6 +50,7 @@
     "dependencies": {
         "@dsnp/parquetjs": "^1.8.7",
         "@tensorflow/tfjs": "^4.22.0",
+        "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
         "eventemitter3": "^5.0.1",
         "jszip": "^3.10.1",
         "papaparse": "^5.5.3",

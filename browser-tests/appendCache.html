@@ -4,9 +4,14 @@
         <meta charset="UTF-8" />
         <title>EfficientScatterSub WebGL Test</title>
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
         <script
             type="module"
             src="../dist/ops/appendCache.js"
+        ></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
         ></script>
     </head>
     <body>
@@ -26,31 +31,8 @@
                 }
             }
 
-            async function cpuVersion() {
-                await tf.setBackend('cpu');
-                const cache = tf.tensor4d(
-                    [
-                        [
-                            [
-                                [0.1, 0.2, 0, 0],
-                                [0.1, 0.2, 0, 0],
-                                [0.0, 0.0, 0, 0],
-                                [0.0, 0.0, 0, 0],
-                            ],
-                        ],
-                    ],
-                    [1, 1, 4, 4]
-                );
-                const x = tf.tensor4d([[[[0.1, 0.2, 0.3, 0.4]]]], [1, 1, 1, 4]);
-
-                // Custom op
-                const custom = tf.engine().runKernel('AppendCache', { cache, item: x }, { maxSize: 4, pastLen: 2 });
-                const customArr = await custom.array();
-                return customArr;
-            }
-
-            async function gpuVersion() {
-                await tf.setBackend('webgl');
+            async function execute(backend) {
+                await tf.setBackend(backend);
                 const cache = tf.tensor4d(
                     [
                         [
@@ -73,14 +55,17 @@
             }
 
             async function runTest() {
-                const customArr = await gpuVersion();
-                const manualArr = await cpuVersion();
+                const customArr = await execute('webgl');
+                const manualArr = await execute('cpu');
+                const webgpuArr = await execute('webgpu');
 
                 // Compare arrays
-                const match = arraysClose(manualArr, customArr);
-                console.log({ match, manualArr, customArr });
-                document.body.innerText = match ? 'PASS' : 'FAIL';
-                window.testResult = { match, manualArr, customArr };
+                const match1 = arraysClose(manualArr, customArr);
+                const match2 = arraysClose(webgpuArr, customArr);
+                const match = match1 && match2;
+                console.log({ match1, manualArr, customArr, match2, webgpuArr });
+                document.body.innerText = match1 && match2 ? 'PASS' : 'FAIL';
+                window.testResult = { match, manualArr, customArr, webgpuArr };
             }
             runTest();
         </script>

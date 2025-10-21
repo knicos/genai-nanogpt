@@ -4,6 +4,7 @@ const MB = 1024 * 1024;
 
 export interface ExtendedMemoryInfo extends MemoryInfo {
     numBytesInGPUAllocated?: number;
+    numBytesAllocatedInGPU?: number;
 }
 
 export default class MemoryProfiler {
@@ -33,15 +34,18 @@ export default class MemoryProfiler {
         const memoryInfo = memory() as ExtendedMemoryInfo;
         const popped = this.lastMemInfo.pop() as ExtendedMemoryInfo;
         const usedBytes =
-            (memoryInfo.numBytesInGPUAllocated ?? memoryInfo.numBytes) -
-            (popped?.numBytes ?? popped?.numBytesInGPUAllocated ?? 0);
+            (memoryInfo.numBytesInGPUAllocated ?? memoryInfo.numBytesAllocatedInGPU ?? memoryInfo.numBytes) -
+            (popped?.numBytesInGPUAllocated ?? popped?.numBytesAllocatedInGPU ?? popped?.numBytes ?? 0);
         this.log.set(label, Math.max(this.log.get(label) || 0, usedBytes));
         if (usedBytes > this.maxMemory) {
             this.maxMemory = usedBytes;
             this.maxLabel = label;
         }
 
-        this.peakMemory = Math.max(this.peakMemory, memoryInfo.numBytesInGPUAllocated ?? memoryInfo.numBytes);
+        this.peakMemory = Math.max(
+            this.peakMemory,
+            memoryInfo.numBytesInGPUAllocated ?? memoryInfo.numBytesAllocatedInGPU ?? memoryInfo.numBytes
+        );
     }
 
     public printSummary() {

@@ -1,7 +1,7 @@
 import type { ITokeniser } from '@base/tokeniser/type';
 import NanoGPT, { GenerateOptions } from '../NanoGPTModel';
 import { KVCache } from '@base/layers/CausalSelfAttention';
-import { concat, Tensor, tensor2d, tidy } from '@tensorflow/tfjs-core';
+import { concat, Tensor, tensor2d } from '@tensorflow/tfjs-core';
 
 export async function generateText(
     tokeniser: ITokeniser,
@@ -24,28 +24,28 @@ export async function generateText(
         ? new Array(model.config.gpt.nLayer).fill(undefined)
         : undefined;
 
-    const inputTensor = tidy(() => {
-        let inputTensor: Tensor = tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
-        let outputTensor = inputTensor;
+    //const inputTensor = tidy(() => {
+    let inputTensor: Tensor = tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
+    let outputTensor = inputTensor;
 
-        // Generate text
-        for (let i = 0; i < length; i++) {
-            const { output: generatedTokens } = model.generate(inputTensor, cache, options);
-            const oldInput = inputTensor;
-            const oldOutput = outputTensor;
-            outputTensor = concat([outputTensor, generatedTokens], 1);
+    // Generate text
+    for (let i = 0; i < length; i++) {
+        const { output: generatedTokens } = await model.generate(inputTensor, cache, options);
+        const oldInput = inputTensor;
+        const oldOutput = outputTensor;
+        outputTensor = concat([outputTensor, generatedTokens], 1);
 
-            inputTensor = cache ? generatedTokens : concat([inputTensor, generatedTokens], 1);
-            oldInput.dispose();
-            oldOutput.dispose();
-            if (!cache) generatedTokens.dispose();
-        }
+        inputTensor = cache ? generatedTokens : concat([inputTensor, generatedTokens], 1);
+        oldInput.dispose();
+        oldOutput.dispose();
+        if (!cache) generatedTokens.dispose();
+    }
 
-        return outputTensor;
-    });
+    //return outputTensor;
+    //});
 
-    const tokenArray = (await inputTensor.array()) as number[][];
-    inputTensor.dispose();
+    const tokenArray = (await outputTensor.array()) as number[][];
+    outputTensor.dispose();
 
     const generatedTokens = tokenArray[0];
 

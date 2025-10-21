@@ -15,7 +15,7 @@ interface TrainingState {
     validationLosses: number[];
     logStartTime: number;
     trainingDuration: number;
-    gradientNorm?: number;
+    //gradientNorm?: Promise<number>;
 }
 
 const DEFAULT_OPTIONS: TrainingOptions = {
@@ -55,7 +55,7 @@ export default class FullTrainer extends GPTTrainer {
         };
         this.lastState = state;
 
-        this.dummyPass();
+        await this.dummyPass();
         this.model.trainable = true;
 
         if (options?.advancedMetrics) {
@@ -79,7 +79,7 @@ export default class FullTrainer extends GPTTrainer {
                 if (result.done) break;
                 const batch = result.value;
 
-                const lossPromise = this.trainBatch(state, batch, options.advancedMetrics || false);
+                const lossPromise = this.trainBatch(state, batch);
 
                 const entry: TrainingLogEntry = {
                     loss: state.lastLoss,
@@ -87,7 +87,7 @@ export default class FullTrainer extends GPTTrainer {
                     time: Date.now() - startTime,
                     batchSize: batch.xs.shape[0],
                     learningRate: options?.advancedMetrics ? this.optimizer.lr : undefined,
-                    gradientNorm: options?.advancedMetrics ? state.gradientNorm : undefined,
+                    //gradientNorm: options?.advancedMetrics ? await state.gradientNorm : undefined,
                 };
                 this.model.log.push(entry);
 

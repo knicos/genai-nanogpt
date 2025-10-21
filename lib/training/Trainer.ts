@@ -3,7 +3,7 @@ import { DatasetBuilder, flattenTokens, PAGE_FACTOR } from './DatasetBuilder';
 import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import AdamExt from './AdamExt';
 import { NamedVariableMap, TensorContainer } from '@tensorflow/tfjs-core/dist/tensor_types';
-import { dispose, norm, Scalar, Tensor, tidy, variableGrads, zeros } from '@tensorflow/tfjs-core';
+import { dispose, Scalar, Tensor, tidy, variableGrads, zeros } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
 
 export interface TrainingState {
@@ -12,7 +12,7 @@ export interface TrainingState {
     totalSteps: number;
     losses: number[];
     validationLosses: number[];
-    gradientNorm?: number;
+    gradientNorm?: Promise<number>;
 }
 
 export interface TrainingProgress {
@@ -89,27 +89,24 @@ export default abstract class GPTTrainer {
         this.optimizer = adam;
     }
 
-    private maxGradNorm(grads: NamedVariableMap): number {
+    /*private async maxGradNorm(grads: NamedVariableMap): Promise<number> {
         let maxNorm = 0;
         // Print all gradients
-        Object.keys(grads).forEach((varName) => {
-            const grad = grads[varName];
-            const temp = norm(grad);
-            const gradNorm = temp.dataSync()[0];
-            temp.dispose();
-            if (gradNorm > maxNorm) {
-                maxNorm = gradNorm;
-            }
-        });
+        await Promise.all(
+            Object.keys(grads).map(async (varName) => {
+                const grad = grads[varName];
+                const temp = norm(grad);
+                const gradNorm = (await temp.data())[0];
+                temp.dispose();
+                if (gradNorm > maxNorm) {
+                    maxNorm = gradNorm;
+                }
+            })
+        );
         return maxNorm;
-    }
+    }*/
 
-    protected trainStep(
-        state: Partial<TrainingState>,
-        batch: { xs: Tensor; ys: Tensor },
-        dummy = false,
-        calcNorm = false
-    ): Scalar {
+    protected trainStep(_state: Partial<TrainingState>, batch: { xs: Tensor; ys: Tensor }, dummy = false): Scalar {
         return tidy(() => {
             this.model.getProfiler()?.startMemory();
             const { xs, ys } = batch;
@@ -131,10 +128,10 @@ export default abstract class GPTTrainer {
                     clippedGrads[variableName] = this.tf.clipByValue(grads[variableName], -1.0, 1.0);
                 }*/
 
-                if (calcNorm) {
+                /*if (calcNorm) {
                     const maxNorm = this.maxGradNorm(grads as NamedVariableMap);
                     state.gradientNorm = maxNorm;
-                }
+                }*/
                 //this.tf.dispose(grads);
                 // Apply gradients
                 this.optimizer.applyGradients(grads as NamedVariableMap);
@@ -150,14 +147,14 @@ export default abstract class GPTTrainer {
         });
     }
 
-    protected dummyPass(): void {
+    protected async dummyPass(): Promise<void> {
         // Send a dummy input to initialize the model
         const dummyBatch = zeros([1, this.model.config.gpt.blockSize], 'int32');
         const dummyTargets = zeros([1, this.model.config.gpt.blockSize], 'int32');
 
         try {
             const l = this.trainStep({}, { xs: dummyBatch, ys: dummyTargets }, true);
-            l.dataSync(); // Ensure loss is computed
+            await l.data(); // Ensure loss is computed
             l.dispose(); // Dispose loss to free memory
         } catch (error) {
             console.error('Error during dummy pass:', error);
@@ -167,14 +164,10 @@ export default abstract class GPTTrainer {
         }
     }
 
-    protected async trainBatch(
-        state: TrainingState,
-        batch: { xs: Tensor; ys: Tensor },
-        calcNorm = false
-    ): Promise<number> {
+    protected async trainBatch(state: TrainingState, batch: { xs: Tensor; ys: Tensor }): Promise<number> {
         try {
             //console.log('Batch XS', batch.xs.toString());
-            const lossScalar = this.trainStep(state, batch, false, calcNorm);
+            const lossScalar = this.trainStep(state, batch, false);
             batch.xs.dispose();
             batch.ys.dispose();
 

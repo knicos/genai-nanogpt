@@ -47,3 +47,9 @@ test('appendCache operation', async ({ page }) => {
     const body = page.locator('body');
     await expect(body).toHaveText('PASS');
 });
+
+test('gelu operation', async ({ page }) => {
+    await page.goto('/browser-tests/gelu.html');
+    const body = page.locator('body');
+    await expect(body).toHaveText('PASS');
+});

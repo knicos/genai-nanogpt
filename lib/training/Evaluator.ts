@@ -26,7 +26,7 @@ export default class Evaluator {
             xs.dispose();
             ys.dispose();
 
-            const lossValue = loss!.arraySync();
+            const lossValue = await loss!.array();
             const batchLoss = lossValue as number;
 
             loss!.dispose();

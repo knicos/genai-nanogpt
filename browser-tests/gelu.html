@@ -7,7 +7,7 @@
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
         <script
             type="module"
-            src="../dist/ops/qkv.js"
+            src="../dist/ops/gelu.js"
         ></script>
         <script
             type="module"
@@ -24,6 +24,7 @@
                     }
                     return true;
                 } else if (typeof a === 'number' && typeof b === 'number') {
+                    if (a === -Infinity && b === -Infinity) return true;
                     return Math.abs(a - b) < epsilon;
                 } else {
                     return false;
@@ -32,32 +33,20 @@
 
             async function execute(backend) {
                 await tf.setBackend(backend);
-                const memStart = tf.memory().numBytes;
-                const x = tf.tensor3d(
+                const x = tf.tensor2d(
                     [
-                        [
-                            [0.1, 0.2],
-                            [0.3, 0.4],
-                        ],
+                        [0.1, 0.2, 0, 0],
+                        [0.1, 0.2, 0, 0],
+                        [0.0, 0.0, 0, 0],
+                        [0.0, 0.0, 0, 0],
                     ],
-                    [1, 2, 2]
-                ); // (1,T,hs)
-                const kernel = tf.tensor2d(
-                    [
-                        [0.5, 0.6, 0.9, 1.0, 1.3, 1.4],
-                        [0.7, 0.8, 1.1, 1.2, 1.5, 1.6],
-                    ],
-                    [2, 6]
+                    [4, 4]
                 );
 
                 // Custom op
-                const custom = tf.engine().runKernel('QKV', { x, kernel }, { heads: 1 });
-                const customQ = await custom[0].array();
-                const customK = await custom[1].array();
-                const customV = await custom[2].array();
-                const memEnd = tf.memory().numBytes;
-                console.log('CPU memory used:', memEnd - memStart);
-                return [customQ, customK, customV];
+                const custom = tf.engine().runKernel('Gelu', { x });
+                const customArr = await custom.array();
+                return customArr;
             }
 
             async function runTest() {
@@ -65,15 +54,12 @@
                 const manualArr = await execute('cpu');
                 const webgpuArr = await execute('webgpu');
 
-                console.log('Manual:', manualArr);
-                console.log('Custom:', customArr);
-                console.log('WebGPU:', webgpuArr);
-
                 // Compare arrays
                 const match1 = arraysClose(manualArr, customArr);
                 const match2 = arraysClose(webgpuArr, customArr);
                 const match = match1 && match2;
-                document.body.innerText = match ? 'PASS' : 'FAIL';
+                console.log({ match1, manualArr, customArr, match2, webgpuArr });
+                document.body.innerText = match1 && match2 ? 'PASS' : 'FAIL';
                 window.testResult = { match, manualArr, customArr, webgpuArr };
             }
             runTest();

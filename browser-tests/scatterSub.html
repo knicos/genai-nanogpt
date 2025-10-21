@@ -4,31 +4,34 @@
         <meta charset="UTF-8" />
         <title>EfficientScatterSub WebGL Test</title>
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
         <script
             type="module"
             src="../dist/ops/scatterSub.js"
         ></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
+        ></script>
     </head>
     <body>
         <script type="module">
-            async function cpuVersion() {
-                await tf.setBackend('cpu');
-                const logits = tf.tensor2d([
-                    [0.1, 0.2, 0.7],
-                    [0.3, 0.4, 0.3],
-                ]);
-                const labels = tf.tensor1d([2, 0], 'int32');
-                const softmaxProbs = tf.softmax(logits);
-                const dy = tf.tensor1d([1.0, 1.0]);
-
-                // Custom op
-                const custom = tf.engine().runKernel('EfficientScatterSub', { logits: softmaxProbs, labels, dy }, {});
-                const customArr = await custom.array();
-                return customArr;
+            function arraysClose(a, b, epsilon = 1e-5) {
+                if (Array.isArray(a) && Array.isArray(b)) {
+                    if (a.length !== b.length) return false;
+                    for (let i = 0; i < a.length; ++i) {
+                        if (!arraysClose(a[i], b[i], epsilon)) return false;
+                    }
+                    return true;
+                } else if (typeof a === 'number' && typeof b === 'number') {
+                    return Math.abs(a - b) < epsilon;
+                } else {
+                    return false;
+                }
             }
 
-            async function gpuVersion() {
-                await tf.setBackend('webgl');
+            async function execute(backend) {
+                await tf.setBackend(backend);
                 const logits = tf.tensor2d([
                     [0.1, 0.2, 0.7],
                     [0.3, 0.4, 0.3],
@@ -44,13 +47,16 @@
             }
 
             async function runTest() {
-                const customArr = await gpuVersion();
-                const manualArr = await cpuVersion();
+                const customArr = await execute('webgl');
+                const manualArr = await execute('cpu');
+                const webgpuArr = await execute('webgpu');
 
                 // Compare arrays
-                const match = JSON.stringify(manualArr) === JSON.stringify(customArr);
+                const match1 = arraysClose(manualArr, customArr);
+                const match2 = arraysClose(webgpuArr, customArr);
+                const match = match1 && match2;
                 document.body.innerText = match ? 'PASS' : 'FAIL';
-                window.testResult = { match, manualArr, customArr };
+                window.testResult = { match, manualArr, customArr, webgpuArr };
             }
             runTest();
         </script>

@@ -4,9 +4,14 @@
         <meta charset="UTF-8" />
         <title>EfficientScatterSub WebGL Test</title>
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
         <script
             type="module"
             src="../dist/ops/attentionMask.js"
+        ></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
         ></script>
     </head>
     <body>
@@ -26,93 +31,57 @@
                 }
             }
 
-            async function cpuVersion() {
-                await tf.setBackend('cpu');
+            async function execute(backend, pastLen) {
+                await tf.setBackend(backend);
                 const q = tf.tensor4d(
                     [
                         [
                             [
-                                [0.1, 0.2],
-                                [0.3, 0.4],
+                                [0.1, 0.2, 0.3, 0.4],
+                                [0.3, 0.4, 0.5, 0.6],
                             ],
                         ],
                     ],
-                    [1, 1, 2, 2]
+                    [1, 1, 2, 4]
                 ); // (1,1,T,hs)
                 const k = tf.tensor4d(
                     [
                         [
                             [
-                                [0.5, 0.6],
-                                [0.7, 0.8],
+                                [0.5, 0.6, 0.5, 0.6],
+                                [0.7, 0.8, 0.7, 0.8],
                             ],
                         ],
                     ],
-                    [1, 1, 2, 2]
+                    [1, 1, 2, 4]
                 ); // (1,1,T,hs)
                 const mask = tf.tensor2d(
                     [
-                        [0, -Infinity],
-                        [0, 0],
+                        [0, -Infinity, -Infinity, -Infinity],
+                        [0, 0, 0, -Infinity],
                     ],
-                    [2, 2]
+                    [2, 4]
                 ); // (T,T)
                 const divisor = 0.5;
 
                 // Custom op
-                const custom = tf.engine().runKernel('AttentionMask', { q, k, mask }, { divisor });
-                const customArr = await custom.array();
-                return customArr;
-            }
-
-            async function gpuVersion() {
-                await tf.setBackend('webgl');
-                const q = tf.tensor4d(
-                    [
-                        [
-                            [
-                                [0.1, 0.2],
-                                [0.3, 0.4],
-                            ],
-                        ],
-                    ],
-                    [1, 1, 2, 2]
-                ); // (1,1,T,hs)
-                const k = tf.tensor4d(
-                    [
-                        [
-                            [
-                                [0.5, 0.6],
-                                [0.7, 0.8],
-                            ],
-                        ],
-                    ],
-                    [1, 1, 2, 2]
-                ); // (1,1,T,hs)
-                const mask = tf.tensor2d(
-                    [
-                        [0, -1e9],
-                        [0, 0],
-                    ],
-                    [2, 2]
-                ); // (T,T)
-                const divisor = 0.5;
-
-                // Custom op
-                const custom = tf.engine().runKernel('AttentionMask', { q, k, mask }, { divisor });
+                const custom = tf.engine().runKernel('AttentionMask', { q, k, mask }, { divisor, pastLen });
                 const customArr = await custom.array();
                 return customArr;
             }
 
             async function runTest() {
-                const customArr = await gpuVersion();
-                const manualArr = await cpuVersion();
+                const customArr = await execute('webgl', 0);
+                const manualArr = await execute('cpu', 0);
+                const webgpuArr = await execute('webgpu', 0);
 
                 // Compare arrays
-                const match = arraysClose(manualArr, customArr);
-                console.log({ match, manualArr, customArr });
+                const match1 = arraysClose(manualArr, customArr);
+                const match2 = arraysClose(webgpuArr, customArr);
+                const match = match1 && match2;
+                console.log({ match1, manualArr, customArr, match2, webgpuArr });
                 document.body.innerText = match ? 'PASS' : 'FAIL';
-                window.testResult = { match, manualArr, customArr };
+                window.testResult = { match, manualArr, customArr, webgpuArr };
             }
             runTest();
         </script>

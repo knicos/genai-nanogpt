@@ -57,7 +57,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
                 output: generatedToken,
                 attention,
                 probabilities,
-            } = this.model.generate(inputTensor, undefined, options);
+            } = await this.model.generate(inputTensor, undefined, options);
 
             const oldInput = inputTensor;
             inputTensor = concat([inputTensor, generatedToken], 1);
@@ -125,7 +125,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
                 output: generatedToken,
                 probabilities,
                 attention,
-            } = this.model.generate(inputTensor, cache, {
+            } = await this.model.generate(inputTensor, cache, {
                 ...options,
                 usePadding: false,
             });

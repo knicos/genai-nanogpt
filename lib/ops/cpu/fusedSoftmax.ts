@@ -54,3 +54,11 @@ const tensorflowKernelConfig: KernelConfig = {
 };
 
 registerKernel(tensorflowKernelConfig);
+
+const webgpuKernelConfig: KernelConfig = {
+    kernelName: 'FusedSoftmax',
+    backendName: 'webgpu',
+    kernelFunc: softmaxCPU as unknown as KernelFunc,
+};
+
+registerKernel(webgpuKernelConfig);

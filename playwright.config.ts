@@ -28,7 +28,11 @@ export default defineConfig({
     projects: [
         {
             name: 'chromium',
-            use: { ...devices['Desktop Chrome'], channel: 'chromium' },
+            use: {
+                ...devices['Desktop Chrome'],
+                channel: 'chromium',
+                launchOptions: { args: ['--enable-unsafe-webgpu'] },
+            },
         },
     ],
     // Run your local dev server before starting the tests.

@@ -4,9 +4,14 @@
         <meta charset="UTF-8" />
         <title>EfficientScatterSub WebGL Test</title>
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
         <script
             type="module"
             src="../dist/ops/rope.js"
+        ></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
         ></script>
     </head>
     <body>
@@ -25,8 +30,8 @@
                 }
             }
 
-            async function cpuVersion() {
-                await tf.setBackend('cpu');
+            async function execute(backend) {
+                await tf.setBackend(backend);
                 const memStart = tf.memory().numBytes;
                 const x = tf.tensor4d(
                     [
@@ -49,41 +54,21 @@
                 return custom.array();
             }
 
-            async function gpuVersion() {
-                await tf.setBackend('webgl');
-                const memStart = tf.memory().numBytes;
-                const x = tf.tensor4d(
-                    [
-                        [
-                            [
-                                [0.1, 0.2],
-                                [0.3, 0.4],
-                            ],
-                        ],
-                    ],
-                    [1, 1, 2, 2]
-                ); // (1,1,T,rdim)
-                const sin = tf.tensor3d([0.5, 0.6], [2, 1, 1]);
-                const cos = tf.tensor3d([0.9, 1.0], [2, 1, 1]);
-
-                // Custom op
-                const custom = tf.engine().runKernel('Rope', { x, sin, cos }, { pastLen: 0 });
-                const memEnd = tf.memory().numBytes;
-                console.log('GPU memory used:', memEnd - memStart);
-                return custom.array();
-            }
-
             async function runTest() {
-                const customArr = await gpuVersion();
-                const manualArr = await cpuVersion();
+                const customArr = await execute('webgl');
+                const manualArr = await execute('cpu');
+                const webgpuArr = await execute('webgpu');
 
                 console.log('Manual:', manualArr);
                 console.log('Custom:', customArr);
+                console.log('WebGPU:', webgpuArr);
 
                 // Compare arrays
-                const match = arraysClose(manualArr, customArr);
+                const match1 = arraysClose(manualArr, customArr);
+                const match2 = arraysClose(webgpuArr, customArr);
+                const match = match1 && match2;
                 document.body.innerText = match ? 'PASS' : 'FAIL';
-                window.testResult = { match, manualArr, customArr };
+                window.testResult = { match, manualArr, customArr, webgpuArr };
             }
             runTest();
         </script>

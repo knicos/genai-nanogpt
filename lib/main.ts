@@ -29,3 +29,6 @@ import './ops/matMulGelu';
 import './ops/gelu';
 import './ops/normRMS';
 import './ops/log';
+
+export { selectBackend } from './backend';
+export { default as performanceTest } from './utilities/performance';

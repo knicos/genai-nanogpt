@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Performance Test</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
+        ></script>
+        <script
+            type="module"
+            src="/dist/main.js"
+        ></script>
+    </head>
+    <body>
+        <script type="module">
+            import { performanceTest } from '/dist/main.js';
+
+            async function rope(backend) {
+                await tf.setBackend(backend);
+
+                const x = tf.randomNormal([32, 32, 128, 32]); // Adjust dimensions as needed
+                const sin = tf.randomNormal([256, 16, 1]);
+                const cos = tf.randomNormal([256, 16, 1]);
+
+                const time = await performanceTest(() => {
+                    return tf.engine().runKernel('Rope', { x, sin, cos }, { pastLen: 0 });
+                }, 1000);
+                return time;
+            }
+
+            async function attentionMask(backend) {
+                await tf.setBackend(backend);
+                const q = tf.randomNormal([1, 6, 128, 64]);
+                const k = tf.randomNormal([1, 6, 128, 64]);
+                const mask = tf.randomNormal([1, 128]);
+                const divisor = 0.5;
+
+                const time = await performanceTest(() => {
+                    return tf.engine().runKernel('AttentionMask', { q, k, mask }, { divisor, pastLen: 0 });
+                }, 1000);
+                return time;
+            }
+
+            async function normRMS(backend) {
+                await tf.setBackend(backend);
+                const gamma = tf.randomNormal([192]);
+                const x = tf.randomNormal([16, 128, 192]);
+
+                // Use valueAndGrads for both value and gradients
+                const time = await performanceTest(() => {
+                    return tf.engine().runKernel('RMSNorm', { x, gamma });
+                }, 1000);
+                return time;
+            }
+
+            async function gelu(backend) {
+                await tf.setBackend(backend);
+                const x = tf.randomNormal([256, 192]);
+
+                const time = await performanceTest(() => {
+                    return tf.engine().runKernel('Gelu', { x });
+                }, 10000);
+                return time;
+            }
+
+            async function appendCache(backend) {
+                await tf.setBackend(backend);
+                const cache = tf.randomNormal([32, 6, 48, 64]);
+                const x = tf.randomNormal([32, 6, 1, 64]);
+
+                // Custom op
+                return await performanceTest(() => {
+                    return tf.engine().runKernel('AppendCache', { cache, item: x }, { maxSize: 4, pastLen: 2 });
+                }, 1000);
+            }
+
+            async function matMulGelu(backend) {
+                await tf.setBackend(backend);
+                const kernel = tf.randomNormal([256, 256]);
+                const x = tf.randomNormal([32, 256, 256]);
+
+                return performanceTest(() => {
+                    return tf.engine().runKernel('MatMulGelu', { x, kernel });
+                }, 1000);
+            }
+
+            const OPS = {
+                rope,
+                attentionMask,
+                normRMS,
+                gelu,
+                appendCache,
+                matMulGelu,
+            };
+
+            async function runTest() {
+                const op = 'matMulGelu';
+                const webglTime = await OPS[op]('webgl');
+                console.log('WebGL time:', webglTime);
+                const webgpuTime = await OPS[op]('webgpu');
+                console.log('WebGPU time:', webgpuTime);
+
+                console.log('Memory', tf.memory());
+
+                document.body.innerText = `WebGPU time: ${webgpuTime} ms\nWebGL time: ${webglTime} ms`;
+            }
+            setTimeout(runTest, 500);
+        </script>
+    </body>
+</html>

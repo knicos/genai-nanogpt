@@ -7,11 +7,8 @@ import {
     TensorInfo,
     tidy,
 } from '@tensorflow/tfjs-core';
+import { dGelu, gelu } from '../gelu';
 
-const K = 0.7978845608028654; // sqrt(2/pi)
-const A = 0.044715;
-
-// Approximate GELU (GPT-2 uses this)
 function matMulGelu(args: { inputs: { x: TensorInfo; kernel: TensorInfo }; backend: unknown }): TensorInfo {
     const { inputs } = args;
     const { x: ti, kernel: ki } = inputs;
@@ -21,9 +18,10 @@ function matMulGelu(args: { inputs: { x: TensorInfo; kernel: TensorInfo }; backe
     // 0.5 * x * (1 + tanh( sqrt(2/pi) * (x + 0.044715 x^3) ))
     return tidy(() => {
         const m = x.matMul(kernel);
-        const m3 = m.mul(m).mul(m);
+        /*const m3 = m.mul(m).mul(m);
         const inner = m.add(m3.mul(A)).mul(K).tanh().add(1).mul(0.5);
-        return m.mul(inner);
+        return m.mul(inner);*/
+        return gelu(m);
     });
 }
 
@@ -43,6 +41,14 @@ const tensorflowKernelConfig: KernelConfig = {
 
 registerKernel(tensorflowKernelConfig);
 
+const webgpuKernelConfig: KernelConfig = {
+    kernelName: 'MatMulGelu',
+    backendName: 'webgpu',
+    kernelFunc: matMulGelu as unknown as KernelFunc,
+};
+
+registerKernel(webgpuKernelConfig);
+
 // Backward
 
 function matMulGeluGradKernelFunc(args: { inputs: NamedTensorInfoMap; backend: unknown }): TensorInfo[] {
@@ -51,23 +57,7 @@ function matMulGeluGradKernelFunc(args: { inputs: NamedTensorInfoMap; backend: u
     return tidy(() => {
         // From forward pass
         const m = x.matMul(kernel);
-
-        // u = k * (x + 0.044715 * x^3)
-        const m2 = m.square();
-        const m3 = m2.mul(m);
-        const u = m.add(m3.mul(A)).mul(K);
-        const tanhU = u.tanh();
-        const sech2 = tanhU.square().neg().add(1); // 1 - tanh(u)^2
-
-        // 1 + 3 * a * x^2
-        const inner = m2.mul(3 * A).add(1);
-
-        // dgelu/dx
-        const left = tanhU.add(1).mul(0.5);
-        const right = m.mul(sech2).mul(K).mul(inner).mul(0.5);
-        const grad = left.add(right);
-
-        const dL_dm = (dy as Tensor).mul(grad); // dL/dm = dL/dy * dy/dm
+        const dL_dm = dGelu(dy, m);
 
         // Gradients w.r.t. x and kernel
         const dx = dL_dm.matMul(kernel.transpose());
@@ -91,3 +81,11 @@ const tensorflowGradKernelConfig: KernelConfig = {
 };
 
 registerKernel(tensorflowGradKernelConfig);
+
+const webgpuGradKernelConfig: KernelConfig = {
+    kernelName: 'MatMulGeluGrad',
+    backendName: 'webgpu',
+    kernelFunc: matMulGeluGradKernelFunc,
+};
+
+registerKernel(webgpuGradKernelConfig);

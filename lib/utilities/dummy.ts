@@ -22,7 +22,8 @@ export interface MemoryRequirements {
 
 export async function dummyPassTrainAsync(model: NanoGPT): Promise<MemoryRequirements> {
     const startMemInfo = memory() as ExtendedMemoryInfo;
-    const startBytes = startMemInfo.numBytesInGPUAllocated ?? startMemInfo.numBytes;
+    const startBytes =
+        startMemInfo.numBytesInGPUAllocated ?? startMemInfo.numBytesAllocatedInGPU ?? startMemInfo.numBytes;
 
     await dummyPassAsync(model);
     // Send a dummy input to initialize the model
@@ -56,7 +57,7 @@ export async function dummyPassTrainAsync(model: NanoGPT): Promise<MemoryRequire
     const { value: lossValue, grads } = variableGrads(f);
 
     const endMemInfo = memory() as ExtendedMemoryInfo;
-    const endBytes = endMemInfo.numBytesInGPUAllocated ?? endMemInfo.numBytes;
+    const endBytes = endMemInfo.numBytesInGPUAllocated ?? endMemInfo.numBytesAllocatedInGPU ?? endMemInfo.numBytes;
     memoryReqs.perBatch = endBytes - startBytes - memoryReqs.gradients;
 
     console.log('Dummy training memory requirements:', memoryReqs);

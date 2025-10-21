@@ -19,7 +19,7 @@ function gelu(args: { inputs: { x: TensorInfo }; backend: unknown }): TensorInfo
 
     // 0.5 * x * (1 + tanh( sqrt(2/pi) * (x + 0.044715 x^3) ))
     return tidy(() => {
-        const x3 = x.mul(x).mul(x);
+        const x3 = x.pow(3); // x.mul(x).mul(x);
         const inner = x.add(x3.mul(A)).mul(K).tanh().add(1).mul(0.5);
         return x.mul(inner);
     });

@@ -20,12 +20,11 @@ import {
     scalar,
     softmax,
     Tensor,
-    tensor1d,
-    Tensor1D,
     Tensor2D,
     tidy,
     topk,
 } from '@tensorflow/tfjs-core';
+import multinomialCPU from './utilities/multinomialCPU';
 
 export interface TrainingLogEntry {
     loss: number;
@@ -169,39 +168,6 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
         }
     }
 
-    // Attention rollout per Abnar & Zuidema (2020)
-    // Expects list of (B, T, T) attention matrices already averaged over heads.
-    /*private computeAttentionRollout(attentions: Tensor[]): Tensor {
-        return tidy(() => {
-            if (attentions.length === 0) {
-                throw new Error('No attentions for rollout');
-            }
-            const [B, Q, K] = attentions[0].shape as number[];
-
-            // Validate shapes are consistent
-            for (const a of attentions) {
-                const [b2, q2, k2] = a.shape as number[];
-                if (b2 !== B || q2 !== Q || k2 !== K) {
-                    throw new Error(
-                        `Inconsistent attention shapes in rollout: expected [${B},${Q},${K}] got [${b2},${q2},${k2}]`
-                    );
-                }
-            }
-
-            // Always slice to [B, Q, Q] for rollout
-            const attentionsSliced = attentions.map((att) => att.slice([0, 0, 0], [B, Q, Q]));
-
-            const ey = eye(Q, Q).expandDims(0); // (1,Q,Q)
-            let rollout = ey.tile([B, 1, 1]); // (B,Q,Q)
-            for (const att of attentionsSliced) {
-                const a = att.add(ey);
-                const aNorm = a.div(a.sum(-1, true)); // (B,Q,Q)
-                rollout = aNorm.matMul(rollout); // (B,Q,Q)
-            }
-            return rollout;
-        });
-    }*/
-
     forward(attrs: ModelForwardAttributes, idx: Tensor, targets?: Tensor): Tensor[] {
         this.validateInput(idx);
 
@@ -255,17 +221,27 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
         });
     }
 
-    generate(
+    async generate(
         idx: Tensor,
         cache?: KVCache[],
         options?: GenerateOptions
-    ): { output: Tensor; probabilities?: Tensor; attention?: Tensor[] } {
+    ): Promise<{ output: Tensor; probabilities?: Tensor; attention?: Tensor[] }> {
         const temperature = options?.temperature ?? 1.0;
         const tK = options?.topK;
         const tP = options?.topP;
         const usePadding = options?.usePadding ?? false;
 
-        return tidy(() => {
+        const attrs: ModelForwardAttributes = {
+            training: false,
+            attentionScores: options?.attentionScores
+                ? {
+                      attentionOut: [],
+                  }
+                : undefined,
+            cache,
+        };
+
+        const logits = tidy(() => {
             const currentIdx = idx;
 
             // Crop sequence if it exceeds block size
@@ -287,15 +263,6 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
                       ])
                     : cropIdx;
 
-            const attrs: ModelForwardAttributes = {
-                training: false,
-                attentionScores: options?.attentionScores
-                    ? {
-                          attentionOut: [],
-                      }
-                    : undefined,
-                cache,
-            };
             const [logits] = this.forward(attrs, padIdx);
 
             // Focus only on the last time step
@@ -318,49 +285,68 @@ export default class NanoGPT extends BaseLayer<ModelForwardAttributes> {
 
             const scaledLogits = lastLogits.div(temperature);
 
-            let nextToken: Tensor;
-
-            if (tP) {
-                // Top-p (nucleus) sampling
-                const probs = softmax(scaledLogits.squeeze([1]) as Tensor2D);
-
-                // TODO: This can be optimized to avoid arraySync
-                const probsArray = (probs.arraySync() as number[][])[0];
-                probs.dispose();
-                const sorted = probsArray.map((p, i) => ({ prob: p, index: i })).sort((a, b) => b.prob - a.prob);
-
-                let cumulativeProb = 0;
-                const masked = new Array<number>(sorted.length).fill(0);
-                for (const item of sorted) {
-                    cumulativeProb += item.prob;
-                    masked[item.index] = item.prob;
-                    if (cumulativeProb >= tP) {
-                        break;
-                    }
-                }
-
-                // Renormalize
-                const sumMasked = masked.reduce((a, b) => a + b, 0);
-                const renormProbs = masked.map((p) => p / sumMasked);
-
-                // Sample from filtered tokens
-                nextToken = multinomial(tensor1d(renormProbs), 1, undefined, true);
-            } else if (tK) {
-                const { values: topKValues, indices: topKIndices } = topk(scaledLogits, tK);
-                const sampledIdx = multinomial(topKValues.squeeze([1]) as Tensor1D, 1);
-                nextToken = gather(topKIndices.squeeze([1]), sampledIdx, 1);
-            } else {
-                nextToken = multinomial(scaledLogits.squeeze([1]) as Tensor1D, 1);
-            }
-
-            let probabilities: Tensor | undefined;
-            if (options?.includeProbabilities) {
-                probabilities = softmax(scaledLogits.squeeze([1]) as Tensor1D);
-            }
-
-            nextToken = nextToken.reshape([1, 1]);
-            return { output: nextToken, probabilities, attention: attrs.attentionScores?.attentionOut };
+            return scaledLogits.squeeze([1]) as Tensor2D;
         });
+
+        let nextToken: Tensor;
+
+        if (tP) {
+            // Top-p (nucleus) sampling
+            const probs = softmax(logits);
+
+            // TODO: This can be optimized to avoid arraySync
+            const probsArray = (await probs.array()) as number[][];
+
+            probs.dispose();
+            const sorted = probsArray[0].map((p, i) => ({ prob: p, index: i })).sort((a, b) => b.prob - a.prob);
+
+            let cumulativeProb = 0;
+            const masked = new Array<number>(sorted.length).fill(0);
+            for (const item of sorted) {
+                cumulativeProb += item.prob;
+                masked[item.index] = item.prob;
+                if (cumulativeProb >= tP) {
+                    break;
+                }
+            }
+
+            // Renormalize
+            const sumMasked = masked.reduce((a, b) => a + b, 0);
+            const renormProbs = masked.map((p) => p / sumMasked);
+
+            // Do the multinomial on the CPU
+            nextToken = multinomialCPU(renormProbs);
+
+            // Sample from filtered tokens
+            //const renormTensor = tensor2d([renormProbs], [1, renormProbs.length]);
+            //nextToken = multinomial(renormTensor, 1, undefined, true);
+            //nextToken = argMax(renormTensor, -1);
+            //console.log('Next token (top-p):', await nextToken.array());
+            //renormTensor.dispose();
+        } else if (tK) {
+            const { values: topKValues, indices: topKIndices } = topk(logits, tK);
+            const sampledIdx = multinomial(topKValues, 1);
+            nextToken = gather(topKIndices, sampledIdx, 1);
+
+            topKValues.dispose();
+            topKIndices.dispose();
+            sampledIdx.dispose();
+        } else {
+            nextToken = multinomial(logits, 1);
+        }
+
+        let probabilities: Tensor | undefined;
+        if (options?.includeProbabilities) {
+            probabilities = softmax(logits);
+        }
+
+        const reshaped = nextToken.reshape([1, 1]);
+        nextToken.dispose();
+        nextToken = reshaped;
+
+        logits.dispose();
+
+        return { output: nextToken, probabilities, attention: attrs.attentionScores?.attentionOut };
     }
 
     getNumParams(): number {

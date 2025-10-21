@@ -33,3 +33,11 @@ const tensorflowKernelConfig: KernelConfig = {
 };
 
 registerKernel(tensorflowKernelConfig);
+
+const webgpuKernelConfig: KernelConfig = {
+    kernelName: 'MulDropout',
+    backendName: 'webgpu',
+    kernelFunc: mulDrop as unknown as KernelFunc,
+};
+
+registerKernel(webgpuKernelConfig);

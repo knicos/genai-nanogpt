@@ -4,9 +4,14 @@
         <meta charset="UTF-8" />
         <title>EfficientScatterSub WebGL Test</title>
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
         <script
             type="module"
             src="../dist/ops/normRMS.js"
+        ></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
         ></script>
     </head>
     <body>
@@ -46,19 +51,31 @@
             async function runTest() {
                 const cpu = await runVersion('cpu');
                 const gpu = await runVersion('webgl');
+                const webgpu = await runVersion('webgpu');
 
                 console.log('CPU:', cpu);
                 console.log('GPU:', gpu);
+                console.log('WebGPU:', webgpu);
 
                 const forwardMatch = arraysClose(cpu.valueArr, gpu.valueArr);
                 const gradXMatch = arraysClose(cpu.gradXArr, gpu.gradXArr);
                 const gradGammaMatch = arraysClose(cpu.gradGammaArr, gpu.gradGammaArr);
 
-                const allMatch = forwardMatch && gradXMatch && gradGammaMatch;
+                const webgpuForwardMatch = arraysClose(cpu.valueArr, webgpu.valueArr);
+                const webgpuGradXMatch = arraysClose(cpu.gradXArr, webgpu.gradXArr);
+                const webgpuGradGammaMatch = arraysClose(cpu.gradGammaArr, webgpu.gradGammaArr);
+
+                const allMatch =
+                    forwardMatch &&
+                    gradXMatch &&
+                    gradGammaMatch &&
+                    webgpuForwardMatch &&
+                    webgpuGradXMatch &&
+                    webgpuGradGammaMatch;
                 document.body.innerText = allMatch
                     ? 'PASS'
-                    : `FAIL\nforward: ${forwardMatch}\ngradX: ${gradXMatch}\ngradGamma: ${gradGammaMatch}`;
-                window.testResult = { forwardMatch, gradXMatch, gradGammaMatch, cpu, gpu };
+                    : `FAIL\nforward: ${forwardMatch}\ngradX: ${gradXMatch}\ngradGamma: ${gradGammaMatch}\nwebgpuForward: ${webgpuForwardMatch}\nwebgpuGradX: ${webgpuGradXMatch}\nwebgpuGradGamma: ${webgpuGradGammaMatch}`;
+                window.testResult = { forwardMatch, gradXMatch, gradGammaMatch, cpu, gpu, webgpu };
             }
             runTest();
         </script>
