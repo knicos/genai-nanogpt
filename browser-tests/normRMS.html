@@ -16,30 +16,35 @@
     </head>
     <body>
         <script type="module">
-            function arraysClose(a, b, epsilon = 1e-5) {
+            function arraysClose(a, b) {
+                let maxError = 0.0;
                 if (Array.isArray(a) && Array.isArray(b)) {
-                    if (a.length !== b.length) return false;
+                    if (a.length !== b.length) return Number.POSITIVE_INFINITY;
                     for (let i = 0; i < a.length; ++i) {
-                        if (!arraysClose(a[i], b[i], epsilon)) return false;
+                        maxError = Math.max(maxError, arraysClose(a[i], b[i]));
                     }
-                    return true;
+                    return maxError;
                 } else if (typeof a === 'number' && typeof b === 'number') {
-                    return Math.abs(a - b) < epsilon;
+                    const aClose = Math.abs(a - b);
+                    maxError = Math.max(maxError, aClose);
+                    return maxError;
                 } else {
-                    return false;
+                    return Number.POSITIVE_INFINITY;
                 }
             }
 
-            async function runVersion(backend) {
+            async function runVersion(backend, xA, gammaA, targetsA) {
                 await tf.setBackend(backend);
-                const gamma = tf.tensor1d([0.1, 0.2, 0.3, 0.4]);
-                const x = tf.tensor3d([[[0.5, 0.6, 0.7, 0.8]]], [1, 1, 4]);
+                const gammaT = tf.tensor1d(gammaA, 'float32');
+                const xT = tf.tensor(xA, [16, 128, 192], 'float32');
+                const targets = tf.tensor(targetsA, [16, 128, 192], 'float32');
 
                 // Use valueAndGrads for both value and gradients
-                const fn = (x, gamma) => tf.engine().runKernel('RMSNorm', { x, gamma });
-                const { value, grads } = tf.valueAndGrads(fn)([x, gamma]);
-
-                console.log(grads);
+                const fn = (x, gamma) => {
+                    const result = tf.engine().runKernel('RMSNorm', { x, gamma });
+                    return tf.losses.meanSquaredError(result, targets);
+                };
+                const { value, grads } = tf.valueAndGrads(fn)([xT, gammaT]);
 
                 const valueArr = await value.array();
                 const gradXArr = await grads[0].array();
@@ -49,9 +54,14 @@
             }
 
             async function runTest() {
-                const cpu = await runVersion('cpu');
-                const gpu = await runVersion('webgl');
-                const webgpu = await runVersion('webgpu');
+                // Create x and gamma on CPU
+                const x = Array.from({ length: 16 * 128 * 192 }, () => Math.random());
+                const gamma = Array.from({ length: 192 }, () => Math.random());
+                const targets = Array.from({ length: 16 * 128 * 192 }, () => Math.random());
+
+                const cpu = await runVersion('cpu', x, gamma, targets);
+                const gpu = await runVersion('webgl', x, gamma, targets);
+                const webgpu = await runVersion('webgpu', x, gamma, targets);
 
                 console.log('CPU:', cpu);
                 console.log('GPU:', gpu);
@@ -65,17 +75,29 @@
                 const webgpuGradXMatch = arraysClose(cpu.gradXArr, webgpu.gradXArr);
                 const webgpuGradGammaMatch = arraysClose(cpu.gradGammaArr, webgpu.gradGammaArr);
 
+                const epsilon = 1e-5;
+
                 const allMatch =
-                    forwardMatch &&
-                    gradXMatch &&
-                    gradGammaMatch &&
-                    webgpuForwardMatch &&
-                    webgpuGradXMatch &&
-                    webgpuGradGammaMatch;
+                    forwardMatch < epsilon &&
+                    gradXMatch < epsilon &&
+                    gradGammaMatch < 1e-3 &&
+                    webgpuForwardMatch < epsilon &&
+                    webgpuGradXMatch < epsilon &&
+                    webgpuGradGammaMatch < 1e-3;
                 document.body.innerText = allMatch
                     ? 'PASS'
                     : `FAIL\nforward: ${forwardMatch}\ngradX: ${gradXMatch}\ngradGamma: ${gradGammaMatch}\nwebgpuForward: ${webgpuForwardMatch}\nwebgpuGradX: ${webgpuGradXMatch}\nwebgpuGradGamma: ${webgpuGradGammaMatch}`;
-                window.testResult = { forwardMatch, gradXMatch, gradGammaMatch, cpu, gpu, webgpu };
+                window.testResult = {
+                    forwardMatch,
+                    gradXMatch,
+                    gradGammaMatch,
+                    webgpuForwardMatch,
+                    webgpuGradXMatch,
+                    webgpuGradGammaMatch,
+                    cpu,
+                    gpu,
+                    webgpu,
+                };
             }
             runTest();
         </script>

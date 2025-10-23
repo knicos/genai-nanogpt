@@ -1,6 +1,6 @@
-import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
-import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
-import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
+import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
+import { flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
+// import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 
 import {
     registerKernel,
@@ -9,56 +9,61 @@ import {
     NamedTensorInfoMap,
     NamedAttrMap,
     Tensor,
-    sum,
-    engine,
+    backend_util,
 } from '@tensorflow/tfjs-core';
 
-class RMSNormProgram implements WebGPUProgram {
-    variableNames = ['x', 'meanSquare', 'gamma'];
-    outputShape: number[];
+import { createReduceInfo, createReductionShader, reduce, ReduceWebGPUProgram } from './utils/reductions';
 
+class RMSProgram implements ReduceWebGPUProgram {
+    outputShape: number[];
     shaderKey = 'RMSNorm';
     dispatchLayout: { x: number[] };
     dispatch: [number, number, number];
     workgroupSize: [number, number, number] = [64, 1, 1];
+    variableNames = ['x', 'gamma'];
+    uniforms = 'reduceSize : i32,';
+    inputShape: number[];
     size = true;
 
-    constructor(batch: number, T: number, C: number) {
-        this.outputShape = [batch, T, C];
+    constructor(reduceInfo: backend_util.ReduceInfo) {
+        this.inputShape = [reduceInfo.batchSize, reduceInfo.inSize];
+        this.outputShape = this.inputShape;
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
-        this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);
+        this.dispatch = [reduceInfo.batchSize, 1, 1];
     }
 
-    getUserCode() {
-        return `
-        ${main('index')} {
-            if (index < uniforms.size) {
-                let coords = getCoordsFromIndex(index);
-                let x = getXByOutputIndex(index);
-                let meanSquare = getMeanSquare(coords[0], coords[1], 0);
-                let gamma = getGammaByOutputIndex(index);
-                let invRms = inverseSqrt(meanSquare + 1e-8);
-                let normalized = x * invRms;
-                let outVal = normalized * gamma;
-                setOutputAtIndex(index, outVal);
-            }
-        }
+    getUserCode(): string {
+        const workgroupSizeX = this.workgroupSize[0];
+
+        const inputSnippet = `
+            candidate = candidate * candidate;
         `;
+
+        const reducedSnippet = `
+            bestValue = inverseSqrt(bestValue + 1e-8);
+        `;
+
+        const outputSnippet = `
+            let X = f32(x[offset + k]);
+            let gamma = gamma[k];
+            let normalized = X * bestValue;
+            let outVal = normalized * gamma;
+            result[offset + k] = f32(outVal);
+        `;
+
+        return createReductionShader(workgroupSizeX, 'mean', inputSnippet, reducedSnippet, outputSnippet);
     }
 }
 
 function rmsNormGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { x, gamma } = args.inputs as { x: Tensor; gamma: Tensor };
-
     const backend = args.backend as WebGPUBackend;
 
-    const batchSize = x.shape[0];
-    const seqLength = x.shape[1]!;
-    const C = x.shape[2]!;
+    const inputs = [x, gamma];
+    const reduceInfo = createReduceInfo(inputs, -1);
+    const program = new RMSProgram(reduceInfo);
 
-    const meanSquare = x.square().mean(-1, true);
-    const program = new RMSNormProgram(batchSize, seqLength, C);
-    return backend.runWebGPUProgram(program, [x, meanSquare, gamma], 'float32');
+    return reduce(program, inputs, backend);
 }
 
 const kernelConfig: KernelConfig = {
@@ -68,116 +73,3 @@ const kernelConfig: KernelConfig = {
 };
 
 registerKernel(kernelConfig);
-
-// --- Gradient ---
-
-class RMSNormGradXProgram implements WebGPUProgram {
-    variableNames = ['x', 'meanSquare', 'dyGamma', 'dyXMean'];
-    outputShape: number[];
-    shaderKey = 'RMSNormGradX';
-    dispatchLayout: { x: number[] };
-    dispatch: [number, number, number];
-    workgroupSize: [number, number, number] = [64, 1, 1];
-    size = true;
-    C: number;
-
-    constructor(batch: number, T: number, C: number) {
-        this.outputShape = [batch, T, C];
-        this.dispatchLayout = flatDispatchLayout(this.outputShape);
-        this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);
-        this.C = C;
-    }
-
-    getUserCode() {
-        return `
-        ${main('index')} {
-            if (index < uniforms.size) {
-                let coords = getCoordsFromIndex(index);
-                let x = getXByOutputIndex(index);
-                let meanSquare = getMeanSquare(coords[0], coords[1], 0) + 1e-8;
-                let dyGamma = getDyGammaByOutputIndex(index);
-                let dyXMean = getDyXMean(coords[0], coords[1], 0) / ${this.C}.0;
-                let invRms = inverseSqrt(meanSquare);
-                let dx = dyGamma * invRms - x * dyXMean * invRms / meanSquare;
-                setOutputAtIndex(index, dx);
-            }
-        }
-        `;
-    }
-}
-
-class RMSNormGradGammaProgram implements WebGPUProgram {
-    variableNames = ['x', 'meanSquare', 'dy'];
-    outputShape: number[];
-    shaderKey = 'RMSNormGradGamma';
-    dispatchLayout: { x: number[] };
-    dispatch: [number, number, number];
-    workgroupSize: [number, number, number] = [64, 1, 1];
-    size = true;
-
-    constructor(batch: number, T: number, C: number) {
-        this.outputShape = [batch, T, C];
-
-        this.dispatchLayout = flatDispatchLayout(this.outputShape);
-        this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);
-    }
-
-    getUserCode() {
-        return `
-        ${main('index')} {
-            if (index < uniforms.size) {
-                let coords = getCoordsFromIndex(index);
-                let x = getXByOutputIndex(index);
-                let meanSquare = getMeanSquare(coords[0], coords[1], 0) + 1e-8;
-                let dy = getDyByOutputIndex(index);
-                let invRms = inverseSqrt(meanSquare);
-                let dGamma = dy * (x * invRms);
-                setOutputAtIndex(index,dGamma);
-            }
-        }
-        `;
-    }
-}
-
-function rmsNormGradGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo[] {
-    const { dy, x, gamma } = args.inputs as { dy: Tensor; x: Tensor; gamma: Tensor };
-
-    const backend = args.backend as WebGPUBackend;
-
-    const batchSize = x.shape[0];
-    const seqLength = x.shape[1]!;
-    const C = x.shape[2]!;
-
-    const dyGamma = dy.mul(gamma);
-    const dyGammaX = dyGamma.mul(x);
-    const dyXMean = dyGammaX.sum(-1, true);
-    dyGammaX.dispose();
-
-    const x2 = x.square();
-    const meanSquare = x2.mean(-1, true);
-    x2.dispose();
-
-    const dxProgram = new RMSNormGradXProgram(batchSize, seqLength, C);
-    const dx = backend.runWebGPUProgram(dxProgram, [x, meanSquare, dyGamma, dyXMean], 'float32');
-
-    dyGamma.dispose();
-    dyXMean.dispose();
-
-    const gammaProgram = new RMSNormGradGammaProgram(batchSize, seqLength, C);
-    const dGammaFull = backend.runWebGPUProgram(gammaProgram, [x, meanSquare, dy], 'float32');
-
-    meanSquare.dispose();
-
-    const dGamma = sum(engine().makeTensorFromTensorInfo(dGammaFull), [0, 1]);
-    backend.disposeData(dGammaFull);
-
-    return [dx, dGamma];
-}
-
-const gradKernelConfig: KernelConfig = {
-    kernelName: 'RMSNormGrad',
-    backendName: 'webgpu',
-    kernelFunc: rmsNormGradGPU,
-};
-
-registerKernel(gradKernelConfig);

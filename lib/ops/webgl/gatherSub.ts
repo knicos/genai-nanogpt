@@ -10,13 +10,13 @@ class GatherSubProgram implements GPGPUProgram {
         this.outputShape = [batchSize];
 
         this.userCode = `
-      void main() {
-        int coords = getOutputCoords();
-        int index = int(getLabelsAtOutCoords());
-        float val = getValuesAtOutCoords();
-        float logit = getLogits(coords, index);
-        setOutput(val - logit);
-      }
+          void main() {
+              int coords = getOutputCoords();
+              int index = int(getLabelsAtOutCoords());
+              float val = getValuesAtOutCoords();
+              float logit = getLogits(coords, index);
+              setOutput(val - logit);
+          }
     `;
     }
 }

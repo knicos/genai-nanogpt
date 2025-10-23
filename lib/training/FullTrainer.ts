@@ -36,7 +36,7 @@ export default class FullTrainer extends GPTTrainer {
         options: Partial<TrainingOptions>,
         validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }> {
-        const { desiredLoss, logInterval, onStep, prompt, maxSteps } = {
+        const { logInterval, onStep, prompt, maxSteps } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
@@ -73,13 +73,13 @@ export default class FullTrainer extends GPTTrainer {
         // Training loop with try-catch for better error handling
         try {
             while (this.running) {
-                if (state.lastLoss < desiredLoss) break;
+                //if (state.lastLoss < desiredLoss) break;
 
                 const result = await iterator.next();
                 if (result.done) break;
                 const batch = result.value;
 
-                const lossPromise = this.trainBatch(state, batch);
+                const lossScalar = this.trainBatch(state, batch);
 
                 const entry: TrainingLogEntry = {
                     loss: state.lastLoss,
@@ -92,7 +92,7 @@ export default class FullTrainer extends GPTTrainer {
                 this.model.log.push(entry);
 
                 if (state.step % logInterval === 0) {
-                    await lossPromise;
+                    await lossScalar.data();
                     const logEndTime = Date.now();
                     state.trainingDuration += logEndTime - state.logStartTime;
                     // Validation
@@ -127,6 +127,7 @@ export default class FullTrainer extends GPTTrainer {
 
                     state.logStartTime = Date.now();
                 }
+                lossScalar.dispose();
 
                 if (state.step >= maxSteps) {
                     this.stop();

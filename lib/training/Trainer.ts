@@ -164,7 +164,7 @@ export default abstract class GPTTrainer {
         }
     }
 
-    protected async trainBatch(state: TrainingState, batch: { xs: Tensor; ys: Tensor }): Promise<number> {
+    protected trainBatch(state: TrainingState, batch: { xs: Tensor; ys: Tensor }): Scalar {
         try {
             //console.log('Batch XS', batch.xs.toString());
             const lossScalar = this.trainStep(state, batch, false);
@@ -174,13 +174,14 @@ export default abstract class GPTTrainer {
             state.step++;
             state.totalSteps++;
 
-            return lossScalar.array().then((lossValue) => {
+            /*return lossScalar.array().then((lossValue) => {
                 state.lastLoss = lossValue as number;
                 state.losses.push(state.lastLoss);
                 lossScalar.dispose();
 
                 return state.lastLoss;
-            });
+            });*/
+            return lossScalar;
         } catch (error) {
             console.error(`Error processing batch at step ${state.step}:`, error);
             dispose();

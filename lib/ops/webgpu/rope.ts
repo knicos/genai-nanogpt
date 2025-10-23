@@ -22,6 +22,7 @@ class RopeProgram implements WebGPUProgram {
     uniforms = 'pastLen: i32';
 
     constructor(batch: number, heads: number, T: number, C: number) {
+        this.shaderKey = `Rope_${C}`;
         this.outputShape = [batch, heads, T, C];
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
         this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);

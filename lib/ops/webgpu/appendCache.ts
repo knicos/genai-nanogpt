@@ -22,6 +22,7 @@ class AppendCacheProgram implements WebGPUProgram {
 
     constructor(batch: number, nh: number, T: number, hs: number, maxSize: number) {
         const outT = Math.min(T + 1, maxSize);
+        this.shaderKey = `AppendCache_${outT}`;
         this.outputShape = [batch, nh, outT, hs];
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
         this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);
@@ -47,11 +48,11 @@ class AppendCacheProgram implements WebGPUProgram {
                 var val = 0.0;
                 if (srcT < uniforms.cacheT) {
                     val = getCache(b, h, srcT, d);
-                } else if (srcT == uniforms.cacheT) {
-                    val = getItem(b, h, 0, d);
-                } else {
-                    val = 0.0;
                 }
+                if (srcT == uniforms.cacheT) {
+                    val = getItem(b, h, 0, d);
+                }
+
                 setOutputAtIndex(index, val);
             }
         }

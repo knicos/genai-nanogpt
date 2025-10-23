@@ -42,6 +42,12 @@ test('rmsNorm operation', async ({ page }) => {
     await expect(body).toHaveText('PASS');
 });
 
+test('rmsNorm Grad operation', async ({ page }) => {
+    await page.goto('/browser-tests/normRMSGrad.html');
+    const body = page.locator('body');
+    await expect(body).toHaveText('PASS');
+});
+
 test('appendCache operation', async ({ page }) => {
     await page.goto('/browser-tests/appendCache.html');
     const body = page.locator('body');

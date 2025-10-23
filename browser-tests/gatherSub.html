@@ -50,6 +50,7 @@
             }
 
             async function runTest() {
+                tf.env().set('WEBGPU_CPU_FORWARD', false);
                 const customArr = await execute('webgl');
                 const manualArr = await execute('cpu');
                 const webgpuArr = await execute('webgpu');

@@ -32,3 +32,17 @@ import './ops/log';
 
 export { selectBackend } from './backend';
 export { default as performanceTest } from './utilities/performance';
+
+import CausalSelfAttention from './layers/CausalSelfAttention';
+import MLP from './layers/MLP';
+import TransformerBlock from './layers/TransformerBlock';
+import RoPECache from './layers/RoPECache';
+
+export const layers = {
+    CausalSelfAttention,
+    MLP,
+    TransformerBlock,
+    RoPECache,
+};
+
+export { default as AdamExt } from './training/AdamExt';

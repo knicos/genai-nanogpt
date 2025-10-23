@@ -15,8 +15,24 @@
         ></script>
     </head>
     <body>
+        <select id="perf-op">
+            <option value="rope">RoPE</option>
+            <option value="attentionMask">AttentionMask</option>
+            <option value="normRMS">RMSNorm</option>
+            <option value="normRMSGrad">RMSNormGrad</option>
+            <option value="gelu">Gelu</option>
+            <option value="appendCache">AppendCache</option>
+            <option value="matMulGelu">MatMulGelu</option>
+            <option value="causalSelfAttention">CausalSelfAttention</option>
+            <option value="transformer">TransformerBlock</option>
+            <option value="generator">LLM Generation</option>
+            <option value="forward">LLM Forward Pass</option>
+            <option value="gradCalc">LLM Gradient Calculation</option>
+            <option value="training">LLM Training Step</option>
+        </select>
+        <button id="run-perf">Run Performance Test</button>
         <script type="module">
-            import { performanceTest } from '/dist/main.js';
+            import { performanceTest, layers, TeachableLLM, AdamExt } from '/dist/main.js';
 
             async function rope(backend) {
                 await tf.setBackend(backend);
@@ -56,6 +72,20 @@
                 return time;
             }
 
+            async function normRMSGrad(backend) {
+                await tf.setBackend(backend);
+                const gamma = tf.randomNormal([576]);
+                const x = tf.randomNormal([16, 128, 576]);
+
+                // Use valueAndGrads for both value and gradients
+                const time = await performanceTest(() => {
+                    const res = tf.engine().runKernel('RMSNormGrad', { x, gamma, dy: x });
+                    res[1].dispose();
+                    return res[0];
+                }, 1000);
+                return time;
+            }
+
             async function gelu(backend) {
                 await tf.setBackend(backend);
                 const x = tf.randomNormal([256, 192]);
@@ -87,6 +117,194 @@
                 }, 1000);
             }
 
+            async function causalSelfAttention(backend) {
+                await tf.setBackend(backend);
+                const x = tf.randomNormal([8, 128, 128]);
+
+                const config = {
+                    vocabSize: 200,
+                    blockSize: 128, // Maximum sequence length
+                    nLayer: 2, // Number of transformer layers
+                    nHead: 4, // Number of attention heads
+                    nEmbed: 128, // Embedding dimension
+                    dropout: 0.0, // Dropout probability
+                    biasInLinear: false,
+                    biasInLayerNorm: false,
+                    mlpFactor: 4,
+                    useRope: true, // Use Rotary Position Embeddings
+                };
+                const layer = new layers.CausalSelfAttention(0, {
+                    gpt: config,
+                    layerConfig: {
+                        ropeCache: new layers.RoPECache(config),
+                    },
+                });
+
+                const time = await performanceTest(() => {
+                    return layer.call({ training: false }, x);
+                }, 100);
+                layer.dispose();
+                return time;
+            }
+
+            async function transformer(backend) {
+                await tf.setBackend(backend);
+                const x = tf.randomNormal([8, 128, 128]);
+
+                const config = {
+                    vocabSize: 200,
+                    blockSize: 128, // Maximum sequence length
+                    nLayer: 2, // Number of transformer layers
+                    nHead: 4, // Number of attention heads
+                    nEmbed: 128, // Embedding dimension
+                    dropout: 0.0, // Dropout probability
+                    biasInLinear: false,
+                    biasInLayerNorm: false,
+                    mlpFactor: 4,
+                    useRope: true, // Use Rotary Position Embeddings
+                };
+                const layer = new layers.TransformerBlock(0, {
+                    gpt: config,
+                    layerConfig: {
+                        ropeCache: new layers.RoPECache(config),
+                    },
+                });
+
+                const time = await performanceTest(() => {
+                    return layer.call({ training: false }, x);
+                }, 100);
+                layer.dispose();
+                return time;
+            }
+
+            async function generator(backend) {
+                await tf.setBackend(backend);
+                const data = Array.from({ length: 128 }, () => Math.floor(Math.random() * 200));
+                const x = tf.tensor2d(data, [1, 128], 'int32');
+
+                const config = {
+                    vocabSize: 200,
+                    blockSize: 128, // Maximum sequence length
+                    nLayer: 2, // Number of transformer layers
+                    nHead: 4, // Number of attention heads
+                    nEmbed: 128, // Embedding dimension
+                    dropout: 0.0, // Dropout probability
+                    biasInLinear: false,
+                    biasInLayerNorm: false,
+                    mlpFactor: 4,
+                    useRope: true, // Use Rotary Position Embeddings
+                };
+                const model = TeachableLLM.create('char', config);
+
+                const time = await performanceTest(
+                    () => {
+                        const result = model.model.generate(x, undefined, { topP: 0.9 });
+                        return result.then((r) => r.output);
+                    },
+                    100,
+                    true
+                );
+                model.dispose();
+                return time;
+            }
+
+            async function forward(backend) {
+                await tf.setBackend(backend);
+                const data = Array.from({ length: 128 * 16 }, () => Math.floor(Math.random() * 200));
+                const x = tf.tensor2d(data, [16, 128], 'int32');
+                const data2 = Array.from({ length: 128 * 16 }, () => Math.floor(Math.random() * 200));
+                const y = tf.tensor2d(data2, [16, 128], 'int32');
+
+                const config = {
+                    vocabSize: 200,
+                    blockSize: 128, // Maximum sequence length
+                    nLayer: 2, // Number of transformer layers
+                    nHead: 4, // Number of attention heads
+                    nEmbed: 128, // Embedding dimension
+                    dropout: 0.0, // Dropout probability
+                    biasInLinear: false,
+                    biasInLayerNorm: false,
+                    mlpFactor: 4,
+                    useRope: true, // Use Rotary Position Embeddings
+                };
+                const model = TeachableLLM.create('char', config);
+
+                const time = await performanceTest(() => {
+                    return model.model.forward({ training: true }, x, y)[1];
+                }, 1000);
+                model.dispose();
+                return time;
+            }
+
+            async function gradCalc(backend) {
+                await tf.setBackend(backend);
+                const data = Array.from({ length: 128 * 16 }, () => Math.floor(Math.random() * 200));
+                const x = tf.tensor2d(data, [16, 128], 'int32');
+                const data2 = Array.from({ length: 128 * 16 }, () => Math.floor(Math.random() * 200));
+                const y = tf.tensor2d(data2, [16, 128], 'int32');
+
+                const config = {
+                    vocabSize: 200,
+                    blockSize: 128, // Maximum sequence length
+                    nLayer: 2, // Number of transformer layers
+                    nHead: 4, // Number of attention heads
+                    nEmbed: 128, // Embedding dimension
+                    dropout: 0.0, // Dropout probability
+                    biasInLinear: false,
+                    biasInLayerNorm: false,
+                    mlpFactor: 4,
+                    useRope: true, // Use Rotary Position Embeddings
+                };
+                const model = TeachableLLM.create('char', config);
+
+                const time = await performanceTest(() => {
+                    const f = () => model.model.forward({ training: true }, x, y)[1];
+                    const { value: lossValue, grads } = tf.variableGrads(f);
+                    return Array.from(Object.values(grads))[0];
+                }, 100);
+                model.dispose();
+                return time;
+            }
+
+            async function training(backend) {
+                await tf.setBackend(backend);
+                const data = Array.from({ length: 128 * 16 }, () => Math.floor(Math.random() * 200));
+                const x = tf.tensor2d(data, [16, 128], 'int32');
+                const data2 = Array.from({ length: 128 * 16 }, () => Math.floor(Math.random() * 200));
+                const y = tf.tensor2d(data2, [16, 128], 'int32');
+
+                const config = {
+                    vocabSize: 200,
+                    blockSize: 128, // Maximum sequence length
+                    nLayer: 2, // Number of transformer layers
+                    nHead: 4, // Number of attention heads
+                    nEmbed: 128, // Embedding dimension
+                    dropout: 0.0, // Dropout probability
+                    biasInLinear: false,
+                    biasInLayerNorm: false,
+                    mlpFactor: 4,
+                    useRope: true, // Use Rotary Position Embeddings
+                };
+                const model = TeachableLLM.create('char', config);
+
+                const adam = new AdamExt(0.001, 0.99, 0.999, 1e-8, {
+                    warmupSteps: 100,
+                    decaySteps: 20000,
+                    minLearningRate: 1e-4,
+                    weightDecay: 0,
+                });
+
+                const time = await performanceTest(() => {
+                    const f = () => model.model.forward({ training: true }, x, y)[1];
+                    const { value: lossValue, grads } = tf.variableGrads(f);
+                    adam.applyGradients(grads);
+                    //return Array.from(Object.values(grads))[0];
+                    return lossValue;
+                }, 100);
+                model.dispose();
+                return time;
+            }
+
             const OPS = {
                 rope,
                 attentionMask,
@@ -94,10 +312,17 @@
                 gelu,
                 appendCache,
                 matMulGelu,
+                normRMSGrad,
+                causalSelfAttention,
+                transformer,
+                generator,
+                forward,
+                gradCalc,
+                training,
             };
 
             async function runTest() {
-                const op = 'matMulGelu';
+                const op = document.getElementById('perf-op').value;
                 const webglTime = await OPS[op]('webgl');
                 console.log('WebGL time:', webglTime);
                 const webgpuTime = await OPS[op]('webgpu');
@@ -105,9 +330,16 @@
 
                 console.log('Memory', tf.memory());
 
-                document.body.innerText = `WebGPU time: ${webgpuTime} ms\nWebGL time: ${webglTime} ms`;
+                document.getElementById(
+                    'output'
+                ).innerText = `WebGPU time: ${webgpuTime} ms\nWebGL time: ${webglTime} ms`;
             }
-            setTimeout(runTest, 500);
+            //setTimeout(runTest, 500);
+
+            document.getElementById('run-perf').addEventListener('click', () => {
+                runTest();
+            });
         </script>
+        <div id="output"></div>
     </body>
 </html>

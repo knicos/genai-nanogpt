@@ -1,22 +1,24 @@
 import { Tensor, tidy } from '@tensorflow/tfjs-core';
 
-export default async function performanceTest(fn: () => Tensor, iterations: number = 10): Promise<number> {
-    for (let i = 0; i < 10; i++) {
-        const t = fn(); // Warm-up
-        await t.data();
+export default async function performanceTest(
+    fn: () => Tensor,
+    iterations: number = 10,
+    allowPromise: boolean = false
+): Promise<number> {
+    for (let i = 0; i < 100; i++) {
+        const t = allowPromise ? await fn() : tidy(fn); // Warm-up
+        if (i === 99) await t.data();
         t.dispose();
     }
 
     const start = performance.now();
 
     for (let i = 0; i < iterations; i++) {
-        const result = tidy(fn);
+        const result = allowPromise ? await fn() : tidy(fn);
         if (i === iterations - 1) {
             await result.data();
-            result.dispose();
-        } else {
-            result.dispose();
         }
+        result.dispose();
     }
 
     const end = performance.now();

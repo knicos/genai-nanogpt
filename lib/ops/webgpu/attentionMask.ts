@@ -26,6 +26,7 @@ class AttentionMaskProgram implements WebGPUProgram {
     T2: number;
 
     constructor(batch: number, nh: number, T1: number, T2: number, hs: number) {
+        this.shaderKey = `AttentionMask_${hs}`;
         this.outputShape = [batch, nh, T1, T2];
         this.hs = hs;
         this.nh = nh;

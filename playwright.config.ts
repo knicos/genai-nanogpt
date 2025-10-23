@@ -27,11 +27,13 @@ export default defineConfig({
     // Configure projects for major browsers.
     projects: [
         {
-            name: 'chromium',
+            name: 'Google Chrome',
             use: {
                 ...devices['Desktop Chrome'],
-                channel: 'chromium',
-                launchOptions: { args: ['--enable-unsafe-webgpu'] },
+                channel: 'chrome',
+                launchOptions: {
+                    args: ['--ozone-platform=x11', '--enable-unsafe-webgpu', '--enable-features=Vulkan'],
+                },
             },
         },
     ],

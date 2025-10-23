@@ -25,8 +25,13 @@ class GatherSubProgram implements WebGPUProgram {
                 let coords = getCoordsFromIndex(index);
                 let idx = i32(getLabelsByOutputIndex(index));
                 let val = getValuesByOutputIndex(index);
-                let logit = getLogits(coords, idx);
-                setOutputAtIndex(index, val - logit);
+
+                if (idx < uniforms.logitsShape[1] && idx >= 0) {
+                    let logit = getLogits(coords, idx);
+                    setOutputAtIndex(index, val - logit);
+                } else {
+                    setOutputAtIndex(index, val);
+                }
             }
         }
     `;

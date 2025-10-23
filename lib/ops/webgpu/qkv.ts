@@ -23,6 +23,7 @@ class QKVProgram implements WebGPUProgram {
     constructor(batch: number, nh: number, T: number, C: number) {
         // Output shape: [batch, nh, T, T]
         const head_dim = C / nh;
+        this.shaderKey = `QKV_${nh}_${head_dim}`;
         this.outputShape = [batch, nh, T, head_dim];
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
         this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);

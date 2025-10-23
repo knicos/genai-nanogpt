@@ -1,5 +1,6 @@
 import './attentionMask';
 import './normRMS';
+import './normRMSGrad';
 import './rope';
 import './appendCache';
 import './scatterSub';
