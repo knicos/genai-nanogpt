@@ -1,5 +1,6 @@
-import { mul, sub, scalar, engine, Variable, AdamOptimizer } from '@tensorflow/tfjs-core';
+import { mul, sub, scalar, engine, Variable } from '@tensorflow/tfjs-core';
 import { NamedTensor, NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
+import { AdamOptimizer } from './Adam';
 
 interface AdamExtConfig {
     warmupSteps: number;

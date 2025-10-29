@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>EfficientScatterSub WebGL Test</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
+        ></script>
+    </head>
+    <body>
+        <script type="module">
+            import { AdamOptimizer } from '../dist/training/Adam.js';
+
+            function mapDiff(a, b, epsilon = 1e-5) {
+                if (Array.isArray(a) && Array.isArray(b)) {
+                    return a.map((v, i) => mapDiff(v, b[i], epsilon));
+                } else if (typeof a === 'number' && typeof b === 'number') {
+                    if (a === -Infinity && b === -Infinity) return true;
+                    const isClose = Math.abs(a - b) < epsilon;
+                    return isClose ? 0.0 : Math.abs(a - b);
+                } else {
+                    return 0.0;
+                }
+            }
+
+            function arraysClose(a, b, epsilon = 1e-5) {
+                if (Array.isArray(a) && Array.isArray(b)) {
+                    if (a.length !== b.length) return false;
+                    for (let i = 0; i < a.length; ++i) {
+                        if (!arraysClose(a[i], b[i], epsilon)) return false;
+                    }
+                    return true;
+                } else if (typeof a === 'number' && typeof b === 'number') {
+                    if (a === -Infinity && b === -Infinity) return true;
+                    const isClose = Math.abs(a - b) < epsilon;
+                    if (!isClose) {
+                        console.log(`Values not close: ${a} vs ${b}`);
+                    }
+                    return isClose;
+                } else {
+                    return false;
+                }
+            }
+
+            async function execute(backend, v, g) {
+                try {
+                    await tf.setBackend(backend);
+                    const value = tf.tensor2d(v, [128, 128]).variable(true, 'var1');
+                    const gradient = tf.tensor2d(g, [128, 128]);
+
+                    const beta1 = 0.9;
+                    const beta2 = 0.99;
+                    const learningRate = 0.001;
+                    const epsilon = 1e-8;
+
+                    const optimiser = new AdamOptimizer(learningRate, beta1, beta2, epsilon);
+
+                    for (let i = 0; i < 5; ++i) {
+                        optimiser.applyGradients({ var1: gradient });
+                    }
+                    const customArr = await value.array();
+                    value.dispose();
+                    gradient.dispose();
+                    optimiser.dispose();
+                    return customArr;
+                } catch (e) {
+                    console.error(e);
+                    return null;
+                }
+            }
+
+            async function runTest() {
+                const v = Array.from({ length: 128 * 128 }, () => Math.random() * 2 - 1);
+                const g = Array.from({ length: 128 * 128 }, () => Math.random() * 0.1);
+                const customArr = await execute('webgl', v, g);
+                const manualArr = await execute('cpu', v, g);
+                const webgpuArr = await execute('webgpu', v, g);
+
+                // Compare arrays
+                const match1 = arraysClose(manualArr, customArr, 1e-6);
+                const match2 = arraysClose(webgpuArr, manualArr, 1e-6);
+                const match = match1 && match2;
+                console.log({ match, manualArr, webgpuArr, customArr, match1, match2 });
+                if (!match) {
+                    console.log('DIFF', mapDiff(manualArr, match1 ? webgpuArr : customArr, 1e-6));
+                }
+                document.body.innerText = match ? 'PASS' : 'FAIL';
+                window.testResult = { match, manualArr, webgpuArr, customArr };
+            }
+            runTest();
+        </script>
+    </body>
+</html>

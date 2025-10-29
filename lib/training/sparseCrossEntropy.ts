@@ -16,6 +16,8 @@ export function sparseSoftmaxCrossEntropy(logits: tf.Tensor, labels: tf.Tensor):
         const logits2d = logits.shape.length > 2 ? logits.reshape([batchSize, numClasses]) : logits;
         const labels1d = labels.shape.length > 1 ? labels.reshape([batchSize]).cast('int32') : labels.cast('int32');
 
+        // TODO: Fuse max, sub, logSumExp and gatherSub
+
         // Subtract max for numerical stability
         const maxLogits = tf.max(logits2d, -1, true);
         const stableLogits = tf.sub(logits2d, maxLogits);
@@ -27,10 +29,7 @@ export function sparseSoftmaxCrossEntropy(logits: tf.Tensor, labels: tf.Tensor):
     });
 }
 
-/**
- * Custom gradient implementation for sparse cross-entropy
- * This ensures proper backpropagation
- */
+// TODO: Create custom operator.
 export function createSoftmaxCrossEntropyWithGrad() {
     const sparseSoftmaxCrossEntropyGrad = tf.customGrad(
         // @ts-expect-error Invalid params
@@ -51,6 +50,8 @@ export function createSoftmaxCrossEntropyWithGrad() {
                 return tf.tidy(() => {
                     const logitsSaved = saved[0];
                     const labelsSaved = saved[1];
+
+                    //TODO: Fuse softmax and scatterSub
                     const softmaxProbs = tf.softmax(logitsSaved);
 
                     const gradLogitsScaled = scatterSub(softmaxProbs, labelsSaved, dy);

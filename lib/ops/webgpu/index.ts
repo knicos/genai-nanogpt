@@ -7,3 +7,5 @@ import './scatterSub';
 import './gatherSub';
 import './qkv';
 import './gelu';
+import './adamMoments';
+import './adamAdjust';

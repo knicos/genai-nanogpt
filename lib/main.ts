@@ -29,6 +29,8 @@ import './ops/matMulGelu';
 import './ops/gelu';
 import './ops/normRMS';
 import './ops/log';
+import './ops/adamMoments';
+import './ops/adamAdjust';
 
 export { selectBackend } from './backend';
 export { default as performanceTest } from './utilities/performance';
