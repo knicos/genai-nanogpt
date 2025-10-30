@@ -1,0 +1,58 @@
+<html>
+    <head>
+        <title>TM Language Model</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script
+            type="module"
+            src="/dist/main.js"
+        ></script>
+        <style>
+            body {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            #webcam {
+                margin-bottom: 20px;
+            }
+            #prediction {
+                font-size: 24px;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <script type="module">
+            import { BPETokeniser, loadTextData } from '/dist/main.js';
+
+            const fileInput = document.getElementById('fileInput');
+            const output = document.getElementById('output');
+            fileInput.addEventListener('change', async (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const data = await loadTextData(file);
+                    const tokeniser = new BPETokeniser(4000);
+                    await tokeniser.train(data);
+                    const tokens = await tokeniser.tokenise(data, true);
+
+                    // Verify that all tokens are valid
+                    tokens.forEach((tokenList, index) => {
+                        tokenList.forEach((token) => {
+                            if (token < 0 || token >= tokeniser.vocabSize) {
+                                output.innerText += `Invalid token ${token} in line ${index}\n`;
+                            }
+                        });
+                    });
+
+                    console.log('Done', tokens);
+                }
+            });
+        </script>
+        <input
+            type="file"
+            id="fileInput"
+            accept=".zip,.txt,.parquet,.csv"
+        />
+        <div id="output"></div>
+    </body>
+</html>

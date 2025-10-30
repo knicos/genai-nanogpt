@@ -102,11 +102,11 @@ class RMSGradProgram implements ReduceWebGPUProgram {
                 }
 
                 let invN = 1.0 / f32(Length);
-                let mean_x2   = partials[0].x * invN;
+                let mean_x2   = fma(partials[0].x, invN, 1e-8);
                 let mean_dygx = partials[0].y * invN;
 
-                let invRMS = inverseSqrt(mean_x2 + 1e-8);
-                let scale = (mean_dygx / mean_x2) * invRMS;
+                let invRMS = inverseSqrt(mean_x2);
+                let scale = (mean_dygx / (mean_x2)) * invRMS;
 
                 // write dx and dGamma.
                 for (var k = i32(localId.x); k < Length; k = k + ${workgroupSizeX}) {

@@ -7,7 +7,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        bpe.train(textData);
+        await bpe.train(textData);
 
         const tokens = await bpe.tokenise(textData);
         expect(tokens).toEqual([
@@ -23,7 +23,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        bpe.train(textData);
+        await bpe.train(textData);
 
         const tokens = await bpe.tokenise(textData);
         expect(tokens).toEqual([
@@ -39,7 +39,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        bpe.train(textData);
+        await bpe.train(textData);
 
         const tokens = await bpe.tokenise(['@']);
         expect(tokens).toEqual([['']]);
@@ -50,7 +50,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        bpe.train(textData);
+        await bpe.train(textData);
 
         const tokens = await bpe.tokenise(['@'], true);
         expect(tokens).toEqual([[bpe.unkToken]]);
@@ -61,7 +61,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['    hello', '    is a test', '    hello again'];
 
-        bpe.train(textData);
+        await bpe.train(textData);
 
         const vocab = bpe.getVocab();
         expect(vocab).toContain('   ');
@@ -72,7 +72,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello!!!', 'this is a test...', 'hello again!!!', '\t\t\twow'];
 
-        bpe.train(textData);
+        await bpe.train(textData);
 
         const vocab = bpe.getVocab();
         expect(vocab).toContain('!!!');
@@ -85,7 +85,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        bpe.train(textData);
+        await bpe.train(textData);
 
         const tokens = await bpe.tokenise(textData, true);
         const eosTokens = tokens.map((t) => [...t, bpe.eosToken]);
