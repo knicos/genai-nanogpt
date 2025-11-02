@@ -2,6 +2,7 @@ import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import { registerKernel, KernelConfig, TensorInfo, NamedTensorInfoMap } from '@tensorflow/tfjs-core';
+import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class SoftmaxSubOneHotProgram implements WebGPUProgram {
     variableNames = ['labels', 'softmaxProbs', 'dy'];
@@ -23,9 +24,9 @@ class SoftmaxSubOneHotProgram implements WebGPUProgram {
             ${main('index')} {
                 if (index < uniforms.size) {
                     let coords = getCoordsFromIndex(index); // [batch, depth]
-                    let idx = i32(getLabels(coords[0]));
-                    let prob = getSoftmaxProbsByOutputIndex(index);
-                    let dy = getDy(coords[0]);
+                    let idx = i32(labels[coords[0]]);
+                    let prob = softmaxProbs[index];
+                    let dy = dy[coords[0]];
                     setOutputAtIndex(index, select(prob, prob - 1.0, idx == coords[1]) * dy);
                 }
             }
@@ -40,6 +41,10 @@ function efficientScatterSub(args: { inputs: NamedTensorInfoMap; backend: unknow
 
     const batchSize = labels.shape[0];
     const depth = logits.shape[1];
+
+    assertShapesMatch(dy.shape, [batchSize], 'Error in EfficientScatterSub dy: ');
+    assertShapesMatch(logits.shape, [batchSize, depth], 'Error in EfficientScatterSub logits: ');
+    assertShapesMatch(labels.shape, [batchSize], 'Error in EfficientScatterSub labels: ');
 
     const program = new SoftmaxSubOneHotProgram(batchSize, depth);
     return backend.runWebGPUProgram(program, [labels, logits, dy], 'float32');

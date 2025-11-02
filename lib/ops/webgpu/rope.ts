@@ -10,6 +10,7 @@ import {
     NamedAttrMap,
     Tensor,
 } from '@tensorflow/tfjs-core';
+import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class RopeProgram implements WebGPUProgram {
     variableNames = ['x', 'sin', 'cos'];
@@ -43,27 +44,31 @@ class RopeProgram implements WebGPUProgram {
 
                 var outVal = 0.0;
 
-                if (d < rotaryDim) {
-                    let pairIdx = d / 2;
-                    let cos = getCos(t + uniforms.pastLen, pairIdx, 0);
-                    let sin = getSin(t + uniforms.pastLen, pairIdx, 0);
+                let xIdx = b * uniforms.outShapeStrides[0] +
+                    h * uniforms.outShapeStrides[1] +
+                    t * uniforms.outShapeStrides[2] +
+                    d;
 
-                    let ownX = getX(b, h, t, d) * cos;
+                if (d < rotaryDim) {
+                    let idx = (t + uniforms.pastLen) * uniforms.cosShape[1] + d / 2;
+                    let cos = cos[idx];
+                    let sin = sin[idx];
+
+                    let ownX = x[xIdx] * cos;
+                    var evenOdd = 0.0;
 
                     if (d % 2 == 0) {
                         // even index
-                        let even = ownX;
-                        let odd = getX(b, h, t, d + 1);
-                        outVal = even - odd * sin;
+                        evenOdd = -x[xIdx + 1];
                     } else {
                         // odd index
-                        let even = getX(b, h, t, d - 1);
-                        let odd = ownX;
-                        outVal = even * sin + odd;
+                        evenOdd = x[xIdx - 1];
                     }
+
+                    outVal = fma(evenOdd, sin, ownX);
                 } else {
                     // pass through for non-rotary dims
-                    outVal = getX(b, h, t, d);
+                    outVal = x[xIdx];
                 }
 
                 setOutputAtIndex(index, outVal);
@@ -83,6 +88,19 @@ function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: N
     const heads = x.shape[1]!;
     const seqLength = x.shape[2]!;
     const C = x.shape[3]!;
+
+    assertShapesMatch(sin.shape, cos.shape, 'Error in Rope: ');
+    if (sin.shape[0] < seqLength + pastLen) {
+        throw new Error(
+            `Sin tensor shape ${sin.shape} is not compatible with seqLength ${seqLength} and pastLen ${pastLen}.`
+        );
+    }
+    if (sin.shape[1]! * 2 < C) {
+        throw new Error(`Sin tensor shape ${sin.shape} is not compatible with feature dimension ${C}.`);
+    }
+    if (sin.shape.length !== 3) {
+        throw new Error(`Sin tensor must be 3-dimensional, but got shape ${sin.shape}.`);
+    }
 
     const program = new RopeProgram(batchSize, heads, seqLength, C);
     const uniformData = [{ type: 'int32', data: [pastLen] }];

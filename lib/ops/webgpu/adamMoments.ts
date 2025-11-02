@@ -2,6 +2,7 @@ import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import { registerKernel, KernelConfig, TensorInfo, NamedTensorInfoMap, NamedAttrMap } from '@tensorflow/tfjs-core';
+import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class AdamMomentsProgram implements WebGPUProgram {
     variableNames = ['moments', 'gradient'];
@@ -31,7 +32,9 @@ class AdamMomentsProgram implements WebGPUProgram {
         ${main('index')} {
             if (index < uniforms.size) {
                 let m: vec2<f32> = moments[index];
-                let g: f32 = gradient[index];
+
+                // Add gradient clipping here
+                let g: f32 = clamp(gradient[index], -1.0, 1.0);
 
                 let newM1 = fma(m.x, uniforms.beta1, g * (1.0 - uniforms.beta1));
                 let newM2 = fma(m.y, uniforms.beta2, g * g * (1.0 - uniforms.beta2));
@@ -48,6 +51,14 @@ function adamMomentsGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
     const { beta1, beta2 } = args.attrs as { beta1: number; beta2: number };
 
     const backend = args.backend as WebGPUBackend;
+
+    assertShapesMatch(moments.shape, [...gradient.shape, 2], 'Error in AdamMoments: ');
+    if (beta1 < 0 || beta1 >= 1) {
+        throw new Error(`Invalid beta1 value: ${beta1}. Must be in the range [0, 1).`);
+    }
+    if (beta2 < 0 || beta2 >= 1) {
+        throw new Error(`Invalid beta2 value: ${beta2}. Must be in the range [0, 1).`);
+    }
 
     const program = new AdamMomentsProgram(moments.shape);
     const uniformData = [

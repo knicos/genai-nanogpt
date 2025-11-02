@@ -2,6 +2,7 @@ import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import { registerKernel, KernelConfig, TensorInfo, NamedTensorInfoMap } from '@tensorflow/tfjs-core';
+import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class GatherSubProgram implements WebGPUProgram {
     variableNames = ['labels', 'logits', 'values'];
@@ -22,25 +23,10 @@ class GatherSubProgram implements WebGPUProgram {
         return `
         ${main('index')} {
             if (index < uniforms.size) {
-                let coords = getCoordsFromIndex(index);
-                let idx = i32(getLabelsByOutputIndex(index));
-                let val = getValuesByOutputIndex(index);
-
-                if (isnan(val)) {
-                    setOutputAtIndex(index, 0.0);
-                    return;
-                }
-
-                if (idx < uniforms.logitsShape[1] && idx >= 0) {
-                    let logit = getLogits(coords, idx);
-                    if (isnan(logit)) {
-                        setOutputAtIndex(index, 0.0);
-                        return;
-                    }
-                    setOutputAtIndex(index, val - logit);
-                } else {
-                    setOutputAtIndex(index, 0.0);
-                }
+                let idx = i32(labels[index]);
+                let val = values[index];
+                let logit = logits[index * uniforms.logitsShape[1] + idx];
+                setOutputAtIndex(index, val - logit);
             }
         }
     `;
@@ -53,6 +39,9 @@ function scatterSubGPU(args: { inputs: NamedTensorInfoMap; backend: unknown }): 
     const backend = args.backend as WebGPUBackend;
 
     const batchSize = labels.shape[0];
+
+    assertShapesMatch(values.shape, [batchSize], 'Error in EfficientGatherSub: ');
+    assertShapesMatch(labels.shape, [batchSize], 'Error in EfficientGatherSub: ');
 
     const program = new GatherSubProgram(batchSize);
     return backend.runWebGPUProgram(program, [labels, logits, values], 'float32');

@@ -2,6 +2,7 @@ import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import { registerKernel, KernelConfig, TensorInfo, NamedTensorInfoMap, NamedAttrMap } from '@tensorflow/tfjs-core';
+import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class AdamAdjustProgram implements WebGPUProgram {
     variableNames = ['moments', 'value'];
@@ -31,7 +32,7 @@ class AdamAdjustProgram implements WebGPUProgram {
                 let m2Hat = moments.y * uniforms.invbeta2;
 
                 let invSqrt = inverseSqrt(max(m2Hat, 1e-30));
-                let invDenom = invSqrt / (1.0 + uniforms.epsilon * invSqrt);
+                let invDenom = invSqrt / fma(uniforms.epsilon, invSqrt, 1.0);
                 let adjustedValue = fma(-uniforms.learningRate * m1Hat, invDenom, value);
 
                 setOutputAtIndex(index, adjustedValue);
@@ -51,6 +52,8 @@ function adamAdjustGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; att
     };
 
     const backend = args.backend as WebGPUBackend;
+
+    assertShapesMatch(moments.shape, [...value.shape, 2], 'Error in AdamAdjust: ');
 
     const program = new AdamAdjustProgram(value.shape);
     const uniformData = [

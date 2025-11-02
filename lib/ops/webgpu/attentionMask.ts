@@ -9,6 +9,7 @@ import {
 import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
+import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class AttentionMaskProgram implements WebGPUProgram {
     variableNames = ['q', 'k'];
@@ -56,13 +57,14 @@ class AttentionMaskProgram implements WebGPUProgram {
                         setOutputAtIndex(index, uniforms.inf);
                         return;
                     }
+
+                    let q0 = getIndexFromCoords4D(vec4<i32>(b, h, t1, 0), uniforms.qShape);
+                    let k0 = getIndexFromCoords4D(vec4<i32>(b, h, t2, 0), uniforms.kShape);
                     
                     var sum: f32 = 0.0;
                     for (var i: i32 = 0; i < ${this.hs}; i = i + 4) {
-                        let q0 = getIndexFromCoords4D(vec4<i32>(b, h, t1, i), uniforms.qShape);
-                        let qv = vec4<f32>(q[q0], q[q0 + 1], q[q0 + 2], q[q0 + 3]);
-                        let k0 = getIndexFromCoords4D(vec4<i32>(b, h, t2, i), uniforms.kShape);
-                        let kv = vec4<f32>(k[k0], k[k0 + 1], k[k0 + 2], k[k0 + 3]);
+                        let qv = vec4<f32>(q[q0 + i], q[q0 + i + 1], q[q0 + i + 2], q[q0 + i + 3]);
+                        let kv = vec4<f32>(k[k0 + i], k[k0 + i + 1], k[k0 + i + 2], k[k0 + i + 3]);
                         sum = sum + dot(qv, kv);
                     }
                     let scaled = sum * uniforms.divisor;
@@ -85,6 +87,14 @@ function attentionMaskGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; 
     const T2 = k.shape[2]!; // Sequence length
     const nh = q.shape[1]!; // Number of heads
     const hs = q.shape[3]!; // Head size
+
+    assertShapesMatch(k.shape, [batchSize, nh, T2, hs], 'Error in AttentionMask: ');
+    if (divisor === 0) {
+        throw new Error('Divisor must be non-zero in AttentionMask');
+    }
+    if (pastLen < 0) {
+        throw new Error('pastLen must be non-negative in AttentionMask');
+    }
 
     const program = new AttentionMaskProgram(batchSize, nh, T1, T2, hs);
     const uniformData = [

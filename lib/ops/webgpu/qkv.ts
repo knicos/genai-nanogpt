@@ -9,6 +9,7 @@ import {
     Tensor,
     TensorInfo,
 } from '@tensorflow/tfjs-core';
+import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class QKVProgram implements WebGPUProgram {
     variableNames = ['x', 'kernel'];
@@ -43,13 +44,14 @@ class QKVProgram implements WebGPUProgram {
                 let d = coords[3];
 
                 // Compute output channel index in fused kernel
-                let out_offset = uniforms.mode * ${nh} * ${head_dim} + h * ${head_dim} + d;
+                let out_offset = uniforms.mode * ${C} + h * ${head_dim} + d;
 
                 var sum = 0.0;
+                let baseX = b * uniforms.xShape[1] * uniforms.xShape[2] + t * uniforms.xShape[2];
                 for (var c = 0; c < ${C}; c += 1) {
-                    let xval = getX(b, t, c); // fetch from x
-                    let kval = getKernel(c, out_offset); // fetch from kernel
-                    sum += xval * kval;
+                    let xval = x[baseX + c];
+                    let kval = getKernel(c, out_offset);
+                    sum = fma(xval, kval, sum);
                 }
 
                 setOutputAtIndex(index, sum);
@@ -68,6 +70,11 @@ function qkvGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: Na
     const batchSize = x.shape[0];
     const seqLength = x.shape[1]!;
     const C = x.shape[2]!;
+
+    assertShapesMatch(kernel.shape, [C, 3 * C], 'Error in QKV: ');
+    if (C % heads !== 0) {
+        throw new Error(`Channel dimension ${C} must be divisible by number of heads ${heads} in QKV.`);
+    }
 
     const program = new QKVProgram(batchSize, heads, seqLength, C);
     return [

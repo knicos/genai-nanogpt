@@ -13,6 +13,7 @@ import {
 } from '@tensorflow/tfjs-core';
 
 import { createReduceInfo, createReductionShader, reduce, ReduceWebGPUProgram } from './utils/reductions';
+import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class RMSProgram implements ReduceWebGPUProgram {
     outputShape: number[];
@@ -62,6 +63,19 @@ function rmsNormGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?
     const inputs = [x, gamma];
     const reduceInfo = createReduceInfo(inputs, -1);
     const program = new RMSProgram(reduceInfo);
+
+    assertShapesMatch(gamma.shape, [x.shape[x.shape.length - 1]], 'Error in RMSNorm: ');
+    if (x.shape.length !== 3) {
+        throw new Error(`rmsNormGPU: input rank ${x.shape.length} not supported, only rank 3 is supported`);
+    }
+    if (reduceInfo.inSize !== x.shape[2]) {
+        throw new Error(`rmsNormGPU: reduction size ${reduceInfo.inSize} does not match expected size ${x.shape[2]}`);
+    }
+    if (reduceInfo.batchSize !== x.shape[0] * x.shape[1]) {
+        throw new Error(
+            `rmsNormGPU: batch size ${reduceInfo.batchSize} does not match expected size ${x.shape[0] * x.shape[1]}`
+        );
+    }
 
     return reduce(program, inputs, backend);
 }

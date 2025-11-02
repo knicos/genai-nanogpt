@@ -45,6 +45,21 @@ describe('BPE Tokeniser Tests', () => {
         expect(tokens).toEqual([['']]);
     });
 
+    it('handles corrupt data', async ({ expect }) => {
+        const bpe = new BPETokeniser(100);
+
+        const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
+
+        await bpe.train(textData);
+
+        // Generate random noise string
+        const noise = Array.from({ length: 100 }, () => String.fromCharCode(Math.floor(Math.random() * 256))).join('');
+
+        const tokens = await bpe.tokenise([noise]);
+        expect(tokens[0]).toHaveLength(100);
+        expect(tokens[0][0]).toEqual('');
+    });
+
     it('handles an unknown token when numeric', async ({ expect }) => {
         const bpe = new BPETokeniser(100);
 

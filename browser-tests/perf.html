@@ -17,6 +17,7 @@
     <body>
         <select id="perf-op">
             <option value="rope">RoPE</option>
+            <option value="qkv">QKV</option>
             <option value="attentionMask">AttentionMask</option>
             <option value="normRMS">RMSNorm</option>
             <option value="normRMSGrad">RMSNormGrad</option>
@@ -37,9 +38,9 @@
             async function rope(backend) {
                 await tf.setBackend(backend);
 
-                const x = tf.randomNormal([32, 32, 128, 32]); // Adjust dimensions as needed
-                const sin = tf.randomNormal([256, 16, 1]);
-                const cos = tf.randomNormal([256, 16, 1]);
+                const x = tf.randomNormal([32, 32, 128, 64]); // Adjust dimensions as needed
+                const sin = tf.randomNormal([256, 32, 1]);
+                const cos = tf.randomNormal([256, 32, 1]);
 
                 const time = await performanceTest(() => {
                     return tf.engine().runKernel('Rope', { x, sin, cos }, { pastLen: 0 });
@@ -68,6 +69,21 @@
                 // Use valueAndGrads for both value and gradients
                 const time = await performanceTest(() => {
                     return tf.engine().runKernel('RMSNorm', { x, gamma });
+                }, 1000);
+                return time;
+            }
+
+            async function qkv(backend) {
+                await tf.setBackend(backend);
+                const kernel = tf.randomNormal([192, 192 * 3]);
+                const x = tf.randomNormal([16, 128, 192]);
+
+                // Use valueAndGrads for both value and gradients
+                const time = await performanceTest(() => {
+                    const r = tf.engine().runKernel('QKV', { x, kernel }, { heads: 3 });
+                    r[1].dispose();
+                    r[2].dispose();
+                    return r[0];
                 }, 1000);
                 return time;
             }
@@ -319,6 +335,7 @@
                 forward,
                 gradCalc,
                 training,
+                qkv,
             };
 
             async function runTest() {

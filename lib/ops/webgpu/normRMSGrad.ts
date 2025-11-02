@@ -14,6 +14,7 @@ import { createReduceInfo, ReduceWebGPUProgram } from './utils/reductions';
 import { flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
+import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class RMSGradProgram implements ReduceWebGPUProgram {
     outputShape: number[];
@@ -142,6 +143,9 @@ function rmsNormGradGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
 
     const ROWS = 4;
 
+    assertShapesMatch(x.shape, dy.shape, 'Error in RMSNormGrad dy: ');
+    assertShapesMatch(gamma.shape, [x.shape[x.shape.length - 1]], 'Error in RMSNormGrad gamma: ');
+
     const backend = args.backend as WebGPUBackend;
     const reduceInfo = createReduceInfo([x, gamma, dy], -1);
     const program = new RMSGradProgram(reduceInfo, ROWS);
@@ -149,6 +153,10 @@ function rmsNormGradGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
         { type: 'int32', data: [program.inputShape[1]] }, // Reduce size
         { type: 'int32', data: [program.inputShape[0]] }, // Batch size
     ];
+
+    if (reduceInfo.inSize > 1024) {
+        throw new Error(`rmsNormGradGPU: inSize ${reduceInfo.inSize} exceeds max of 1024`);
+    }
 
     const reduced = engine().makeTensorFromTensorInfo(
         backend.runWebGPUProgram(program, [x, gamma, dy], 'float32', uniformData)

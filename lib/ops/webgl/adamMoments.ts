@@ -29,7 +29,9 @@ class AdamMomentsProgram implements GPGPUProgram {
         void main() {
             float m = getMomentsAtOutCoords();
             ${coordsType} coords = getOutputCoords();
-            float g = getGradient(${coordArgs});
+
+            // Add gradient clipping here
+            float g = clamp(getGradient(${coordArgs}), -1.0, 1.0);
             int which = ${lastCoordExpr};
 
             float beta = which == 0 ? beta1 : beta2;

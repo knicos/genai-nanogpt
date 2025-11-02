@@ -10,6 +10,14 @@ export async function flattenTokens(textData: string[], tokenizer: ITokeniser): 
     // Flatten and add EOS token
     const hasEOS = tokenizer.eosToken >= 0;
     const flatTokens = tokenisedTexts.map((t) => (hasEOS ? [...t, tokenizer.eosToken] : t)).flat();
+
+    // Assert all indices are valid
+    for (const token of flatTokens) {
+        if (token < 0 || token >= tokenizer.vocabSize) {
+            throw new Error(`Invalid token index ${token} found in tokenised data`);
+        }
+    }
+
     return flatTokens;
 }
 

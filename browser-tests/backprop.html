@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>EfficientScatterSub WebGL Test</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
+        ></script>
+    </head>
+    <body>
+        <script type="module">
+            import { TeachableLLM } from '../dist/main.js';
+            function arraysClose(a, b) {
+                let maxError = 0.0;
+                if (Array.isArray(a) && Array.isArray(b)) {
+                    if (a.length !== b.length) return Number.POSITIVE_INFINITY;
+                    for (let i = 0; i < a.length; ++i) {
+                        maxError = Math.max(maxError, arraysClose(a[i], b[i]));
+                    }
+                    return maxError;
+                } else if (typeof a === 'number' && typeof b === 'number') {
+                    const aClose = Math.abs(a - b);
+                    maxError = Math.max(maxError, aClose);
+                    return maxError;
+                } else {
+                    return Number.POSITIVE_INFINITY;
+                }
+            }
+
+            async function runVersion(backend, data, data2) {
+                await tf.setBackend(backend);
+                const x = tf.tensor2d(data, [16, 128], 'int32');
+                const y = tf.tensor2d(data2, [16, 128], 'int32');
+
+                const config = {
+                    vocabSize: 200,
+                    blockSize: 128, // Maximum sequence length
+                    nLayer: 2, // Number of transformer layers
+                    nHead: 4, // Number of attention heads
+                    nEmbed: 128, // Embedding dimension
+                    dropout: 0.0, // Dropout probability
+                    biasInLinear: false,
+                    biasInLayerNorm: false,
+                    mlpFactor: 4,
+                    useRope: true, // Use Rotary Position Embeddings
+                };
+                const model = TeachableLLM.create('char', config);
+
+                const f = () => {
+                    const loss = model.model.forward({ training: true }, x, y)[1];
+                    return loss.sub(loss);
+                };
+                const { value: lossValue, grads } = tf.variableGrads(f);
+                model.dispose();
+                return Array.from(Object.values(grads))[0].array();
+            }
+
+            async function runTest1() {
+                // Create logits and labels on CPU
+                const data = Array.from({ length: 128 * 16 }, () => Math.floor(Math.random() * 200));
+                const data2 = Array.from({ length: 128 * 16 }, () => Math.floor(Math.random() * 200));
+
+                const cpu = await runVersion('cpu', data, data2);
+                const gpu = await runVersion('webgl', data, data2);
+                const webgpu = await runVersion('webgpu', data, data2);
+
+                console.log('CPU:', cpu);
+                console.log('GPU:', gpu);
+                console.log('WebGPU:', webgpu);
+
+                const dxMatch = arraysClose(cpu, gpu);
+                const webgpuDXMatch = arraysClose(cpu, webgpu);
+
+                const epsilon = 1e-5;
+
+                const allMatch = dxMatch < epsilon && webgpuDXMatch < epsilon;
+                return allMatch;
+            }
+
+            async function runTests() {
+                const test1 = await runTest1();
+                document.body.innerText = test1 ? 'PASS' : `FAIL`;
+            }
+
+            runTests();
+        </script>
+    </body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>EfficientScatterSub WebGL Test</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
+        ></script>
+    </head>
+    <body>
+        <script type="module">
+            import { sparseSoftmaxCrossEntropy } from '../dist/training/sparseCrossEntropy.js';
+            function arraysClose(a, b) {
+                let maxError = 0.0;
+                if (Array.isArray(a) && Array.isArray(b)) {
+                    if (a.length !== b.length) return Number.POSITIVE_INFINITY;
+                    for (let i = 0; i < a.length; ++i) {
+                        maxError = Math.max(maxError, arraysClose(a[i], b[i]));
+                    }
+                    return maxError;
+                } else if (typeof a === 'number' && typeof b === 'number') {
+                    const aClose = Math.abs(a - b);
+                    maxError = Math.max(maxError, aClose);
+                    return maxError;
+                } else {
+                    return Number.POSITIVE_INFINITY;
+                }
+            }
+
+            async function runVersion(backend, logitsA, labelsA) {
+                await tf.setBackend(backend);
+                const logitsT = tf.tensor(logitsA, [16, 128, 2000], 'float32');
+                const labelsT = tf.tensor(labelsA, [16, 128], 'float32');
+                const scx = sparseSoftmaxCrossEntropy(logitsT, labelsT);
+                return scx.array();
+            }
+
+            async function runTest1() {
+                // Create logits and labels on CPU
+                const logits = Array.from({ length: 16 * 128 * 2000 }, () => Math.random());
+                const labels = Array.from({ length: 16 * 128 }, () => Math.floor(Math.random() * 2000));
+
+                const cpu = await runVersion('cpu', logits, labels);
+                const gpu = await runVersion('webgl', logits, labels);
+                const webgpu = await runVersion('webgpu', logits, labels);
+
+                const dxMatch = arraysClose(cpu, gpu);
+                const webgpuDXMatch = arraysClose(cpu, webgpu);
+
+                const epsilon = 1e-5;
+
+                const allMatch = dxMatch < epsilon && webgpuDXMatch < epsilon;
+                return allMatch;
+            }
+
+            async function runTest2() {
+                // Create logits and labels on CPU
+                const logits = Array.from({ length: 16 * 128 * 2000 }, () => 0);
+                const labels = Array.from({ length: 16 * 128 }, () => Math.floor(Math.random() * 2000));
+
+                const cpu = await runVersion('cpu', logits, labels);
+                const gpu = await runVersion('webgl', logits, labels);
+                const webgpu = await runVersion('webgpu', logits, labels);
+
+                console.log('CPU:', cpu);
+                console.log('GPU:', gpu);
+                console.log('WebGPU:', webgpu);
+
+                const dxMatch = arraysClose(cpu, gpu);
+                const webgpuDXMatch = arraysClose(cpu, webgpu);
+
+                const epsilon = 1e-6;
+
+                const allMatch = dxMatch < epsilon && webgpuDXMatch < epsilon;
+                return allMatch;
+            }
+
+            async function runTest3() {
+                // Create logits and labels on CPU
+                const logits = Array.from({ length: 16 * 128 * 2000 }, () => -Math.random() * 10);
+                logits[0] = 0; // Make one logit finite
+                const labels = Array.from({ length: 16 * 128 }, () => Math.floor(Math.random() * 2000));
+
+                const cpu = await runVersion('cpu', logits, labels);
+                const gpu = await runVersion('webgl', logits, labels);
+                const webgpu = await runVersion('webgpu', logits, labels);
+
+                console.log('CPU:', cpu);
+                console.log('GPU:', gpu);
+                console.log('WebGPU:', webgpu);
+
+                const dxMatch = arraysClose(cpu, gpu);
+                const webgpuDXMatch = arraysClose(cpu, webgpu);
+
+                const epsilon = 1e-6;
+
+                const allMatch = dxMatch < epsilon && webgpuDXMatch < epsilon;
+                return allMatch;
+            }
+
+            async function runTests() {
+                const test1 = await runTest1();
+                const test2 = await runTest2();
+                const test3 = await runTest3();
+                document.body.innerText = test1 && test2 && test3 ? 'PASS' : `FAIL`;
+            }
+
+            runTests();
+        </script>
+    </body>
+</html>

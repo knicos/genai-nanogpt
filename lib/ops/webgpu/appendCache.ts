@@ -9,6 +9,7 @@ import {
     NamedAttrMap,
     Tensor,
 } from '@tensorflow/tfjs-core';
+import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class AppendCacheProgram implements WebGPUProgram {
     variableNames = ['cache', 'item'];
@@ -69,6 +70,12 @@ function appendCacheGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
     const batchSize = cache.shape[0];
     const T = cache.shape[2]!; // Sequence length
     const nh = cache.shape[1]!; // Number of heads
+
+    assertShapesMatch(item.shape, [batchSize, nh, 1, item.shape[3]!], 'Error in AppendCache: ');
+
+    if (pastLen < 0 || pastLen > maxSize) {
+        throw new Error(`Invalid pastLen value: ${pastLen}. Must be in the range [0, ${maxSize}].`);
+    }
 
     const program = new AppendCacheProgram(batchSize, nh, T, item.shape[3]!, maxSize);
     const uniformData = [{ type: 'int32', data: [pastLen] }];
