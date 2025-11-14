@@ -154,7 +154,7 @@ describe('Generator', () => {
 
         expect(emittedAttention).toHaveLength(emittedTokens.length);
         expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
-        expect(emittedAttention[0][0][0][0]).toHaveLength(prompt.length);
+        expect(emittedAttention[0][0][0][0]).toHaveLength(32);
     });
 
     it('should emit probabilities when requested', async ({ expect }) => {

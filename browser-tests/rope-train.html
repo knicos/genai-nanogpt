@@ -57,7 +57,7 @@
                 console.log('Step', log, progress);
             });
 
-            await trainer.train(textData, {
+            const options = {
                 //prompt: 'What a great movie. It',
                 maxSteps: 100,
                 logInterval: 10,
@@ -66,7 +66,11 @@
                 batchSize: 8,
                 learningRate: 0.001,
                 advancedMetrics: false,
-            });
+            };
+            await trainer.prepare(textData, options);
+            await trainer.train(options);
+
+            await trainer.step(options);
 
             console.log('Training complete');
             document.body.innerText = 'PASS';

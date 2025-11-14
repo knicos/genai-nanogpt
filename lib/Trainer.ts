@@ -3,6 +3,8 @@ import type { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import FullTrainer from './training/FullTrainer';
 import { TrainingProgress } from './training/Trainer';
+import { Dataset } from '@tensorflow/tfjs-data';
+import { Tensor } from '@tensorflow/tfjs-core';
 
 export interface ITrainerOptions {
     batchSize?: number; // Batch size for training
@@ -18,6 +20,9 @@ export interface ITrainerOptions {
 export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     private trainer: FullTrainer;
     private hasTrained: boolean = false;
+    private trainDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
+    private validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
+    private totalSamples: number = 0;
 
     constructor(model: NanoGPT, tokeniser: ITokeniser) {
         super();
@@ -33,7 +38,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         this.trainer.reset();
     }
 
-    async train(text: string[], options?: ITrainerOptions): Promise<void> {
+    async prepare(text: string[], options?: ITrainerOptions): Promise<void> {
         const { trainDataset, validationDataset } = await this.trainer.createTrainValidationSplit(
             text,
             options?.batchSize || 32,
@@ -41,6 +46,16 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         );
 
         const totalSamples = text.reduce((sum, t) => sum + t.length, 0) * (1 - (options?.validationSplit || 0));
+
+        this.trainDataset = trainDataset;
+        this.validationDataset = validationDataset;
+        this.totalSamples = totalSamples;
+    }
+
+    async train(options?: ITrainerOptions): Promise<void> {
+        if (!this.trainDataset || !this.validationDataset) {
+            throw new Error('Datasets not prepared');
+        }
 
         // Only set the learning rate if we haven't trained before
         // This allows for resuming training without resetting the learning rate
@@ -52,7 +67,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         this.emit('start');
 
         await this.trainer.trainOnDataset(
-            trainDataset,
+            this.trainDataset,
             {
                 prompt: options?.prompt,
                 logInterval: options?.logInterval || 10,
@@ -65,17 +80,58 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                         // These listeners can be async, so we await them
                         await listener(log, {
                             ...progress,
-                            progress: progress.totalSamples / totalSamples,
+                            progress: progress.totalSamples / this.totalSamples,
                             remaining: Math.max(
                                 0,
-                                ((totalSamples - progress.totalSamples) / progress.totalSamples) * progress.duration
+                                ((this.totalSamples - progress.totalSamples) / progress.totalSamples) *
+                                    progress.duration
                             ),
                         });
                     }
                 },
             },
-            validationDataset
+            this.validationDataset
         );
+        this.emit('stop');
+    }
+
+    async step(options?: ITrainerOptions): Promise<void> {
+        if (!this.trainDataset || !this.validationDataset) {
+            throw new Error('Datasets not prepared');
+        }
+        // Only set the learning rate if we haven't trained before
+        // This allows for resuming training without resetting the learning rate
+        if (!this.hasTrained) {
+            this.trainer.setLearningRate(options?.learningRate || 1e-3);
+        }
+        this.hasTrained = true;
+
+        this.emit('start');
+
+        const { log, progress } = await this.trainer.stepDataset(
+            this.trainDataset,
+            {
+                prompt: options?.prompt,
+                logInterval: options?.logInterval || 10,
+                desiredLoss: options?.desiredLoss || 0.01,
+                maxSteps: options?.maxSteps || 1000,
+                advancedMetrics: options?.advancedMetrics || false,
+            },
+            this.validationDataset
+        );
+
+        const listeners = this.listeners('log');
+        for (const listener of listeners) {
+            // These listeners can be async, so we await them
+            await listener(log, {
+                ...progress,
+                progress: progress.totalSamples / this.totalSamples,
+                remaining: Math.max(
+                    0,
+                    ((this.totalSamples - progress.totalSamples) / progress.totalSamples) * progress.duration
+                ),
+            });
+        }
         this.emit('stop');
     }
 }

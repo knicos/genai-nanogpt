@@ -30,29 +30,59 @@ export default class FullTrainer extends GPTTrainer {
         super(model, tokenizer, learningRate);
     }
 
-    // Train for multiple epochs using Dataset API - FIXED memory leaks
-    async trainOnDataset(
-        dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
-        options: Partial<TrainingOptions>,
-        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
-    ): Promise<{ losses: number[]; validationLosses: number[] }> {
-        const { logInterval, onStep, prompt, maxSteps } = {
-            ...DEFAULT_OPTIONS,
-            ...options,
-        };
-
-        const startTime = Date.now();
-
+    private createEmptyState(): TrainingState {
         const state: TrainingState = {
             step: 0,
             lastLoss: 1e6,
             totalSteps: 0,
             losses: [],
             validationLosses: [],
-            logStartTime: startTime,
+            logStartTime: 0,
             trainingDuration: 0,
             ...(this.lastState || {}),
         };
+        return state;
+    }
+
+    private createLogEntry(
+        state: TrainingState,
+        startTime: number,
+        batchSize: number,
+        advanced?: boolean
+    ): TrainingLogEntry {
+        const entry: TrainingLogEntry = {
+            loss: state.lastLoss,
+            step: state.step,
+            time: Date.now() - startTime,
+            batchSize: batchSize,
+            learningRate: advanced ? this.optimizer.lr : undefined,
+        };
+        return entry;
+    }
+
+    private createProgress(state: TrainingState, entry: TrainingLogEntry, advanced?: boolean): TrainingProgress {
+        const progress: TrainingProgress = {
+            duration: state.trainingDuration,
+            totalSamples: state.totalSteps * entry.batchSize,
+            samplesPerSecond: (state.totalSteps * entry.batchSize) / (state.trainingDuration / 1000),
+            memory: advanced ? this.model.getProfiler()?.getPeakMemory() || 0 : undefined,
+        };
+        return progress;
+    }
+
+    async stepDataset(
+        dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
+        options: Partial<TrainingOptions>,
+        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
+    ): Promise<{ log: TrainingLogEntry; progress: TrainingProgress }> {
+        const { logInterval, prompt } = {
+            ...DEFAULT_OPTIONS,
+            ...options,
+        };
+
+        const startTime = Date.now();
+
+        const state = this.createEmptyState();
         this.lastState = state;
 
         await this.dummyPass();
@@ -81,14 +111,95 @@ export default class FullTrainer extends GPTTrainer {
 
                 const lossScalar = this.trainBatch(state, batch);
 
-                const entry: TrainingLogEntry = {
-                    loss: state.lastLoss,
-                    step: state.step,
-                    time: Date.now() - startTime,
-                    batchSize: batch.xs.shape[0],
-                    learningRate: options?.advancedMetrics ? this.optimizer.lr : undefined,
-                    //gradientNorm: options?.advancedMetrics ? await state.gradientNorm : undefined,
-                };
+                const entry = this.createLogEntry(state, startTime, batch.xs.shape[0], options?.advancedMetrics);
+                this.model.log.push(entry);
+
+                if (state.step % logInterval === 0) {
+                    await lossScalar.data();
+                    const logEndTime = Date.now();
+                    state.trainingDuration += logEndTime - state.logStartTime;
+                    // Validation
+                    if (evaluator) {
+                        try {
+                            const valLoss = await evaluator.evaluate(5);
+                            state.validationLosses.push(valLoss);
+                            entry.valLoss = valLoss;
+                        } catch (error) {
+                            console.error('Validation error:', error);
+                        }
+                    }
+
+                    if (prompt) {
+                        const text = await generateText(this.tokenizer, this.model, prompt, 100, {
+                            temperature: 0.8,
+                        });
+                        entry.example = text;
+                    }
+
+                    const progress = this.createProgress(state, entry, options?.advancedMetrics);
+
+                    lossScalar.dispose();
+                    this.stop();
+                    return { log: entry, progress };
+                }
+                lossScalar.dispose();
+            }
+        } catch (error) {
+            console.error('Training error:', error);
+            dispose();
+            throw error;
+        }
+
+        dispose();
+
+        this.running = false;
+
+        throw new Error('No log returned before training stopped.');
+    }
+
+    // Train for multiple epochs using Dataset API - FIXED memory leaks
+    async trainOnDataset(
+        dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
+        options: Partial<TrainingOptions>,
+        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
+    ): Promise<{ losses: number[]; validationLosses: number[] }> {
+        const { logInterval, onStep, prompt, maxSteps } = {
+            ...DEFAULT_OPTIONS,
+            ...options,
+        };
+
+        const startTime = Date.now();
+
+        const state = this.createEmptyState();
+        this.lastState = state;
+
+        await this.dummyPass();
+        this.model.trainable = true;
+
+        if (options?.advancedMetrics) {
+            if (!this.model.getProfiler()) {
+                this.model.config.layerConfig.profiler = new MemoryProfiler();
+            }
+        }
+
+        this.running = true;
+        state.logStartTime = startTime;
+
+        const evaluator = validationDataset ? new Evaluator(this.model, validationDataset) : undefined;
+        const iterator = await dataset.iterator();
+
+        // Training loop with try-catch for better error handling
+        try {
+            while (this.running) {
+                //if (state.lastLoss < desiredLoss) break;
+
+                const result = await iterator.next();
+                if (result.done) break;
+                const batch = result.value;
+
+                const lossScalar = this.trainBatch(state, batch);
+
+                const entry = this.createLogEntry(state, startTime, batch.xs.shape[0], options?.advancedMetrics);
                 this.model.log.push(entry);
 
                 if (state.step % logInterval === 0) {
@@ -113,14 +224,7 @@ export default class FullTrainer extends GPTTrainer {
                             entry.example = text;
                         }
 
-                        const progress: TrainingProgress = {
-                            duration: state.trainingDuration,
-                            totalSamples: state.totalSteps * entry.batchSize,
-                            samplesPerSecond: (state.totalSteps * entry.batchSize) / (state.trainingDuration / 1000),
-                            memory: options.advancedMetrics
-                                ? this.model.getProfiler()?.getPeakMemory() || 0
-                                : undefined,
-                        };
+                        const progress = this.createProgress(state, entry, options?.advancedMetrics);
 
                         await onStep(entry, progress);
                     }

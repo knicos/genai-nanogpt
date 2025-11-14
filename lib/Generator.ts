@@ -30,50 +30,21 @@ export interface IGenerateOptions extends GenerateOptions {
 
 export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     private active = false;
+    private cache: KVCache[] | null = null;
+    private initialPrompt: string | null = null;
+    private outputText = '';
+    private actualTokeniser: ITokeniser;
+    private lastToken = -1;
 
     constructor(private readonly model: NanoGPT, private readonly tokeniser: ITokeniser) {
         super();
+        this.actualTokeniser = tokeniser;
     }
 
     private async tokenisePrompt(tokeniser: ITokeniser, prompt?: string): Promise<Tensor> {
         const tokenisedPrompt = prompt ? await tokeniser.tokenise([prompt], true) : [[tokeniser.eosToken]];
         const inputTensor: Tensor = tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
         return inputTensor;
-    }
-
-    private async generateNoCache(tokeniser: ITokeniser, prompt?: string, options?: IGenerateOptions): Promise<string> {
-        let inputTensor = await this.tokenisePrompt(tokeniser, prompt);
-        let outputText = prompt || '';
-
-        const maxTokens = options?.maxLength ?? 1000;
-
-        // Loop in the model to generate text until eos or max length
-        for (let i = 0; i < maxTokens; i++) {
-            if (!this.active) {
-                break;
-            }
-
-            const {
-                output: generatedToken,
-                attention,
-                probabilities,
-            } = await this.model.generate(inputTensor, undefined, options);
-
-            const oldInput = inputTensor;
-            inputTensor = concat([inputTensor, generatedToken], 1);
-            oldInput.dispose();
-
-            const newText = await this.processResponse(tokeniser, generatedToken, attention, probabilities);
-            generatedToken.dispose();
-
-            if (newText === null) {
-                break;
-            }
-            outputText += newText;
-        }
-
-        inputTensor.dispose();
-        return outputText;
     }
 
     private async processResponse(
@@ -83,6 +54,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         probabilities: Tensor | undefined
     ): Promise<string | null> {
         const newToken = ((await generatedToken.array()) as number[][])[0][0];
+        this.lastToken = newToken;
         if (newToken === this.tokeniser.eosToken) {
             return null;
         }
@@ -104,14 +76,11 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         return newText;
     }
 
-    private async generateCache(tokeniser: ITokeniser, prompt?: string, options?: IGenerateOptions): Promise<string> {
-        let inputTensor = await this.tokenisePrompt(tokeniser, prompt);
-        let outputText = prompt || '';
-
-        const cache: KVCache[] = new Array(this.model.config.gpt.nLayer);
-        for (let i = 0; i < this.model.config.gpt.nLayer; i++) {
-            cache[i] = { k: undefined, v: undefined, length: 0, cumulativeLength: 0 };
-        }
+    private async _generate(options?: IGenerateOptions): Promise<string> {
+        let inputTensor =
+            this.lastToken >= 0 && this.cache
+                ? tensor2d([this.lastToken], [1, 1], 'int32')
+                : await this.tokenisePrompt(this.actualTokeniser, this.outputText);
 
         const maxTokens = options?.maxLength ?? 1000;
 
@@ -125,46 +94,93 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
                 output: generatedToken,
                 probabilities,
                 attention,
-            } = await this.model.generate(inputTensor, cache, {
+            } = await this.model.generate(inputTensor, this.cache ? this.cache : undefined, {
                 ...options,
-                usePadding: false,
+                usePadding: !this.cache,
             });
 
-            inputTensor.dispose();
-            inputTensor = generatedToken;
+            if (this.cache) {
+                inputTensor.dispose();
+                inputTensor = generatedToken;
+            } else {
+                const oldInput = inputTensor;
+                inputTensor = concat([inputTensor, generatedToken], 1);
+                oldInput.dispose();
+            }
 
-            const newText = await this.processResponse(tokeniser, generatedToken, attention, probabilities);
+            const newText = await this.processResponse(this.actualTokeniser, generatedToken, attention, probabilities);
+            if (!this.cache) {
+                generatedToken.dispose();
+            }
             if (newText === null) {
                 break;
             }
-            outputText += newText;
+            this.outputText += newText;
         }
 
-        cache.forEach((c) => {
-            if (c) {
-                if (c.k) c.k.dispose();
-                if (c.v) c.v.dispose();
-            }
-        });
-
         inputTensor.dispose();
-        return outputText;
+        return this.outputText;
     }
 
-    public async generate(prompt?: string, options?: IGenerateOptions): Promise<string> {
+    public reset() {
+        if (this.cache) {
+            this.cache.forEach((c) => {
+                if (c) {
+                    if (c.k) c.k.dispose();
+                    if (c.v) c.v.dispose();
+                }
+            });
+            this.cache = null;
+        }
+        this.outputText = '';
+        this.initialPrompt = null;
+        this.lastToken = -1;
+    }
+
+    public dispose() {
+        this.reset();
+    }
+
+    private initialise(prompt?: string, options?: IGenerateOptions) {
         const slicePrompt =
             prompt && prompt.length > this.model.config.gpt.blockSize
                 ? prompt.slice(-this.model.config.gpt.blockSize)
-                : prompt;
-        this.active = true;
-        this.emit('start');
+                : prompt ?? null;
+
+        if (this.cache && options?.noCache) {
+            this.reset();
+        }
+
+        this.initialPrompt = slicePrompt || null;
+        if (this.lastToken === -1) {
+            this.outputText = this.initialPrompt || '';
+        }
+
+        if (!this.cache && !options?.noCache && this.model.config.gpt.useRope) {
+            const cache: KVCache[] = new Array(this.model.config.gpt.nLayer);
+            for (let i = 0; i < this.model.config.gpt.nLayer; i++) {
+                cache[i] = { k: undefined, v: undefined, length: 0, cumulativeLength: 0 };
+            }
+            this.cache = cache;
+            this.lastToken = -1;
+        }
+
         const tokeniser = this.tokeniser.trained
             ? this.tokeniser
             : new CharTokeniser(padArray(CHARS, this.tokeniser.vocabSize));
-        const result =
-            this.model.config.gpt.useRope && !options?.noCache
-                ? this.generateCache(tokeniser, slicePrompt, options)
-                : this.generateNoCache(tokeniser, slicePrompt, options);
+        this.actualTokeniser = tokeniser;
+    }
+
+    public async step(prompt?: string, options?: IGenerateOptions): Promise<string> {
+        const stepOptions = { ...options, maxLength: 1 };
+        return this.generate(prompt, stepOptions);
+    }
+
+    public async generate(prompt?: string, options?: IGenerateOptions): Promise<string> {
+        this.initialise(prompt, options);
+        this.active = true;
+        this.emit('start');
+        const result = this._generate(options);
         const r = await result;
         this.active = false;
         this.emit('stop');
@@ -173,5 +189,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
     public stop() {
         this.active = false;
+    }
+
+    public getText(): string {
+        return this.outputText;
     }
 }

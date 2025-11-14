@@ -214,8 +214,10 @@ export default class TeachableLLM {
         return trainer;
     }
 
-    train(text: string[], options?: ITrainerOptions): Promise<void> {
-        return this.trainer().train(text, options);
+    async train(text: string[], options?: ITrainerOptions): Promise<void> {
+        const trainer = this.trainer();
+        await trainer.prepare(text, options);
+        await trainer.train(options);
     }
 
     async trainTokeniser(text: string[]): Promise<number> {

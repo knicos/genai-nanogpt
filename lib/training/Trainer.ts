@@ -195,6 +195,12 @@ export default abstract class GPTTrainer {
         validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }>;
 
+    abstract stepDataset(
+        dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
+        options: Partial<TrainingOptions>,
+        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
+    ): Promise<{ log: TrainingLogEntry; progress: TrainingProgress }>;
+
     async createTrainValidationSplit(
         textData: string[],
         batchSize: number = 32,

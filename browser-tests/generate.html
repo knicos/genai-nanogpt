@@ -26,28 +26,62 @@
             import { TeachableLLM, waitForModel } from '/dist/main.js';
 
             const fileInput = document.getElementById('fileInput');
+            const generateButton = document.getElementById('generateButton');
+            const stepButton = document.getElementById('stepButton');
             const output = document.getElementById('output');
+            let model = null;
+            let generator = null;
             fileInput.addEventListener('change', async (event) => {
                 const file = event.target.files[0];
                 if (file) {
-                    const model = await TeachableLLM.loadModel(file);
+                    model = await TeachableLLM.loadModel(file);
                     await waitForModel(model);
                     model.enableProfiler = true;
-
-                    const prompt = 'Once upon a time';
-                    console.log('Generating text for prompt:', prompt);
-                    const options = {
-                        maxLength: 128 * 4 * 2,
-                        temperature: 0.7,
-                        attentionScores: true,
-                        topP: 0.8,
-                    };
-                    const generator = model.generator();
-                    const generated = await generator.generate(prompt, options);
-                    output.innerText += '\n\nGenerated Text:\n' + generated;
-                    console.log('Attention', options.attentionScores);
-                    model.getProfiler().printSummary();
+                    generator = model.generator();
                 }
+            });
+
+            generateButton.addEventListener('click', async () => {
+                if (!model || !generator) {
+                    alert('Please load a model first.');
+                    return;
+                }
+                const prompt = 'Once upon a time';
+                console.log('Generating text for prompt:', prompt);
+                const options = {
+                    maxLength: 128 * 4 * 2,
+                    temperature: 0.7,
+                    attentionScores: false,
+                    topP: 0.8,
+                };
+                const generated = await generator.generate(prompt, options);
+                output.innerText = '\n\nGenerated Text:\n' + generated;
+                console.log('Attention', options.attentionScores);
+                model.getProfiler().printSummary();
+            });
+
+            stepButton.addEventListener('click', async () => {
+                if (!model || !generator) {
+                    alert('Please load a model first.');
+                    return;
+                }
+                const innerText = output.innerText;
+                const prompt = 'Once upon a time';
+                console.log('Step generating text for prompt:', prompt);
+                const options = {
+                    maxLength: 128 * 4 * 2,
+                    temperature: 0.7,
+                    attentionScores: false,
+                    topP: 0.8,
+                };
+
+                const stepGen = await generator.step(prompt, options);
+
+                console.log('Step Generated Text:', stepGen);
+
+                output.innerText = stepGen;
+
+                model.getProfiler().printSummary();
             });
         </script>
         <input
@@ -55,6 +89,8 @@
             id="fileInput"
             accept=".zip"
         />
+        <button id="generateButton">Generate Text</button>
+        <button id="stepButton">Step Generate</button>
         <div id="output"></div>
     </body>
 </html>
