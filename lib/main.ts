@@ -4,6 +4,7 @@ export { default as CharTokeniser } from './tokeniser/CharTokeniser';
 export { default as BPETokeniser } from './tokeniser/bpe';
 export { default as waitForModel } from './utilities/waitForModel';
 export { default as loadTextData } from './data/textLoader';
+export { default as Generator } from './Generator';
 export type { ITrainerOptions } from './Trainer';
 export type { IGenerateOptions } from './Generator';
 export type { TrainingLogEntry } from './NanoGPTModel';

@@ -1,5 +1,4 @@
 import type { ITokeniser } from '../tokeniser/type';
-import { generateText } from '../utilities/generate';
 import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import GPTTrainer, { TrainingOptions, TrainingProgress } from './Trainer';
 import Evaluator from './Evaluator';
@@ -75,7 +74,7 @@ export default class FullTrainer extends GPTTrainer {
         options: Partial<TrainingOptions>,
         validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
     ): Promise<{ log: TrainingLogEntry; progress: TrainingProgress }> {
-        const { logInterval, prompt } = {
+        const { logInterval } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
@@ -129,13 +128,6 @@ export default class FullTrainer extends GPTTrainer {
                         }
                     }
 
-                    if (prompt) {
-                        const text = await generateText(this.tokenizer, this.model, prompt, 100, {
-                            temperature: 0.8,
-                        });
-                        entry.example = text;
-                    }
-
                     const progress = this.createProgress(state, entry, options?.advancedMetrics);
 
                     lossScalar.dispose();
@@ -163,7 +155,7 @@ export default class FullTrainer extends GPTTrainer {
         options: Partial<TrainingOptions>,
         validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }> {
-        const { logInterval, onStep, prompt, maxSteps } = {
+        const { logInterval, onStep, maxSteps } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
@@ -217,13 +209,6 @@ export default class FullTrainer extends GPTTrainer {
                         }
                     }
                     if (onStep) {
-                        if (prompt) {
-                            const text = await generateText(this.tokenizer, this.model, prompt, 100, {
-                                temperature: 0.8,
-                            });
-                            entry.example = text;
-                        }
-
                         const progress = this.createProgress(state, entry, options?.advancedMetrics);
 
                         await onStep(entry, progress);
