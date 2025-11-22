@@ -1,31 +1,23 @@
-import { GPTConfig } from '@base/config';
+import { GPTConfig } from '@base/models/config';
 import MemoryProfiler from '@base/utilities/profile';
 import RoPECache from './RoPECache';
 import { customGrad, engine, grads, GradSaveFunc, Tensor, variable, Variable } from '@tensorflow/tfjs-core';
 
-export interface LayerConfig {
-    checkpointing?: boolean;
-    profiler?: MemoryProfiler;
-    ropeCache?: RoPECache;
-}
-
-export interface GPTLayerConfig {
-    gpt: GPTConfig;
-    layerConfig: LayerConfig;
-}
-
 export interface ForwardAttributes {
     training: boolean;
+    checkpointing?: boolean;
+    ropeCache?: RoPECache;
 }
 
 export default abstract class BaseLayer<ATTR extends ForwardAttributes = ForwardAttributes> {
     public readonly parent?: BaseLayer;
-    public readonly config: GPTLayerConfig;
+    public readonly config: GPTConfig;
     private _variables: Map<string, Variable | null> = new Map();
     private _trainable: boolean = true;
     public readonly children: BaseLayer[] = [];
+    private profiler?: MemoryProfiler;
 
-    constructor(config: GPTLayerConfig, parent?: BaseLayer) {
+    constructor(config: GPTConfig, parent?: BaseLayer) {
         this.config = config;
         this.parent = parent;
         if (this.parent) {
@@ -34,15 +26,22 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
     }
 
     public getProfiler(): MemoryProfiler | undefined {
-        return this.config.layerConfig.profiler;
+        return this.profiler;
+    }
+
+    public setProfiler(profiler: MemoryProfiler | null) {
+        this.profiler = profiler ? profiler : undefined;
+        this.children.forEach((child) => {
+            child.setProfiler(profiler);
+        });
     }
 
     public startMemory() {
-        this.config.layerConfig.profiler?.startMemory();
+        this.profiler?.startMemory();
     }
 
     public endMemory(label: string) {
-        this.config.layerConfig.profiler?.endMemory(label);
+        this.profiler?.endMemory(label);
     }
 
     public addVariable(name: string, variable?: Variable) {

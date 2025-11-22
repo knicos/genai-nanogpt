@@ -1,8 +1,9 @@
 import CausalSelfAttention, { AttentionScores, KVCache } from './CausalSelfAttention';
 import MLP from './MLP';
 import RMSNorm from './RMSNorm';
-import BaseLayer, { ForwardAttributes, GPTLayerConfig } from './BaseLayer';
+import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { Tensor, tidy } from '@tensorflow/tfjs-core';
+import { GPTConfig } from '@base/models/config';
 
 interface BlockAttributes extends ForwardAttributes {
     pastKV?: KVCache;
@@ -19,7 +20,7 @@ export default class Block extends BaseLayer<BlockAttributes> {
     private index: number;
     public skipped: boolean = false;
 
-    constructor(index: number, config: GPTLayerConfig, parent?: BaseLayer) {
+    constructor(index: number, config: GPTConfig, parent?: BaseLayer) {
         super(config, parent);
         this.index = index;
 

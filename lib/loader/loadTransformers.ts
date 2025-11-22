@@ -1,11 +1,12 @@
-import { GPTConfig } from '@base/config';
+import { GPTConfig } from '@base/models/config';
 import { ITokeniser } from '@base/tokeniser/type';
-import NanoGPT from '@base/NanoGPTModel';
 import CharTokeniser from '@base/tokeniser/CharTokeniser';
 import BPETokeniser from '@base/tokeniser/bpe';
 import { load_safetensors } from '@base/utilities/safetensors';
 import { disposeVariables, Tensor } from '@tensorflow/tfjs-core';
 import { dummyPassAsync } from '@base/utilities/dummy';
+import createModelInstance from '@base/models/factory';
+import Model, { ModelForwardAttributes } from '@base/models/model';
 
 export interface TransformersConfig {
     model_type: string;
@@ -39,8 +40,9 @@ export default async function loadTransformers(
     tokeniser: TransformersTokeniser,
     metadata: TransformersMetadata,
     weightData: ArrayBuffer
-): Promise<{ model: NanoGPT; tokeniser: ITokeniser; name?: string }> {
+): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; name?: string }> {
     const modelConfig: GPTConfig = {
+        modelType: config.model_type || 'GenAI_NanoGPT_v1',
         vocabSize: config.vocab_size,
         blockSize: config.block_size,
         nLayer: config.num_hidden_layers,
@@ -69,7 +71,7 @@ export default async function loadTransformers(
     // Force existing variables to be removed
     disposeVariables();
 
-    const model = new NanoGPT(modelConfig);
+    const model = createModelInstance(modelConfig);
 
     await dummyPassAsync(model); // Initialize the model to set up weights and caches
     model.loadWeights(weightsMap);

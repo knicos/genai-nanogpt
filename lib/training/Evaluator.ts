@@ -1,12 +1,12 @@
-import NanoGPT from '../NanoGPTModel';
 import { LazyIterator } from '@tensorflow/tfjs-data/dist/iterators/lazy_iterator';
 import { Dataset } from '@tensorflow/tfjs-data';
 import { Tensor, TensorContainer } from '@tensorflow/tfjs-core';
+import Model, { ModelForwardAttributes } from '@base/models/model';
 
 export default class Evaluator {
     private iterator: Promise<LazyIterator<TensorContainer>>;
 
-    constructor(private model: NanoGPT, dataset: Dataset<TensorContainer>) {
+    constructor(private model: Model<ModelForwardAttributes>, dataset: Dataset<TensorContainer>) {
         this.iterator = dataset.iterator();
     }
 

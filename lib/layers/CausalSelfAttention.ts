@@ -1,11 +1,12 @@
 import { attentionMask } from '../ops/attentionMask';
-import BaseLayer, { ForwardAttributes, GPTLayerConfig } from './BaseLayer';
+import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { qkv } from '../ops/qkv';
 import { rope } from '../ops/rope';
 import { appendCache } from '@base/ops/appendCache';
 import { dropout, keep, matMul, randomNormal, reshape, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
 import { fusedSoftmax } from '@base/ops/fusedSoftmax';
 import { dot } from '@tensorflow/tfjs-layers/dist/backend/tfjs_backend';
+import { GPTConfig } from '@base/models/config';
 
 export type KVCache = {
     k?: Tensor; // [B, nHead, T_cache, headDim]
@@ -34,18 +35,18 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
     private ATTN: string;
     private PROJ: string;
 
-    constructor(index: number, config: GPTLayerConfig, parent?: BaseLayer) {
+    constructor(index: number, config: GPTConfig, parent?: BaseLayer) {
         super(config, parent);
         this.index = index;
-        this.units = config.gpt.nEmbed * 3;
-        this.projUnits = config.gpt.nEmbed;
+        this.units = config.nEmbed * 3;
+        this.projUnits = config.nEmbed;
 
         this.ATTN = `block_${this.index}_cAttn`;
         this.PROJ = `block_${this.index}_cProj`;
         this.addVariable(this.ATTN);
         this.addVariable(this.PROJ);
 
-        this.divisor = 1 / Math.sqrt(config.gpt.nEmbed / config.gpt.nHead); // Scaling factor for attention scores
+        this.divisor = 1 / Math.sqrt(config.nEmbed / config.nHead); // Scaling factor for attention scores
     }
 
     protected override build() {
@@ -53,7 +54,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             this.setVariable(
                 this.ATTN,
                 variable(
-                    randomNormal([this.config.gpt.nEmbed, this.units], 0, 0.02),
+                    randomNormal([this.config.nEmbed, this.units], 0, 0.02),
                     true
                     //`block_${this.index}_attn_cAttn_kernel`
                 )
@@ -63,7 +64,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             this.setVariable(
                 this.PROJ,
                 variable(
-                    randomNormal([this.projUnits, this.config.gpt.nEmbed], 0, 0.02),
+                    randomNormal([this.projUnits, this.config.nEmbed], 0, 0.02),
                     true
                     //`block_${this.index}_attn_cProj_kernel`
                 )
@@ -73,7 +74,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
 
     private getAttentionScores(q: Tensor, k: Tensor, training: boolean, seed: number): Tensor {
         const maskedAtt = attentionMask(q, k, this.divisor);
-        const s = fusedSoftmax(maskedAtt, training ? this.config.gpt.dropout : 0, seed);
+        const s = fusedSoftmax(maskedAtt, training ? this.config.dropout : 0, seed);
         maskedAtt.dispose();
         return s;
     }
@@ -91,13 +92,13 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
     }
 
     private getQKV(x: Tensor): [Tensor, Tensor, Tensor] {
-        return qkv(x, this.getVariable(this.ATTN), this.config.gpt.nHead) as [Tensor, Tensor, Tensor];
+        return qkv(x, this.getVariable(this.ATTN), this.config.nHead) as [Tensor, Tensor, Tensor];
     }
 
     private getOutputProjection(x: Tensor): Tensor {
         const B = x.shape[0]!; // batch size
         const T = x.shape[2]!; // sequence length
-        const C = this.config.gpt.nEmbed; // embedding dimensionality
+        const C = this.config.nEmbed; // embedding dimensionality
 
         // Re-assemble all head outputs side by side
         const yTransposed = x.transpose([0, 2, 1, 3]); // (B, T, nh, hs)
@@ -112,7 +113,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
     }
 
     private updateCache(kNew: Tensor, vNew: Tensor, cache: KVCache) {
-        const maxCtx = this.config.gpt.blockSize;
+        const maxCtx = this.config.blockSize;
         const Tcur = kNew.shape[2]!;
         const pastLen = cache.length || 0;
 
@@ -145,7 +146,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             // Apply RoPE to current chunk before concatenating with past
             // The rope operator ensures the cache is large enough
             const pastLenInitial = attr.pastKV ? attr.pastKV.cumulativeLength : 0;
-            const ropeCache = this.config.layerConfig.ropeCache;
+            const ropeCache = attr.ropeCache;
             const q = ropeCache ? rope(qI, ropeCache, pastLenInitial) : qI;
             const kNew = ropeCache ? rope(kNewI, ropeCache, pastLenInitial) : kNewI;
 
@@ -205,8 +206,8 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
     }
 
     protected override dropout(x: Tensor): Tensor {
-        if (this.config.gpt.dropout > 0) {
-            const finalOutput = dropout(x, this.config.gpt.dropout);
+        if (this.config.dropout > 0) {
+            const finalOutput = dropout(x, this.config.dropout);
             x.dispose();
             return finalOutput;
         } else {

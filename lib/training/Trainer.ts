@@ -1,10 +1,10 @@
 import type { ITokeniser } from '../tokeniser/type';
 import { DatasetBuilder, flattenTokens, PAGE_FACTOR } from './DatasetBuilder';
-import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import AdamExt from './AdamExt';
 import { NamedVariableMap, TensorContainer } from '@tensorflow/tfjs-core/dist/tensor_types';
 import { dispose, Scalar, Tensor, tidy, variableGrads, zeros } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
+import Model, { ModelForwardAttributes, TrainingLogEntry } from '@base/models/model';
 
 export interface TrainingState {
     step: number;
@@ -40,18 +40,18 @@ export interface TrainingOptions {
 
 // Enhanced training utilities with Dataset API and memory leak fixes
 export default abstract class GPTTrainer {
-    protected model: NanoGPT;
+    protected model: Model<ModelForwardAttributes>;
     protected optimizer!: AdamExt;
     protected datasetBuilder: DatasetBuilder;
     protected learningRate: number;
     protected running = false;
     protected lastState?: TrainingState;
 
-    constructor(model: NanoGPT, protected tokenizer: ITokeniser, learningRate: number = 1e-3) {
+    constructor(model: Model<ModelForwardAttributes>, protected tokenizer: ITokeniser, learningRate: number = 1e-3) {
         this.model = model;
         this.learningRate = learningRate;
         this.resetOptimizer();
-        this.datasetBuilder = new DatasetBuilder(tokenizer, model.config.gpt.blockSize);
+        this.datasetBuilder = new DatasetBuilder(tokenizer, model.config.blockSize);
     }
 
     setLearningRate(learningRate: number): void {
@@ -89,23 +89,6 @@ export default abstract class GPTTrainer {
         this.optimizer = adam;
     }
 
-    /*private async maxGradNorm(grads: NamedVariableMap): Promise<number> {
-        let maxNorm = 0;
-        // Print all gradients
-        await Promise.all(
-            Object.keys(grads).map(async (varName) => {
-                const grad = grads[varName];
-                const temp = norm(grad);
-                const gradNorm = (await temp.data())[0];
-                temp.dispose();
-                if (gradNorm > maxNorm) {
-                    maxNorm = gradNorm;
-                }
-            })
-        );
-        return maxNorm;
-    }*/
-
     protected trainStep(_state: Partial<TrainingState>, batch: { xs: Tensor; ys: Tensor }, dummy = false): Scalar {
         return tidy(() => {
             this.model.getProfiler()?.startMemory();
@@ -113,26 +96,13 @@ export default abstract class GPTTrainer {
 
             const f = () => {
                 const [logits, loss] = this.model.forward({ training: true }, xs, ys);
-                //console.log('Logits', logits.toString());
                 logits.dispose();
                 return loss! as Scalar;
             };
 
-            //const vars = this.model.variables;
             const { value: lossValue, grads } = variableGrads(f);
 
             if (!dummy) {
-                // Clip gradients
-                /*const clippedGrads: { [variableName: string]: TF.Tensor } = {};
-                for (const variableName in grads) {
-                    clippedGrads[variableName] = this.tf.clipByValue(grads[variableName], -1.0, 1.0);
-                }*/
-
-                /*if (calcNorm) {
-                    const maxNorm = this.maxGradNorm(grads as NamedVariableMap);
-                    state.gradientNorm = maxNorm;
-                }*/
-                //this.tf.dispose(grads);
                 // Apply gradients
                 this.optimizer.applyGradients(grads as NamedVariableMap);
 
@@ -149,8 +119,8 @@ export default abstract class GPTTrainer {
 
     protected async dummyPass(): Promise<void> {
         // Send a dummy input to initialize the model
-        const dummyBatch = zeros([1, this.model.config.gpt.blockSize], 'int32');
-        const dummyTargets = zeros([1, this.model.config.gpt.blockSize], 'int32');
+        const dummyBatch = zeros([1, this.model.config.blockSize], 'int32');
+        const dummyTargets = zeros([1, this.model.config.blockSize], 'int32');
 
         try {
             const l = this.trainStep({}, { xs: dummyBatch, ys: dummyTargets }, true);
@@ -174,13 +144,6 @@ export default abstract class GPTTrainer {
             state.step++;
             state.totalSteps++;
 
-            /*return lossScalar.array().then((lossValue) => {
-                state.lastLoss = lossValue as number;
-                state.losses.push(state.lastLoss);
-                lossScalar.dispose();
-
-                return state.lastLoss;
-            });*/
             return lossScalar;
         } catch (error) {
             console.error(`Error processing batch at step ${state.step}:`, error);

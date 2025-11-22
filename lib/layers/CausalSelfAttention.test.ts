@@ -6,19 +6,16 @@ import RoPECache from './RoPECache';
 describe('CausalSelfAttention', () => {
     it('generates a correctly shaped output', ({ expect }) => {
         const layer = new CausalSelfAttention(0, {
-            gpt: {
-                biasInLayerNorm: false,
-                vocabSize: 20,
-                nEmbed: 16,
-                nHead: 2,
-                nLayer: 1,
-                biasInLinear: false,
-                dropout: 0.0,
-                blockSize: 4,
-                mlpFactor: 4,
-                useRope: true,
-            },
-            layerConfig: {},
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.0,
+            blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
         });
 
         expect(layer).toBeInstanceOf(CausalSelfAttention);
@@ -32,19 +29,16 @@ describe('CausalSelfAttention', () => {
 
     it('can accept dropout', ({ expect }) => {
         const layer = new CausalSelfAttention(0, {
-            gpt: {
-                biasInLayerNorm: false,
-                vocabSize: 20,
-                nEmbed: 16,
-                nHead: 2,
-                nLayer: 1,
-                biasInLinear: false,
-                dropout: 0.1,
-                blockSize: 4,
-                mlpFactor: 4,
-                useRope: true,
-            },
-            layerConfig: {},
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.1,
+            blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
         });
 
         expect(layer).toBeInstanceOf(CausalSelfAttention);
@@ -58,19 +52,16 @@ describe('CausalSelfAttention', () => {
 
     it('can generate attention scores', ({ expect }) => {
         const layer = new CausalSelfAttention(0, {
-            gpt: {
-                biasInLayerNorm: false,
-                vocabSize: 20,
-                nEmbed: 16,
-                nHead: 2,
-                nLayer: 1,
-                biasInLinear: false,
-                dropout: 0.0,
-                blockSize: 4,
-                mlpFactor: 4,
-                useRope: true,
-            },
-            layerConfig: {},
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.0,
+            blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
         });
 
         const input = tf.randomNormal([1, 4, 16]);
@@ -89,19 +80,16 @@ describe('CausalSelfAttention', () => {
 
     it('can use a KV cache', ({ expect }) => {
         const layer = new CausalSelfAttention(0, {
-            gpt: {
-                biasInLayerNorm: false,
-                vocabSize: 20,
-                nEmbed: 16,
-                nHead: 2,
-                nLayer: 1,
-                biasInLinear: false,
-                dropout: 0.0,
-                blockSize: 4,
-                mlpFactor: 4,
-                useRope: true,
-            },
-            layerConfig: {},
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.0,
+            blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
         });
 
         const input = tf.randomNormal([1, 1, 16]);
@@ -134,19 +122,16 @@ describe('CausalSelfAttention', () => {
         const input = tf.randomNormal([1, 4, 16]);
 
         const layer = new CausalSelfAttention(0, {
-            gpt: {
-                biasInLayerNorm: false,
-                vocabSize: 20,
-                nEmbed: 16,
-                nHead: 2,
-                nLayer: 1,
-                biasInLinear: false,
-                dropout: 0.0,
-                blockSize: 4,
-                mlpFactor: 4,
-                useRope: true,
-            },
-            layerConfig: {},
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.0,
+            blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
         });
         layer.call({ training: false }, input); // Initialize the layer
 
@@ -154,19 +139,16 @@ describe('CausalSelfAttention', () => {
         layer.saveWeights(weightsMap);
 
         const newLayer = new CausalSelfAttention(0, {
-            gpt: {
-                biasInLayerNorm: false,
-                vocabSize: 20,
-                nEmbed: 16,
-                nHead: 2,
-                nLayer: 1,
-                biasInLinear: false,
-                dropout: 0.0,
-                blockSize: 4,
-                mlpFactor: 4,
-                useRope: true,
-            },
-            layerConfig: {},
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 16,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.0,
+            blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
         });
         newLayer.call({ training: false }, input); // Initialize the layer
         newLayer.loadWeights(weightsMap);
@@ -194,12 +176,12 @@ describe('CausalSelfAttention', () => {
             useRope: true,
         };
         const ropeCache = new RoPECache(config);
-        const layer = new CausalSelfAttention(0, { gpt: config, layerConfig: { ropeCache } });
+        const layer = new CausalSelfAttention(0, config);
 
         const input = tf.randomNormal([1, 4, 16]);
         const target = tf.randomNormal([1, 4, 16]);
 
-        layer.call({ training: false }, input);
+        layer.call({ training: false, ropeCache }, input);
 
         //const optimizer = tf.train.adam(0.01);
 

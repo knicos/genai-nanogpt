@@ -1,5 +1,5 @@
 import { cos, keep, pow, range, reciprocal, scalar, sin, Tensor, tidy } from '@tensorflow/tfjs-core';
-import { GPTConfig } from '../config';
+import { GPTConfig } from '../models/config';
 
 export default class RoPECache {
     public readonly rotaryDim: number;

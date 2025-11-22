@@ -1,6 +1,6 @@
 import { afterEach, describe, it } from 'vitest';
 import Generator from './Generator';
-import NanoGPT from './NanoGPTModel';
+import NanoGPT from './models/NanoGPTV1';
 import CharTokeniser from './tokeniser/CharTokeniser';
 import * as tf from '@tensorflow/tfjs';
 
@@ -122,7 +122,7 @@ describe('Generator', () => {
         expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
 
         // When cache is used the attention output is full block size.
-        expect(emittedAttention[0][0][0][0]).toHaveLength(model.config.gpt.blockSize);
+        expect(emittedAttention[0][0][0][0]).toHaveLength(model.config.blockSize);
     });
 
     it('emits attention with RoPE', async ({ expect }) => {

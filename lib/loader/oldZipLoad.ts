@@ -1,12 +1,15 @@
 import zip from 'jszip';
-import { GPTConfig } from '@base/config';
+import { GPTConfig } from '@base/models/config';
 import { BPETokeniser, CharTokeniser, ITokeniser } from '@base/main';
-import NanoGPT, { TrainingLogEntry } from '@base/NanoGPTModel';
 import { importWeights, ITensorSpec, IWeightManifest } from '@base/utilities/weights';
 import { disposeVariables, Tensor } from '@tensorflow/tfjs-core';
 import { dummyPassAsync } from '@base/utilities/dummy';
+import Model, { ModelForwardAttributes } from '@base/models/model';
+import createModelInstance from '@base/models/factory';
 
-export default async function loadOldModel(zipFile: zip): Promise<{ model: NanoGPT; tokeniser: ITokeniser }> {
+export default async function loadOldModel(
+    zipFile: zip
+): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser }> {
     const manifests = new Map<string, IWeightManifest>();
 
     const manifestFile = await zipFile.file('manifest.json')?.async('string');
@@ -58,21 +61,10 @@ export default async function loadOldModel(zipFile: zip): Promise<{ model: NanoG
     // Force existing variables to be removed
     disposeVariables();
 
-    const model = new NanoGPT(manifest.config);
+    const model = createModelInstance(manifest.config);
 
     await dummyPassAsync(model); // Initialize the model to set up weights and caches
     model.loadWeights(weights);
-
-    const logFile = await zipFile.file('log.json')?.async('string');
-    if (logFile) {
-        try {
-            const logData: TrainingLogEntry[] = JSON.parse(logFile);
-            model.log = logData;
-        } catch (error) {
-            console.error('Error parsing training log:', error);
-            throw new Error(`Failed to parse training log: ${error}`);
-        }
-    }
 
     return { model, tokeniser };
 }

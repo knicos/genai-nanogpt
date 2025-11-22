@@ -1,5 +1,6 @@
 // Configuration for the nanoGPT model
 export interface GPTConfig {
+    modelType?: string;
     vocabSize: number;
     blockSize: number;
     nLayer: number;
@@ -14,6 +15,7 @@ export interface GPTConfig {
 
 // Default configuration
 export const defaultConfig: GPTConfig = {
+    modelType: 'GenAI_NanoGPT_v1',
     vocabSize: 2000,
     blockSize: 128, // Maximum sequence length
     nLayer: 6, // Number of transformer layers

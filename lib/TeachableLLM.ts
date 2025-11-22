@@ -1,7 +1,6 @@
-import { defaultConfig, GPTConfig } from './config';
+import { defaultConfig, GPTConfig } from './models/config';
 import type { ITokeniser } from './tokeniser/type';
-import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
-import { saveModel, SaveOptions } from './utilities/save';
+import { saveModel, SaveOptions } from './loader/save';
 import { loadModel } from './loader/load';
 import Generator, { IGenerateOptions } from './Generator';
 import Trainer, { ITrainerOptions } from './Trainer';
@@ -11,7 +10,8 @@ import { CharTokeniser } from './main';
 import MemoryProfiler from './utilities/profile';
 import BPETokeniser from './tokeniser/bpe';
 import { TrainingProgress } from './training/Trainer';
-import { GPTLayerConfig } from './layers/BaseLayer';
+import Model, { ModelForwardAttributes, TrainingLogEntry } from './models/model';
+import createModelInstance from './models/factory';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded';
@@ -24,14 +24,14 @@ interface TeachableLLMMeta {
 
 export default class TeachableLLM {
     private ee = new EE<TeachableLLMEvents>();
-    private _config?: GPTLayerConfig;
-    private _model?: NanoGPT;
+    private _config?: GPTConfig;
+    private _model?: Model<ModelForwardAttributes>;
     private _tokeniser?: ITokeniser;
     private _status: TeachableLLMStatus = 'loading';
     private _memoryRequirements?: MemoryRequirements;
     public meta: TeachableLLMMeta = {};
 
-    constructor(tokeniser?: ITokeniser, model?: NanoGPT) {
+    constructor(tokeniser?: ITokeniser, model?: Model<ModelForwardAttributes>) {
         this._config = model?.config;
         this._tokeniser = tokeniser;
         this._model = model;
@@ -50,10 +50,10 @@ export default class TeachableLLM {
         if (!this._config) {
             throw new Error('configuration_not_initialized.');
         }
-        return this._config.gpt;
+        return this._config;
     }
 
-    get model(): NanoGPT {
+    get model(): Model<ModelForwardAttributes> {
         if (!this._model) {
             throw new Error('model_not_initialized.');
         }
@@ -139,7 +139,7 @@ export default class TeachableLLM {
         const fullConfig = { ...defaultConfig, ...config };
         const tokeniser =
             tokeniserType === 'char' ? new CharTokeniser(fullConfig.vocabSize) : new BPETokeniser(fullConfig.vocabSize);
-        const model = new NanoGPT(fullConfig);
+        const model = createModelInstance(fullConfig);
         const tmodel = new TeachableLLM(tokeniser, model);
         tmodel.setStatus('warmup');
 
@@ -180,12 +180,12 @@ export default class TeachableLLM {
             if (!this._config) {
                 return;
             }
-            if (!this._config.layerConfig.profiler) {
-                this._config.layerConfig.profiler = new MemoryProfiler();
+            if (!this.model.getProfiler()) {
+                this.model.setProfiler(new MemoryProfiler());
             }
         } else {
-            if (this._config?.layerConfig.profiler) {
-                this._config.layerConfig.profiler = undefined;
+            if (this.model.getProfiler()) {
+                this.model.setProfiler(null);
             }
         }
     }

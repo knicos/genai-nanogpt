@@ -1,6 +1,7 @@
 import { dropout, matMul, randomNormal, reshape, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
-import BaseLayer, { ForwardAttributes, GPTLayerConfig } from './BaseLayer';
+import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { matMulGelu } from '@base/ops/matMulGelu';
+import { GPTConfig } from '@base/main';
 
 // Multi-layer perceptron
 export default class MLP extends BaseLayer {
@@ -9,10 +10,10 @@ export default class MLP extends BaseLayer {
     private MLPHIDDEN: string;
     private MLPOUT: string;
 
-    constructor(index: number, config: GPTLayerConfig, parent?: BaseLayer) {
+    constructor(index: number, config: GPTConfig, parent?: BaseLayer) {
         super(config, parent);
         this.index = index;
-        this.hiddenUnits = config.gpt.mlpFactor * config.gpt.nEmbed;
+        this.hiddenUnits = config.mlpFactor * config.nEmbed;
 
         this.MLPHIDDEN = `block_${this.index}_mlpHidden`;
         this.MLPOUT = `block_${this.index}_mlpOut`;
@@ -26,7 +27,7 @@ export default class MLP extends BaseLayer {
             this.setVariable(
                 this.MLPHIDDEN,
                 variable(
-                    randomNormal([this.config.gpt.nEmbed, this.hiddenUnits], 0, 0.02),
+                    randomNormal([this.config.nEmbed, this.hiddenUnits], 0, 0.02),
                     true
                     //`block_${this.index}_attn_cAttn_kernel`
                 )
@@ -36,11 +37,7 @@ export default class MLP extends BaseLayer {
             this.setVariable(
                 this.MLPOUT,
                 variable(
-                    randomNormal(
-                        [this.hiddenUnits, this.config.gpt.nEmbed],
-                        0,
-                        0.02 / Math.sqrt(2 * this.config.gpt.nLayer)
-                    ),
+                    randomNormal([this.hiddenUnits, this.config.nEmbed], 0, 0.02 / Math.sqrt(2 * this.config.nLayer)),
                     true
                     //`block_${this.index}_attn_cProj_kernel`
                 )
@@ -63,8 +60,8 @@ export default class MLP extends BaseLayer {
     }
 
     protected override dropout(x: Tensor): Tensor {
-        if (this.config.gpt.dropout > 0) {
-            const dOut = dropout(x, this.config.gpt.dropout);
+        if (this.config.dropout > 0) {
+            const dOut = dropout(x, this.config.dropout);
             x.dispose();
             return dOut;
         }

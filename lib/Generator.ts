@@ -1,4 +1,3 @@
-import NanoGPT, { GenerateOptions, ModelForwardAttributes } from './NanoGPTModel';
 import type { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import { KVCache } from './layers/CausalSelfAttention';
@@ -17,6 +16,16 @@ import {
 } from '@tensorflow/tfjs-core';
 import { CharTokeniser } from './main';
 import multinomialCPU from './utilities/multinomialCPU';
+import Model, { ModelForwardAttributes } from './models/model';
+
+export interface GenerateOptions {
+    temperature?: number;
+    topK?: number;
+    topP?: number;
+    usePadding?: boolean;
+    attentionScores?: boolean;
+    includeProbabilities?: boolean;
+}
 
 const CHARS = [
     ...Array.from({ length: 95 }, (_, i) => String.fromCharCode(i + 32)), // ASCII
@@ -56,7 +65,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     private probabilitiesData: number[][][] = [];
     private tokens: number[] = [];
 
-    constructor(private readonly model: NanoGPT, private readonly tokeniser: ITokeniser) {
+    constructor(private readonly model: Model<ModelForwardAttributes>, private readonly tokeniser: ITokeniser) {
         super();
         this.actualTokeniser = tokeniser;
     }
@@ -125,13 +134,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             // Crop sequence if it exceeds block size
             const seqLen = currentIdx.shape[1]!;
             const cropIdx =
-                seqLen <= this.model.config.gpt.blockSize
+                seqLen <= this.model.config.blockSize
                     ? currentIdx
                     : currentIdx.slice(
-                          [0, seqLen - this.model.config.gpt.blockSize],
-                          [currentIdx.shape[0], this.model.config.gpt.blockSize]
+                          [0, seqLen - this.model.config.blockSize],
+                          [currentIdx.shape[0], this.model.config.blockSize]
                       );
-            const padding = usePadding ? this.model.config.gpt.blockSize - cropIdx.shape[1]! : 0;
+            const padding = usePadding ? this.model.config.blockSize - cropIdx.shape[1]! : 0;
             // In some cases padding is faster
             const padIdx =
                 padding > 0
@@ -298,8 +307,8 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
     private initialise(prompt?: string, options?: IGenerateOptions) {
         const slicePrompt =
-            prompt && prompt.length > this.model.config.gpt.blockSize
-                ? prompt.slice(-this.model.config.gpt.blockSize)
+            prompt && prompt.length > this.model.config.blockSize
+                ? prompt.slice(-this.model.config.blockSize)
                 : prompt ?? null;
 
         if (this.cache && options?.noCache) {
@@ -311,9 +320,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             this.outputText = this.initialPrompt || '';
         }
 
-        if (!this.cache && !options?.noCache && this.model.config.gpt.useRope) {
-            const cache: KVCache[] = new Array(this.model.config.gpt.nLayer);
-            for (let i = 0; i < this.model.config.gpt.nLayer; i++) {
+        if (!this.cache && !options?.noCache && this.model.config.useRope) {
+            const cache: KVCache[] = new Array(this.model.config.nLayer);
+            for (let i = 0; i < this.model.config.nLayer; i++) {
                 cache[i] = { k: undefined, v: undefined, length: 0, cumulativeLength: 0 };
             }
             this.cache = cache;

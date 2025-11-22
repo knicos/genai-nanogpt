@@ -1,10 +1,10 @@
-import NanoGPT, { TrainingLogEntry } from './NanoGPTModel';
 import type { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import FullTrainer from './training/FullTrainer';
 import { TrainingProgress } from './training/Trainer';
 import { Dataset } from '@tensorflow/tfjs-data';
 import { Tensor } from '@tensorflow/tfjs-core';
+import Model, { ModelForwardAttributes, TrainingLogEntry } from './models/model';
 
 export interface ITrainerOptions {
     batchSize?: number; // Batch size for training
@@ -24,7 +24,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     private validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
     private totalSamples: number = 0;
 
-    constructor(model: NanoGPT, tokeniser: ITokeniser) {
+    constructor(model: Model<ModelForwardAttributes>, tokeniser: ITokeniser) {
         super();
         this.trainer = new FullTrainer(model, tokeniser, 1e-3);
     }

@@ -1,4 +1,4 @@
-export { default as NanoGPT } from './NanoGPTModel';
+export { default as NanoGPT } from './models/NanoGPTV1';
 export { default as TeachableLLM } from './TeachableLLM';
 export { default as CharTokeniser } from './tokeniser/CharTokeniser';
 export { default as BPETokeniser } from './tokeniser/bpe';
@@ -7,10 +7,10 @@ export { default as loadTextData } from './data/textLoader';
 export { default as Generator } from './Generator';
 export type { ITrainerOptions } from './Trainer';
 export type { IGenerateOptions } from './Generator';
-export type { TrainingLogEntry } from './NanoGPTModel';
+export { type TrainingLogEntry, type ModelForwardAttributes, default as Model } from './models/model';
 export type { ITokeniser } from './tokeniser/type';
 export type { TrainingProgress } from './training/Trainer';
-export type { GPTConfig } from './config';
+export type { GPTConfig } from './models/config';
 export {
     estimateParameterCount,
     estimateMemoryUsage,

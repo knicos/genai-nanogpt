@@ -1,11 +1,11 @@
 import { ITokeniser } from '@base/main';
-import NanoGPT from '@base/NanoGPTModel';
 import zip from 'jszip';
 import loadTransformers, { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './loadTransformers';
+import Model, { ModelForwardAttributes } from '@base/models/model';
 
 export default async function loadZipFile(
     zipFile: zip
-): Promise<{ model: NanoGPT; tokeniser: ITokeniser; name?: string }> {
+): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; name?: string }> {
     const configFile = await zipFile.file('config.json')?.async('string');
     if (!configFile) {
         throw new Error('Config file not found in the zip archive');

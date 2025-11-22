@@ -1,9 +1,9 @@
 import zip from 'jszip';
-import NanoGPT from '../NanoGPTModel';
 import type { ITokeniser } from '@base/tokeniser/type';
 import loadOldModel from './oldZipLoad';
 import loadZipFile from './newZipLoad';
 import loadHuggingFace from './loadHF';
+import Model, { ModelForwardAttributes } from '@base/models/model';
 
 export const VERSION = 2;
 
@@ -23,7 +23,7 @@ async function loadURL(url: string): Promise<ArrayBuffer> {
 
 export async function loadModel(
     data: Blob | Buffer | string
-): Promise<{ model: NanoGPT; tokeniser: ITokeniser; name?: string }> {
+): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; name?: string }> {
     if (typeof data === 'string') {
         if (data.startsWith('http://') || data.startsWith('https://')) {
             const arrayBuffer = await loadURL(data);

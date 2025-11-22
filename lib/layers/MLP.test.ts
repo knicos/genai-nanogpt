@@ -16,7 +16,7 @@ describe('MLP', () => {
             mlpFactor: 4,
             useRope: true,
         };
-        const mlp = new MLP(0, { gpt: config, layerConfig: {} });
+        const mlp = new MLP(0, config);
 
         const input = tf.randomNormal([1, 4, 16]);
         const output = mlp.call({ training: false }, input) as tf.Tensor;
@@ -38,14 +38,14 @@ describe('MLP', () => {
             mlpFactor: 4,
             useRope: true,
         };
-        const mlp = new MLP(0, { gpt: config, layerConfig: {} });
+        const mlp = new MLP(0, config);
         const input = tf.randomNormal([1, 4, 16]);
         mlp.call({ training: false }, input); // Initialize the layer
 
         const weightsMap = new Map<string, tf.Tensor[]>();
         mlp.saveWeights(weightsMap);
 
-        const newMlp = new MLP(0, { gpt: config, layerConfig: {} });
+        const newMlp = new MLP(0, config);
         newMlp.call({ training: false }, input); // Initialize the layer
         newMlp.loadWeights(weightsMap);
 

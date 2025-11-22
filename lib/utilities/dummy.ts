@@ -1,10 +1,10 @@
-import NanoGPT from '@base/NanoGPTModel';
 import { engine, memory, Scalar, variableGrads, zeros } from '@tensorflow/tfjs-core';
 import { ExtendedMemoryInfo } from './profile';
+import Model, { ModelForwardAttributes } from '@base/models/model';
 
-export async function dummyPassAsync(model: NanoGPT) {
+export async function dummyPassAsync(model: Model<ModelForwardAttributes>) {
     // Send a dummy input to initialize the model
-    const dummyInput = zeros([1, model.config.gpt.blockSize], 'int32');
+    const dummyInput = zeros([1, model.config.blockSize], 'int32');
     const [logits, loss] = model.forward({ training: false }, dummyInput);
     await logits.data(); // Just to wait
     logits.dispose();
@@ -20,15 +20,15 @@ export interface MemoryRequirements {
     gradients: number;
 }
 
-export async function dummyPassTrainAsync(model: NanoGPT): Promise<MemoryRequirements> {
+export async function dummyPassTrainAsync(model: Model<ModelForwardAttributes>): Promise<MemoryRequirements> {
     const startMemInfo = memory() as ExtendedMemoryInfo;
     const startBytes =
         startMemInfo.numBytesInGPUAllocated ?? startMemInfo.numBytesAllocatedInGPU ?? startMemInfo.numBytes;
 
     await dummyPassAsync(model);
     // Send a dummy input to initialize the model
-    const dummyInput = zeros([1, model.config.gpt.blockSize], 'int32');
-    const dummyTarget = zeros([1, model.config.gpt.blockSize], 'int32');
+    const dummyInput = zeros([1, model.config.blockSize], 'int32');
+    const dummyTarget = zeros([1, model.config.blockSize], 'int32');
 
     const memoryReqs: MemoryRequirements = {
         perBatch: 0,
@@ -73,9 +73,9 @@ export async function dummyPassTrainAsync(model: NanoGPT): Promise<MemoryRequire
     return memoryReqs;
 }
 
-export function dummyPass(model: NanoGPT) {
+export function dummyPass(model: Model<ModelForwardAttributes>) {
     // Send a dummy input to initialize the model
-    const dummyInput = zeros([1, model.config.gpt.blockSize], 'int32');
+    const dummyInput = zeros([1, model.config.blockSize], 'int32');
     const [logits, loss] = model.forward({ training: false }, dummyInput);
     logits.dispose();
     if (loss) {

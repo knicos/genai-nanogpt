@@ -2,7 +2,8 @@ import { Initializer } from '@tensorflow/tfjs-layers/dist/initializers';
 import { initializers } from '@tensorflow/tfjs-layers';
 import { gather, Tensor, variable } from '@tensorflow/tfjs-core';
 import { dot } from '@tensorflow/tfjs-layers/dist/backend/tfjs_backend';
-import BaseLayer, { ForwardAttributes, GPTLayerConfig } from './BaseLayer';
+import BaseLayer, { ForwardAttributes } from './BaseLayer';
+import { GPTConfig } from '@base/models/config';
 
 export default class TiedEmbeddingOutputLayer extends BaseLayer {
     private vocabSize: number;
@@ -10,11 +11,11 @@ export default class TiedEmbeddingOutputLayer extends BaseLayer {
     private initializer: Initializer;
     private WEIGHTS: string;
 
-    constructor(config: GPTLayerConfig, name: string, parent?: BaseLayer) {
+    constructor(config: GPTConfig, name: string, parent?: BaseLayer) {
         super(config, parent);
         this.WEIGHTS = name;
-        this.vocabSize = config.gpt.vocabSize;
-        this.embedDim = config.gpt.nEmbed;
+        this.vocabSize = config.vocabSize;
+        this.embedDim = config.nEmbed;
 
         this.initializer = initializers.randomNormal({
             mean: 0.0,

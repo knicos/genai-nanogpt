@@ -1,10 +1,10 @@
 import type { ITokeniser } from '../tokeniser/type';
-import NanoGPT, { TrainingLogEntry } from '../NanoGPTModel';
 import GPTTrainer, { TrainingOptions, TrainingProgress } from './Trainer';
 import Evaluator from './Evaluator';
 import { dispose, Tensor } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
 import MemoryProfiler from '@base/utilities/profile';
+import Model, { ModelForwardAttributes, TrainingLogEntry } from '@base/models/model';
 
 interface TrainingState {
     step: number;
@@ -25,7 +25,7 @@ const DEFAULT_OPTIONS: TrainingOptions = {
 
 // Enhanced training utilities with Dataset API and memory leak fixes
 export default class FullTrainer extends GPTTrainer {
-    constructor(model: NanoGPT, tokenizer: ITokeniser, learningRate: number = 3e-4) {
+    constructor(model: Model<ModelForwardAttributes>, tokenizer: ITokeniser, learningRate: number = 3e-4) {
         super(model, tokenizer, learningRate);
     }
 
@@ -89,7 +89,7 @@ export default class FullTrainer extends GPTTrainer {
 
         if (options?.advancedMetrics) {
             if (!this.model.getProfiler()) {
-                this.model.config.layerConfig.profiler = new MemoryProfiler();
+                this.model.setProfiler(new MemoryProfiler());
             }
         }
 
@@ -170,7 +170,7 @@ export default class FullTrainer extends GPTTrainer {
 
         if (options?.advancedMetrics) {
             if (!this.model.getProfiler()) {
-                this.model.config.layerConfig.profiler = new MemoryProfiler();
+                this.model.setProfiler(new MemoryProfiler());
             }
         }
 

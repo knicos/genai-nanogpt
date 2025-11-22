@@ -1,10 +1,10 @@
-import NanoGPT from '@base/NanoGPTModel';
 import loadTransformers, { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './loadTransformers';
 import { ITokeniser } from '@base/main';
+import Model, { ModelForwardAttributes } from '@base/models/model';
 
 export default async function loadHuggingFace(
     name: string
-): Promise<{ model: NanoGPT; tokeniser: ITokeniser; name?: string }> {
+): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; name?: string }> {
     const configUrl = `https://huggingface.co/${name}/resolve/main/config.json`;
     const tokenUrl = `https://huggingface.co/${name}/resolve/main/tokeniser.json`;
     const metaUrl = `https://huggingface.co/${name}/resolve/main/meta.json`;

@@ -1,4 +1,4 @@
-import { GPTConfig } from '@base/config';
+import { GPTConfig } from '@base/models/config';
 
 const BYTES_PER_PARAMETER = 4; // Assuming float32
 
