@@ -25,6 +25,7 @@ export interface GenerateOptions {
     usePadding?: boolean;
     attentionScores?: boolean;
     includeProbabilities?: boolean;
+    embeddings?: boolean;
 }
 
 const CHARS = [
@@ -63,6 +64,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     private lastToken = -1;
     private attentionData: number[][][][] = [];
     private probabilitiesData: number[][][] = [];
+    private embeddingsData: number[][][][] = [];
     private tokens: number[] = [];
 
     constructor(private readonly model: Model<ModelForwardAttributes>, private readonly tokeniser: ITokeniser) {
@@ -126,6 +128,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
                   }
                 : undefined,
             cache,
+            outputEmbeddings: options?.embeddings ?? false,
         };
 
         const logits = tidy(() => {
@@ -180,8 +183,6 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         if (tP) {
             // Top-p (nucleus) sampling
             const probs = softmax(logits);
-
-            // TODO: This can be optimized to avoid arraySync
             const probsArray = (await probs.array()) as number[][];
 
             probs.dispose();
@@ -203,13 +204,6 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
             // Do the multinomial on the CPU
             nextToken = multinomialCPU(renormProbs);
-
-            // Sample from filtered tokens
-            //const renormTensor = tensor2d([renormProbs], [1, renormProbs.length]);
-            //nextToken = multinomial(renormTensor, 1, undefined, true);
-            //nextToken = argMax(renormTensor, -1);
-            //console.log('Next token (top-p):', await nextToken.array());
-            //renormTensor.dispose();
         } else if (tK) {
             const { values: topKValues, indices: topKIndices } = topk(logits, tK);
             const sampledIdx = multinomial(topKValues, 1);
@@ -225,6 +219,18 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         let probabilities: Tensor | undefined;
         if (options?.includeProbabilities) {
             probabilities = softmax(logits);
+        }
+
+        if (attrs.embeddings) {
+            this.embeddingsData.push(
+                await Promise.all(
+                    attrs.embeddings.map(async (e) => {
+                        const arr = (await e.array()) as number[][];
+                        e.dispose();
+                        return arr;
+                    })
+                )
+            );
         }
 
         const reshaped = nextToken.reshape([1, 1]);

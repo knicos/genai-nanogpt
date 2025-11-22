@@ -9,6 +9,8 @@ export interface ModelForwardAttributes extends ForwardAttributes {
     cache?: KVCache[];
     attentionScores?: AttentionScores;
     seed?: number;
+    outputEmbeddings?: boolean;
+    embeddings?: Tensor[];
 }
 
 interface TrainingState {

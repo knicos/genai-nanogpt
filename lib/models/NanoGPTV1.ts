@@ -3,7 +3,7 @@ import Block from '../layers/TransformerBlock';
 import TiedEmbeddingOutputLayer from '../layers/TiedEmbedding';
 import RoPECache from '../layers/RoPECache';
 import RMSNorm from '../layers/RMSNorm';
-import { Tensor, tidy } from '@tensorflow/tfjs-core';
+import { keep, Tensor, tidy } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from './model';
 import PositionEmbedding from '@base/layers/PositionEmbedding';
 
@@ -68,6 +68,10 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
 
         attrs.ropeCache = this.ropeCache;
 
+        if (attrs.outputEmbeddings) {
+            attrs.embeddings = [];
+        }
+
         return tidy(() => {
             this.startMemory();
             // Token and position embeddings
@@ -95,7 +99,13 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
                     attrs.checkpointing && attrs.training
                         ? block.callCheckpoint(blockAttrs, x)
                         : block.call(blockAttrs, x);
-                x.dispose();
+
+                if (attrs.outputEmbeddings) {
+                    keep(x);
+                    attrs.embeddings!.push(x);
+                } else {
+                    x.dispose();
+                }
                 x = output as Tensor;
             }
 
@@ -104,7 +114,12 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
 
             // Embedding to logits
             const logits = this.wte.project(x) as Tensor;
-            x.dispose();
+            if (attrs.outputEmbeddings) {
+                keep(x);
+                attrs.embeddings!.push(x);
+            } else {
+                x.dispose();
+            }
 
             let loss: Tensor | undefined;
             if (targets) {
