@@ -78,8 +78,16 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
         });
     }
 
-    public getVariable(name: string): Variable {
+    public getVariable(name: string, recursive = false): Variable {
         const vari = this._variables.get(name);
+        if (!vari && recursive) {
+            for (const child of this.children) {
+                const vari = child.getVariable(name, true);
+                if (vari) {
+                    return vari;
+                }
+            }
+        }
         if (!vari) {
             throw new Error(`Variable ${name} not found`);
         }

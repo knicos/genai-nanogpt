@@ -63,6 +63,8 @@ describe('Generator', () => {
         const tokeniser = new CharTokeniser(20);
         const generator = new Generator(model, tokeniser);
 
+        tokeniser.vocab[1] = '#'; // Manually set unk token for testing
+
         const prompt = 'abcde';
         const output = await generator.generate(prompt, { maxLength: 50 });
         console.log('Output with untrained tokeniser:', output);
