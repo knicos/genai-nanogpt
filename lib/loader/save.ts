@@ -58,6 +58,7 @@ export async function saveModel(
                 application: '@genai-fi/nanogpt',
                 meta: options?.metadata,
                 name: options?.name,
+                training: model.trainingState || undefined,
             },
             undefined,
             4

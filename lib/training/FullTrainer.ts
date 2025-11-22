@@ -1,10 +1,10 @@
 import type { ITokeniser } from '../tokeniser/type';
-import GPTTrainer, { TrainingOptions, TrainingProgress } from './Trainer';
+import GPTTrainer, { TrainingLogEntry, TrainingOptions, TrainingProgress } from './Trainer';
 import Evaluator from './Evaluator';
 import { dispose, Tensor } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
 import MemoryProfiler from '@base/utilities/profile';
-import Model, { ModelForwardAttributes, TrainingLogEntry } from '@base/models/model';
+import Model, { ModelForwardAttributes } from '@base/models/model';
 
 interface TrainingState {
     step: number;
@@ -111,7 +111,12 @@ export default class FullTrainer extends GPTTrainer {
                 const lossScalar = this.trainBatch(state, batch);
 
                 const entry = this.createLogEntry(state, startTime, batch.xs.shape[0], options?.advancedMetrics);
-                this.model.log.push(entry);
+                this.model.trainingState = {
+                    steps: state.totalSteps,
+                    learningRate: this.optimizer.lr,
+                    batchSize: batch.xs.shape[0],
+                    loss: state.lastLoss,
+                };
 
                 if (state.step % logInterval === 0) {
                     await lossScalar.data();
@@ -192,7 +197,6 @@ export default class FullTrainer extends GPTTrainer {
                 const lossScalar = this.trainBatch(state, batch);
 
                 const entry = this.createLogEntry(state, startTime, batch.xs.shape[0], options?.advancedMetrics);
-                this.model.log.push(entry);
 
                 if (state.step % logInterval === 0) {
                     await lossScalar.data();

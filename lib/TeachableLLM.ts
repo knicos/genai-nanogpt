@@ -9,8 +9,8 @@ import { dummyPassTrainAsync, MemoryRequirements } from './utilities/dummy';
 import { CharTokeniser } from './main';
 import MemoryProfiler from './utilities/profile';
 import BPETokeniser from './tokeniser/bpe';
-import { TrainingProgress } from './training/Trainer';
-import Model, { ModelForwardAttributes, TrainingLogEntry } from './models/model';
+import { TrainingLogEntry, TrainingProgress } from './training/Trainer';
+import Model, { ModelForwardAttributes } from './models/model';
 import createModelInstance from './models/factory';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';

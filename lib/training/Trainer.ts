@@ -4,7 +4,18 @@ import AdamExt from './AdamExt';
 import { NamedVariableMap, TensorContainer } from '@tensorflow/tfjs-core/dist/tensor_types';
 import { dispose, Scalar, Tensor, tidy, variableGrads, zeros } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
-import Model, { ModelForwardAttributes, TrainingLogEntry } from '@base/models/model';
+import Model, { ModelForwardAttributes } from '@base/models/model';
+
+export interface TrainingLogEntry {
+    loss: number;
+    valLoss?: number;
+    step: number;
+    time: number;
+    example?: string;
+    batchSize: number;
+    gradientNorm?: number;
+    learningRate?: number;
+}
 
 export interface TrainingState {
     step: number;

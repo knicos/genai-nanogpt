@@ -5,26 +5,22 @@ import BaseLayer from '../layers/BaseLayer';
 import { estimateParameterCount } from '../main';
 import { createSoftmaxCrossEntropyWithGrad } from '../training/sparseCrossEntropy';
 
-export interface TrainingLogEntry {
-    loss: number;
-    valLoss?: number;
-    step: number;
-    time: number;
-    example?: string;
-    batchSize: number;
-    gradientNorm?: number;
-    learningRate?: number;
-}
-
 export interface ModelForwardAttributes extends ForwardAttributes {
     cache?: KVCache[];
     attentionScores?: AttentionScores;
     seed?: number;
 }
 
+interface TrainingState {
+    steps: number;
+    learningRate: number;
+    batchSize: number;
+    loss: number;
+}
+
 // Abstract base class for models
 export default abstract class Model<T extends ModelForwardAttributes> extends BaseLayer<T> {
-    public log: TrainingLogEntry[] = []; // Training log
+    public trainingState: TrainingState | null = null;
 
     abstract getClassName(): string;
 

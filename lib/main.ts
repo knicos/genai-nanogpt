@@ -7,9 +7,9 @@ export { default as loadTextData } from './data/textLoader';
 export { default as Generator } from './Generator';
 export type { ITrainerOptions } from './Trainer';
 export type { IGenerateOptions } from './Generator';
-export { type TrainingLogEntry, type ModelForwardAttributes, default as Model } from './models/model';
+export { type ModelForwardAttributes, default as Model } from './models/model';
 export type { ITokeniser } from './tokeniser/type';
-export type { TrainingProgress } from './training/Trainer';
+export type { TrainingProgress, TrainingLogEntry } from './training/Trainer';
 export type { GPTConfig } from './models/config';
 export {
     estimateParameterCount,

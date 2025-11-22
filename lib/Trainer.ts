@@ -1,10 +1,10 @@
 import type { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import FullTrainer from './training/FullTrainer';
-import { TrainingProgress } from './training/Trainer';
+import { TrainingLogEntry, TrainingProgress } from './training/Trainer';
 import { Dataset } from '@tensorflow/tfjs-data';
 import { Tensor } from '@tensorflow/tfjs-core';
-import Model, { ModelForwardAttributes, TrainingLogEntry } from './models/model';
+import Model, { ModelForwardAttributes } from './models/model';
 
 export interface ITrainerOptions {
     batchSize?: number; // Batch size for training
@@ -17,12 +17,19 @@ export interface ITrainerOptions {
     advancedMetrics?: boolean; // Whether to compute advanced metrics during training
 }
 
+interface ExtendedTrainingProgress extends TrainingProgress {
+    progress: number; // Progress as a fraction between 0 and 1
+    remaining: number; // Estimated remaining time in seconds
+}
+
 export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     private trainer: FullTrainer;
     private hasTrained: boolean = false;
     private trainDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
     private validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
     private totalSamples: number = 0;
+    private log: TrainingLogEntry[] = [];
+    private progress: ExtendedTrainingProgress | null = null;
 
     constructor(model: Model<ModelForwardAttributes>, tokeniser: ITokeniser) {
         super();
@@ -35,6 +42,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
 
     reset() {
         this.hasTrained = false;
+        this.log = [];
         this.trainer.reset();
     }
 
@@ -75,18 +83,20 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                 maxSteps: options?.maxSteps || 1000,
                 advancedMetrics: options?.advancedMetrics || false,
                 onStep: async (log: TrainingLogEntry, progress: TrainingProgress) => {
+                    this.log.push(log);
+                    this.progress = {
+                        ...progress,
+                        progress: progress.totalSamples / this.totalSamples,
+                        remaining: Math.max(
+                            0,
+                            ((this.totalSamples - progress.totalSamples) / progress.totalSamples) * progress.duration
+                        ),
+                    };
+
                     const listeners = this.listeners('log');
                     for (const listener of listeners) {
                         // These listeners can be async, so we await them
-                        await listener(log, {
-                            ...progress,
-                            progress: progress.totalSamples / this.totalSamples,
-                            remaining: Math.max(
-                                0,
-                                ((this.totalSamples - progress.totalSamples) / progress.totalSamples) *
-                                    progress.duration
-                            ),
-                        });
+                        await listener(log, this.progress!);
                     }
                 },
             },
@@ -133,5 +143,13 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             });
         }
         this.emit('stop');
+    }
+
+    getLog(): TrainingLogEntry[] {
+        return this.log;
+    }
+
+    getProgress(): ExtendedTrainingProgress | null {
+        return this.progress;
     }
 }
