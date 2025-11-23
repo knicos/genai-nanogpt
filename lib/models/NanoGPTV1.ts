@@ -89,6 +89,7 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
                 const block = this.blocks[i];
                 const seed = Math.random() * 1e9;
                 const blockAttrs = {
+                    ropeCache: attrs.ropeCache,
                     training: attrs.training,
                     seed,
                     attentionScores: attrs.attentionScores,
