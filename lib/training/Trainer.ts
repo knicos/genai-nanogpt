@@ -57,12 +57,17 @@ export default abstract class GPTTrainer {
     protected learningRate: number;
     protected running = false;
     protected lastState?: TrainingState;
+    protected _gradientCheckpointing: boolean = false;
 
     constructor(model: Model<ModelForwardAttributes>, protected tokenizer: ITokeniser, learningRate: number = 1e-3) {
         this.model = model;
         this.learningRate = learningRate;
         this.resetOptimizer();
         this.datasetBuilder = new DatasetBuilder(tokenizer, model.config.blockSize);
+    }
+
+    setGradientCheckpointing(enabled: boolean): void {
+        this._gradientCheckpointing = enabled;
     }
 
     setLearningRate(learningRate: number): void {
@@ -106,7 +111,11 @@ export default abstract class GPTTrainer {
             const { xs, ys } = batch;
 
             const f = () => {
-                const [logits, loss] = this.model.forward({ training: true }, xs, ys);
+                const [logits, loss] = this.model.forward(
+                    { training: true, checkpointing: this._gradientCheckpointing },
+                    xs,
+                    ys
+                );
                 logits.dispose();
                 return loss! as Scalar;
             };

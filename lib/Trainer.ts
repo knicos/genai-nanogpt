@@ -15,6 +15,7 @@ export interface ITrainerOptions {
     prompt?: string; // Prompt for generating text during training
     validationSplit?: number; // Fraction of data to use for validation
     advancedMetrics?: boolean; // Whether to compute advanced metrics during training
+    gradientCheckpointing?: boolean; // Whether to use gradient checkpointing
 }
 
 interface ExtendedTrainingProgress extends TrainingProgress {
@@ -73,6 +74,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         this.hasTrained = true;
 
         this.emit('start');
+
+        this.trainer.setGradientCheckpointing(options?.gradientCheckpointing || false);
 
         await this.trainer.trainOnDataset(
             this.trainDataset,
