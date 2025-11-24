@@ -1,14 +1,22 @@
-export function arraysClose(a: unknown, b: unknown, epsilon = 1e-5) {
+export function arraysClose(a: unknown, b: unknown) {
+    let maxError = 0.0;
     if (Array.isArray(a) && Array.isArray(b)) {
-        if (a.length !== b.length) return false;
+        if (a.length !== b.length) return Number.POSITIVE_INFINITY;
         for (let i = 0; i < a.length; ++i) {
-            if (!arraysClose(a[i], b[i], epsilon)) return false;
+            maxError = Math.max(maxError, arraysClose(a[i], b[i]));
         }
-        return true;
+        return maxError;
     } else if (typeof a === 'number' && typeof b === 'number') {
-        if (a === -Infinity && b === -Infinity) return true;
-        return Math.abs(a - b) < epsilon;
+        if (isNaN(a) && isNaN(b)) {
+            return 0.0;
+        }
+        if (!isFinite(a) || !isFinite(b)) {
+            return a === b ? 0.0 : Number.POSITIVE_INFINITY;
+        }
+        const aClose = Math.abs(a - b);
+        maxError = Math.max(maxError, aClose);
+        return maxError;
     } else {
-        return false;
+        return Number.POSITIVE_INFINITY;
     }
 }

@@ -33,7 +33,7 @@ describe('appendCache', () => {
                     ],
                 ],
             ])
-        ).toBe(true);
+        ).toBeLessThan(1e-6);
     });
 
     it('works with an empty cache', async ({ expect }) => {
@@ -52,7 +52,7 @@ describe('appendCache', () => {
                     ],
                 ],
             ])
-        ).toBe(true);
+        ).toBeLessThan(1e-6);
     });
 
     it('shifts and pushes a new item', async ({ expect }) => {
@@ -84,6 +84,6 @@ describe('appendCache', () => {
                     ],
                 ],
             ])
-        ).toBe(true);
+        ).toBeLessThan(1e-6);
     });
 });

@@ -7,68 +7,21 @@
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
         <script
             type="module"
-            src="../dist/ops/rope.js"
-        ></script>
-        <script
-            type="module"
             src="../dist/ops/webgpu/index.js"
         ></script>
     </head>
     <body>
         <script type="module">
-            function arraysClose(a, b, epsilon = 1e-5) {
-                if (Array.isArray(a) && Array.isArray(b)) {
-                    if (a.length !== b.length) return false;
-                    for (let i = 0; i < a.length; ++i) {
-                        if (!arraysClose(a[i], b[i], epsilon)) return false;
-                    }
-                    return true;
-                } else if (typeof a === 'number' && typeof b === 'number') {
-                    return Math.abs(a - b) < epsilon;
-                } else {
-                    return false;
-                }
-            }
-
-            async function execute(backend) {
-                await tf.setBackend(backend);
-                const memStart = tf.memory().numBytes;
-                const x = tf.tensor4d(
-                    [
-                        [
-                            [
-                                [0.1, 0.2],
-                                [0.3, 0.4],
-                            ],
-                        ],
-                    ],
-                    [1, 1, 2, 2]
-                ); // (1,1,T,rdim)
-                const sin = tf.tensor3d([0.5, 0.6], [2, 1, 1]);
-                const cos = tf.tensor3d([0.9, 1.0], [2, 1, 1]);
-
-                // Custom op
-                const custom = tf.engine().runKernel('Rope', { x, sin, cos }, { pastLen: 0 });
-                const memEnd = tf.memory().numBytes;
-                console.log('CPU memory used:', memEnd - memStart);
-                return custom.array();
-            }
+            import { checks } from '../dist/main.js';
 
             async function runTest() {
-                const customArr = await execute('webgl');
-                const manualArr = await execute('cpu');
-                const webgpuArr = await execute('webgpu');
+                const results = await checks.runCheck(checks.rope);
 
-                console.log('Manual:', manualArr);
-                console.log('Custom:', customArr);
-                console.log('WebGPU:', webgpuArr);
+                const pass = results.reduce((acc, curr) => acc && curr.passed, true);
 
-                // Compare arrays
-                const match1 = arraysClose(manualArr, customArr);
-                const match2 = arraysClose(webgpuArr, customArr);
-                const match = match1 && match2;
-                document.body.innerText = match ? 'PASS' : 'FAIL';
-                window.testResult = { match, manualArr, customArr, webgpuArr };
+                document.body.innerText = pass ? 'PASS' : 'FAIL';
+                console.log('Results:', results);
+                window.testResult = { pass, results };
             }
             runTest();
         </script>

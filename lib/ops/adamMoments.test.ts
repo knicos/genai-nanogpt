@@ -26,8 +26,8 @@ describe('adamMoments CPU kernel', () => {
         const m1TestArray = await updatedM1.array();
         const m2TestArray = await updatedM2.array();
 
-        const close1 = arraysClose(m1RealArray, m1TestArray);
-        const close2 = arraysClose(m2RealArray, m2TestArray);
+        const close1 = arraysClose(m1RealArray, m1TestArray) <= 1e-6;
+        const close2 = arraysClose(m2RealArray, m2TestArray) <= 1e-6;
 
         expect(close1).toBe(true);
         expect(close2).toBe(true);

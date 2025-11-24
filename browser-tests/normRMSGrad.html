@@ -7,80 +7,19 @@
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
         <script
             type="module"
-            src="../dist/ops/normRMS.js"
-        ></script>
-        <script
-            type="module"
             src="../dist/ops/webgpu/index.js"
         ></script>
     </head>
     <body>
         <script type="module">
-            function arraysClose(a, b) {
-                let maxError = 0.0;
-                if (Array.isArray(a) && Array.isArray(b)) {
-                    if (a.length !== b.length) return Number.POSITIVE_INFINITY;
-                    for (let i = 0; i < a.length; ++i) {
-                        maxError = Math.max(maxError, arraysClose(a[i], b[i]));
-                    }
-                    return maxError;
-                } else if (typeof a === 'number' && typeof b === 'number') {
-                    const aClose = Math.abs(a - b);
-                    maxError = Math.max(maxError, aClose);
-                    return maxError;
-                } else {
-                    return Number.POSITIVE_INFINITY;
-                }
-            }
-
-            async function runVersion(backend, xA, gammaA, dyA) {
-                await tf.setBackend(backend);
-                const gammaT = tf.tensor1d(gammaA, 'float32');
-                const xT = tf.tensor(xA, [16, 128, 192], 'float32');
-                const dyT = tf.tensor(dyA, [16, 128, 192], 'float32');
-                const result = tf.engine().runKernel('RMSNormGrad', { x: xT, gamma: gammaT, dy: dyT });
-                const dxArr = await result[0].array();
-                const dGamma = await result[1].array();
-
-                return { dxArr, dGamma };
-            }
+            import { checks } from '../dist/main.js';
 
             async function runTest() {
-                // Create x and gamma on CPU
-                const x = Array.from({ length: 16 * 128 * 192 }, () => Math.random());
-                const gamma = Array.from({ length: 192 }, () => Math.random());
-                const dy = Array.from({ length: 16 * 128 * 192 }, () => Math.random());
+                const results = await checks.runCheck(checks.normRMSGrad, 1e-3);
 
-                const cpu = await runVersion('cpu', x, gamma, dy);
-                const gpu = await runVersion('webgl', x, gamma, dy);
-                const webgpu = await runVersion('webgpu', x, gamma, dy);
-
-                console.log('CPU:', cpu);
-                console.log('GPU:', gpu);
-                console.log('WebGPU:', webgpu);
-
-                const dxMatch = arraysClose(cpu.dxArr, gpu.dxArr);
-                const dGammaMatch = arraysClose(cpu.dGamma, gpu.dGamma);
-
-                const webgpuDXMatch = arraysClose(cpu.dxArr, webgpu.dxArr);
-                const webgpuDGammaMatch = arraysClose(cpu.dGamma, webgpu.dGamma);
-
-                const epsilon = 1e-5;
-
-                const allMatch =
-                    dxMatch < epsilon && dGammaMatch < 1e-3 && webgpuDXMatch < epsilon && webgpuDGammaMatch < 1e-3;
-                document.body.innerText = allMatch
-                    ? 'PASS'
-                    : `FAIL\ndx: ${dxMatch}\ndGamma: ${dGammaMatch}\nwebgpuDX: ${webgpuDXMatch}\nwebgpuDGamma: ${webgpuDGammaMatch}`;
-                window.testResult = {
-                    dxMatch,
-                    dGammaMatch,
-                    webgpuDXMatch,
-                    webgpuDGammaMatch,
-                    cpu,
-                    gpu,
-                    webgpu,
-                };
+                const pass = results.reduce((acc, curr) => acc && curr.passed, true);
+                document.body.innerText = pass ? 'PASS' : 'FAIL';
+                console.log('Results:', results);
             }
             runTest();
         </script>

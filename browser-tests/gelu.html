@@ -7,60 +7,19 @@
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
         <script
             type="module"
-            src="../dist/ops/gelu.js"
-        ></script>
-        <script
-            type="module"
             src="../dist/ops/webgpu/index.js"
         ></script>
     </head>
     <body>
         <script type="module">
-            function arraysClose(a, b, epsilon = 1e-5) {
-                if (Array.isArray(a) && Array.isArray(b)) {
-                    if (a.length !== b.length) return false;
-                    for (let i = 0; i < a.length; ++i) {
-                        if (!arraysClose(a[i], b[i], epsilon)) return false;
-                    }
-                    return true;
-                } else if (typeof a === 'number' && typeof b === 'number') {
-                    if (a === -Infinity && b === -Infinity) return true;
-                    return Math.abs(a - b) < epsilon;
-                } else {
-                    return false;
-                }
-            }
-
-            async function execute(backend) {
-                await tf.setBackend(backend);
-                const x = tf.tensor2d(
-                    [
-                        [0.1, 0.2, 0, 0],
-                        [0.1, 0.2, 0, 0],
-                        [0.0, 0.0, 0, 0],
-                        [0.0, 0.0, 0, 0],
-                    ],
-                    [4, 4]
-                );
-
-                // Custom op
-                const custom = tf.engine().runKernel('Gelu', { x });
-                const customArr = await custom.array();
-                return customArr;
-            }
+            import { checks } from '../dist/main.js';
 
             async function runTest() {
-                const customArr = await execute('webgl');
-                const manualArr = await execute('cpu');
-                const webgpuArr = await execute('webgpu');
+                const results = await checks.runCheck(checks.gelu);
 
-                // Compare arrays
-                const match1 = arraysClose(manualArr, customArr);
-                const match2 = arraysClose(webgpuArr, customArr);
-                const match = match1 && match2;
-                console.log({ match1, manualArr, customArr, match2, webgpuArr });
-                document.body.innerText = match1 && match2 ? 'PASS' : 'FAIL';
-                window.testResult = { match, manualArr, customArr, webgpuArr };
+                const pass = results.reduce((acc, curr) => acc && curr.passed, true);
+                document.body.innerText = pass ? 'PASS' : 'FAIL';
+                console.log('Results:', results);
             }
             runTest();
         </script>
