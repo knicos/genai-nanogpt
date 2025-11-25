@@ -19,7 +19,7 @@ const GELU =
     float x3 = x * x * x;
     float inner = x + ${A} * x3;
     inner = ${K} * inner;
-    inner = tanh(inner);
+    inner = abs(inner) > 15.0 ? sign(inner) : tanh(inner);
     inner = 0.5 * (1.0 + inner);
     inner = x * inner;
     return inner;
@@ -53,7 +53,7 @@ class GeluGradProgram implements GPGPUProgram {
                 float x2 = x * x;
                 float x3 = x2 * x;
                 float u  = ${K} * (x + ${A} * x3);
-                float t  = tanh(u);
+                float t = abs(u) > 15.0 ? sign(u) : tanh(u);
                 float sech2 = 1.0 - t * t;
                 float du_dx = ${K} * (1.0 + 3.0 * ${A} * x2);
                 float dgelu = 0.5 * (1.0 + t) + 0.5 * x * sech2 * du_dx;

@@ -26,11 +26,14 @@ export class GeluProgram implements WebGPUProgram {
 
     getUserCode(): string {
         return `
+      fn polyTanh(x: f32) -> f32 {
+         return select(tanh(x), sign(x), abs(x) > 15.0);
+      }
       fn unaryOperation(x : f32) -> f32 {
         let x3 = x * x * x;
         var inner = fma(${A}, x3, x);
         inner = ${K} * inner;
-        inner = tanh(inner);
+        inner = polyTanh(inner);
         inner = 0.5 * (1.0 + inner);
         return x * inner;
       }
@@ -80,13 +83,16 @@ class GeluGradProgram implements WebGPUProgram {
 
     getUserCode(): string {
         return `
+            fn polyTanh(x: f32) -> f32 {
+                return select(tanh(x), sign(x), abs(x) > 15.0);
+            }
             ${main('index')} {
                 if (index < uniforms.size) {
                     let X  = getXByOutputIndex(index);
                     let x2 = X * X;
                     let x3 = x2 * X;
                     let u  = ${K} * (X + ${A} * x3);
-                    let t  = tanh(u);
+                    let t  = polyTanh(u);
                     let sech2 = 1.0 - t * t;
                     let du_dx = ${K} * (1.0 + 3.0 * ${A} * x2);
                     let dgelu = 0.5 * (1.0 + t) + 0.5 * X * sech2 * du_dx;

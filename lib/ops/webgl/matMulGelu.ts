@@ -36,7 +36,12 @@ const GELU_PACKED = `
     vec4 x3 = x * x * x;
     vec4 inner = x + ${A} * x3;
     inner = ${K} * inner;
-    inner = tanh(inner);
+    inner = vec4(
+        abs(inner[0]) > 15.0 ? sign(inner[0]) : tanh(inner[0]),
+        abs(inner[1]) > 15.0 ? sign(inner[1]) : tanh(inner[1]),
+        abs(inner[2]) > 15.0 ? sign(inner[2]) : tanh(inner[2]),
+        abs(inner[3]) > 15.0 ? sign(inner[3]) : tanh(inner[3])
+    );
     inner = 0.5 * (1.0 + inner);
     vec4 result = x * inner;
     return result;
@@ -46,7 +51,12 @@ const DGELU_PACKED = `
     vec4 a2 = a * a;
     vec4 a3 = a2 * a;
     vec4 u  = ${K} * (a + ${A} * a3);
-    vec4 t  = tanh(u);
+    vec4 t = vec4(
+        abs(u[0]) > 15.0 ? sign(u[0]) : tanh(u[0]),
+        abs(u[1]) > 15.0 ? sign(u[1]) : tanh(u[1]),
+        abs(u[2]) > 15.0 ? sign(u[2]) : tanh(u[2]),
+        abs(u[3]) > 15.0 ? sign(u[3]) : tanh(u[3])
+    );
     vec4 sech2 = 1.0 - t * t;
     vec4 du_dx = ${K} * (1.0 + 3.0 * ${A} * a2);
     vec4 dgelu = 0.5 * (1.0 + t) + 0.5 * a * sech2 * du_dx;
