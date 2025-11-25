@@ -7,6 +7,8 @@ export interface ForwardAttributes {
     training: boolean;
     checkpointing?: boolean;
     ropeCache?: RoPECache;
+    outputEmbeddings?: boolean;
+    embeddings?: { name: string; tensor: Tensor }[];
 }
 
 export default abstract class BaseLayer<ATTR extends ForwardAttributes = ForwardAttributes> {

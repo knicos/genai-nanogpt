@@ -89,10 +89,8 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
                 const block = this.blocks[i];
                 const seed = Math.random() * 1e9;
                 const blockAttrs = {
-                    ropeCache: attrs.ropeCache,
-                    training: attrs.training,
+                    ...attrs,
                     seed,
-                    attentionScores: attrs.attentionScores,
                     pastKV: attrs.cache ? attrs.cache[i] : undefined,
                 };
 
@@ -103,7 +101,7 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
 
                 if (attrs.outputEmbeddings) {
                     keep(x);
-                    attrs.embeddings!.push(x);
+                    attrs.embeddings!.push({ name: `block_output_${i}`, tensor: x });
                 } else {
                     x.dispose();
                 }
@@ -117,7 +115,7 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
             const logits = this.wte.project(x) as Tensor;
             if (attrs.outputEmbeddings) {
                 keep(x);
-                attrs.embeddings!.push(x);
+                attrs.embeddings!.push({ name: `final_norm_output`, tensor: x });
             } else {
                 x.dispose();
             }

@@ -64,7 +64,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     private lastToken = -1;
     private attentionData: number[][][][][] = [];
     private probabilitiesData: number[][][] = [];
-    private embeddingsData: number[][][][] = [];
+    private embeddingsData: { name: string; tensor: number[][] }[][] = [];
     private tokens: number[] = [];
 
     constructor(private readonly model: Model<ModelForwardAttributes>, private readonly tokeniser: ITokeniser) {
@@ -224,15 +224,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         }
 
         if (attrs.embeddings) {
-            this.embeddingsData.push(
-                await Promise.all(
-                    attrs.embeddings.map(async (e) => {
-                        const arr = (await e.array()) as number[][];
-                        e.dispose();
-                        return arr;
-                    })
-                )
-            );
+            const promises = attrs.embeddings.map(async (e) => {
+                const arr = (await e.tensor.array()) as number[][];
+                e.tensor.dispose();
+                return { name: e.name, tensor: arr };
+            });
+            const embeddingsResult = await Promise.all(promises);
+            this.embeddingsData.push(embeddingsResult);
         }
 
         const reshaped = nextToken.reshape([1, 1]);
@@ -375,7 +373,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         return this.probabilitiesData;
     }
 
-    public getEmbeddingsData(): number[][][][] {
+    public getEmbeddingsData(): { name: string; tensor: number[][] }[][] {
         return this.embeddingsData;
     }
 
