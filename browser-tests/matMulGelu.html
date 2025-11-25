@@ -4,63 +4,22 @@
         <meta charset="UTF-8" />
         <title>EfficientScatterSub WebGL Test</title>
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
         <script
             type="module"
-            src="../dist/ops/matMulGelu.js"
+            src="../dist/ops/webgpu/index.js"
         ></script>
     </head>
     <body>
         <script type="module">
-            function arraysClose(a, b, epsilon = 1e-5) {
-                if (Array.isArray(a) && Array.isArray(b)) {
-                    if (a.length !== b.length) return false;
-                    for (let i = 0; i < a.length; ++i) {
-                        if (!arraysClose(a[i], b[i], epsilon)) return false;
-                    }
-                    return true;
-                } else if (typeof a === 'number' && typeof b === 'number') {
-                    return Math.abs(a - b) < epsilon;
-                } else {
-                    return false;
-                }
-            }
-
-            async function execute(backend) {
-                await tf.setBackend(backend);
-                const kernel = tf.tensor2d(
-                    [
-                        [0.1, 0.2],
-                        [0.3, 0.4],
-                    ],
-                    [2, 2]
-                ); // (1,T,hs)
-                const x = tf.tensor2d(
-                    [
-                        [0.5, 0.6],
-                        [0.7, 0.8],
-                    ],
-                    [2, 2]
-                );
-
-                return tf.engine().runKernel('MatMulGelu', { x, kernel });
-                const customArray = await custom.array();
-                return customArray;
-            }
+            import { checks } from '../dist/main.js';
 
             async function runTest() {
-                const customArr = await execute('webgl');
-                const manualArr = await execute('cpu');
-                const webgpuArr = await execute('webgpu');
+                const results = await checks.runCheck(checks.matMulGelu);
 
-                console.log('Manual:', manualArr);
-                console.log('Custom:', customArr);
-                console.log('WebGPU:', webgpuArr);
-
-                // Compare arrays
-                const match1 = arraysClose(manualArr, customArr);
-                const match2 = arraysClose(manualArr, webgpuArr);
-                document.body.innerText = match1 && match2 ? 'PASS' : 'FAIL';
-                window.testResult = { match1, match2, manualArr, customArr, webgpuArr };
+                const pass = results.reduce((acc, curr) => acc && curr.passed, true);
+                document.body.innerText = pass ? 'PASS' : 'FAIL';
+                console.log('Results:', results);
             }
             runTest();
         </script>

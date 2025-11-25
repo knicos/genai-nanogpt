@@ -5,6 +5,7 @@ import { execute as gelu } from './gelu';
 import { execute as normRMSGrad } from './normRMSGrad';
 import { execute as appendCache } from './appendCache';
 import { execute as attentionMask } from './attentionMask';
+import { execute as matMulGelu } from './matMulGelu';
 import runCheck from './check';
 import { createWeightStatistics, createTensorStatistics } from './weights';
 
@@ -16,6 +17,7 @@ const checks = {
     normRMSGrad,
     appendCache,
     attentionMask,
+    matMulGelu,
     runCheck,
     createLayerWeightStatistics: createWeightStatistics,
     createWeightStatistics: createTensorStatistics,

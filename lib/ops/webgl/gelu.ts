@@ -21,8 +21,8 @@ const GELU =
     inner = ${K} * inner;
     inner = tanh(inner);
     inner = 0.5 * (1.0 + inner);
-    x = x * inner;
-    return x;
+    inner = x * inner;
+    return inner;
 `;
 
 export const gelu = unaryKernelFunc({ opSnippet: GELU });
