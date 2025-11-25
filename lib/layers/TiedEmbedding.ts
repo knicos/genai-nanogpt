@@ -22,7 +22,7 @@ export default class TiedEmbeddingOutputLayer extends BaseLayer {
             stddev: 0.02,
         });
 
-        this.addVariable(this.WEIGHTS, variable(this.initializer.apply([this.vocabSize, this.embedDim]), true));
+        this.addVariable(this.WEIGHTS, variable(this.initializer.apply([this.vocabSize, this.embedDim]), true, name));
     }
 
     embed(inputs: Tensor): Tensor {

@@ -2,8 +2,13 @@ import { describe, it } from 'vitest';
 import CausalSelfAttention, { KVCache } from './CausalSelfAttention';
 import * as tf from '@tensorflow/tfjs';
 import RoPECache from './RoPECache';
+import { afterEach } from 'node:test';
 
 describe('CausalSelfAttention', () => {
+    afterEach(() => {
+        tf.disposeVariables();
+    });
+
     it('generates a correctly shaped output', ({ expect }) => {
         const layer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
@@ -138,6 +143,9 @@ describe('CausalSelfAttention', () => {
         const weightsMap = new Map<string, tf.Tensor[]>();
         layer.saveWeights(weightsMap);
 
+        const originalOutput = layer.call({ training: false }, input) as tf.Tensor;
+        layer.dispose();
+
         const newLayer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
             vocabSize: 20,
@@ -153,7 +161,6 @@ describe('CausalSelfAttention', () => {
         newLayer.call({ training: false }, input); // Initialize the layer
         newLayer.loadWeights(weightsMap);
 
-        const originalOutput = layer.call({ training: false }, input) as tf.Tensor;
         const newOutput = newLayer.call({ training: false }, input) as tf.Tensor;
         expect(originalOutput.shape).toEqual(newOutput.shape);
         expect(originalOutput.dataSync()).toEqual(newOutput.dataSync());

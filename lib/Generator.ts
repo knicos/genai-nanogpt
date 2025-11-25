@@ -62,7 +62,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     private outputText = '';
     private actualTokeniser: ITokeniser;
     private lastToken = -1;
-    private attentionData: number[][][][] = [];
+    private attentionData: number[][][][][] = [];
     private probabilitiesData: number[][][] = [];
     private embeddingsData: number[][][][] = [];
     private tokens: number[] = [];
@@ -92,7 +92,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         const newText = await tokeniser.decode([newToken]);
 
         if (attention) {
-            const attentionArray = await Promise.all(attention.map((a) => a.array().then((arr) => arr as number[][])));
+            const attentionArray = await Promise.all(
+                attention.map((a) => a.array().then((arr) => arr as number[][][]))
+            );
             attention.forEach((a) => a.dispose());
             this.attentionData.push(attentionArray);
         }
@@ -365,12 +367,16 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         return this.outputText;
     }
 
-    public getAttentionData(): number[][][][] {
+    public getAttentionData(): number[][][][][] {
         return this.attentionData;
     }
 
     public getProbabilitiesData(): number[][][] {
         return this.probabilitiesData;
+    }
+
+    public getEmbeddingsData(): number[][][][] {
+        return this.embeddingsData;
     }
 
     public getTokens(): number[] {

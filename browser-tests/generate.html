@@ -2,6 +2,11 @@
     <head>
         <title>TM Language Model</title>
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
+        ></script>
         <script
             type="module"
             src="/dist/main.js"
@@ -23,7 +28,9 @@
     </head>
     <body>
         <script type="module">
-            import { TeachableLLM, waitForModel } from '/dist/main.js';
+            import { TeachableLLM, waitForModel, selectBackend } from '/dist/main.js';
+
+            await selectBackend('webgpu');
 
             const fileInput = document.getElementById('fileInput');
             const generateButton = document.getElementById('generateButton');

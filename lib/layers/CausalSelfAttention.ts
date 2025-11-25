@@ -55,8 +55,8 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
                 this.ATTN,
                 variable(
                     randomNormal([this.config.nEmbed, this.units], 0, 0.02),
-                    true
-                    //`block_${this.index}_attn_cAttn_kernel`
+                    true,
+                    `block_${this.index}_attn_cAttn_kernel`
                 )
             );
         }
@@ -65,8 +65,8 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
                 this.PROJ,
                 variable(
                     randomNormal([this.projUnits, this.config.nEmbed], 0, 0.02),
-                    true
-                    //`block_${this.index}_attn_cProj_kernel`
+                    true,
+                    `block_${this.index}_attn_cProj_kernel`
                 )
             );
         }

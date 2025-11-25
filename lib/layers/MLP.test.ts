@@ -1,8 +1,12 @@
-import { describe, it } from 'vitest';
+import { afterEach, describe, it } from 'vitest';
 import MLP from './MLP';
 import * as tf from '@tensorflow/tfjs';
 
 describe('MLP', () => {
+    afterEach(() => {
+        tf.disposeVariables();
+    });
+
     it('should call the MLP layer and return a tensor', ({ expect }) => {
         const config = {
             nEmbed: 16,
@@ -44,14 +48,21 @@ describe('MLP', () => {
 
         const weightsMap = new Map<string, tf.Tensor[]>();
         mlp.saveWeights(weightsMap);
+        const originalOutput = mlp.call({ training: false }, input) as tf.Tensor;
+
+        mlp.dispose();
 
         const newMlp = new MLP(0, config);
         newMlp.call({ training: false }, input); // Initialize the layer
         newMlp.loadWeights(weightsMap);
 
-        const originalOutput = mlp.call({ training: false }, input) as tf.Tensor;
         const newOutput = newMlp.call({ training: false }, input) as tf.Tensor;
         expect(originalOutput.shape).toEqual(newOutput.shape);
         expect(originalOutput.dataSync()).toEqual(newOutput.dataSync());
+
+        newMlp.dispose();
+        input.dispose();
+        originalOutput.dispose();
+        newOutput.dispose();
     });
 });

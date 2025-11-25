@@ -1,0 +1,62 @@
+<html>
+    <head>
+        <title>TM Language Model</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script
+            type="module"
+            src="/dist/main.js"
+        ></script>
+        <style>
+            body {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            #webcam {
+                margin-bottom: 20px;
+            }
+            #prediction {
+                font-size: 24px;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <script type="module">
+            import { TeachableLLM, waitForModel, checks } from '/dist/main.js';
+
+            const fileInput = document.getElementById('fileInput');
+            const generateButton = document.getElementById('generateButton');
+            const stepButton = document.getElementById('stepButton');
+            const output = document.getElementById('output');
+            let model = null;
+
+            fileInput.addEventListener('change', async (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    model = await TeachableLLM.loadModel(file);
+                    await waitForModel(model);
+                    output.innerText = 'Model loaded successfully.';
+                }
+            });
+
+            generateButton.addEventListener('click', async () => {
+                if (!model) {
+                    alert('Please load a model first.');
+                    return;
+                }
+
+                const weightChecks = await checks.createLayerWeightStatistics(model.model);
+                console.log('Weight Checks:', weightChecks);
+                output.innerText = 'Weight Checks:\n' + JSON.stringify(weightChecks, null, 2);
+            });
+        </script>
+        <input
+            type="file"
+            id="fileInput"
+            accept=".zip"
+        />
+        <button id="generateButton">Check Model</button>
+        <pre id="output"></pre>
+    </body>
+</html>

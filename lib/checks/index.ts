@@ -6,6 +6,7 @@ import { execute as normRMSGrad } from './normRMSGrad';
 import { execute as appendCache } from './appendCache';
 import { execute as attentionMask } from './attentionMask';
 import runCheck from './check';
+import { createWeightStatistics, createTensorStatistics } from './weights';
 
 const checks = {
     rope,
@@ -16,6 +17,8 @@ const checks = {
     appendCache,
     attentionMask,
     runCheck,
+    createLayerWeightStatistics: createWeightStatistics,
+    createWeightStatistics: createTensorStatistics,
 };
 
 export default checks;

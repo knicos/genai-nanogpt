@@ -28,8 +28,8 @@ export default class MLP extends BaseLayer {
                 this.MLPHIDDEN,
                 variable(
                     randomNormal([this.config.nEmbed, this.hiddenUnits], 0, 0.02),
-                    true
-                    //`block_${this.index}_attn_cAttn_kernel`
+                    true,
+                    `block_${this.index}_mlpHidden_kernel`
                 )
             );
         }
@@ -38,8 +38,8 @@ export default class MLP extends BaseLayer {
                 this.MLPOUT,
                 variable(
                     randomNormal([this.hiddenUnits, this.config.nEmbed], 0, 0.02 / Math.sqrt(2 * this.config.nLayer)),
-                    true
-                    //`block_${this.index}_attn_cProj_kernel`
+                    true,
+                    `block_${this.index}_mlpOut_kernel`
                 )
             );
         }

@@ -14,6 +14,8 @@ describe('TiedEmbedding', () => {
         const input = tf.tensor1d([1, 2, 3], 'int32');
         const output = tiedEmbedding.embed(input);
         expect(output.shape).toEqual([3, 64]); // Shape should match [batch_size, embed_dim]
+
+        tiedEmbedding.dispose();
     });
 
     it('should project inputs correctly', ({ expect }) => {
@@ -22,6 +24,8 @@ describe('TiedEmbedding', () => {
         const input = tf.randomNormal([1, 4, 64]);
         const output = tiedEmbedding.project(input);
         expect(output.shape).toEqual([1, 4, 100]); // Shape should match [batch_size, sequence_length, vocab_size]
+
+        tiedEmbedding.dispose();
     });
 
     it('should embed and project with the same weights', ({ expect }) => {
@@ -38,6 +42,12 @@ describe('TiedEmbedding', () => {
         expect(indicesData[0]).toContain(inputData[0]);
         expect(indicesData[1]).toContain(inputData[1]);
         expect(indicesData[2]).toContain(inputData[2]);
+
+        tiedEmbedding.dispose();
+        input.dispose();
+        embedded.dispose();
+        projected.dispose();
+        indices.dispose();
     });
 
     it('restores from saved weights', ({ expect }) => {
@@ -45,17 +55,24 @@ describe('TiedEmbedding', () => {
         const tiedEmbedding = new TiedEmbedding(config, 't1');
         const input = tf.tensor1d([1, 2, 3], 'int32');
         tiedEmbedding.embed(input); // Initialize the layer
+        const originalOutput = tiedEmbedding.embed(input);
 
         const weights = new Map<string, tf.Tensor[]>();
         tiedEmbedding.saveWeights(weights);
 
+        tiedEmbedding.dispose();
+
         const newTiedEmbedding = new TiedEmbedding(config, 't1');
         newTiedEmbedding.loadWeights(weights);
 
-        const originalOutput = tiedEmbedding.embed(input);
         const newOutput = newTiedEmbedding.embed(input);
 
         expect(originalOutput.shape).toEqual(newOutput.shape);
         expect(originalOutput.dataSync()).toEqual(newOutput.dataSync());
+
+        newTiedEmbedding.dispose();
+        input.dispose();
+        originalOutput.dispose();
+        newOutput.dispose();
     });
 });
