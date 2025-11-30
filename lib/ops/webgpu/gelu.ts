@@ -26,23 +26,24 @@ export class GeluProgram implements WebGPUProgram {
 
     getUserCode(): string {
         return `
-      fn polyTanh(x: f32) -> f32 {
-         return select(tanh(x), sign(x), abs(x) > 15.0);
-      }
-      fn unaryOperation(x : f32) -> f32 {
-        let x3 = x * x * x;
-        var inner = fma(${A}, x3, x);
-        inner = ${K} * inner;
-        inner = polyTanh(inner);
-        inner = 0.5 * (1.0 + inner);
-        return x * inner;
-      }
-      ${main('index')} {
-        if (index < uniforms.size) {
-          let a = getAByOutputIndex(index);
-          setOutputAtIndex(index, unaryOperation(a));
-        }
-      }
+            // TODO: revisit after https://github.com/gpuweb/gpuweb/issues/4458 is resolved
+            fn tanhComplete(x: f32) -> f32 {
+                return select(tanh(x), sign(x), abs(x) > 15.0);
+            }
+            fn unaryOperation(x : f32) -> f32 {
+                let x3 = x * x * x;
+                var inner = fma(${A}, x3, x);
+                inner = ${K} * inner;
+                inner = tanhComplete(inner);
+                inner = 0.5 * (1.0 + inner);
+                return x * inner;
+            }
+            ${main('index')} {
+                if (index < uniforms.size) {
+                let a = getAByOutputIndex(index);
+                setOutputAtIndex(index, unaryOperation(a));
+                }
+            }
       `;
     }
 }
@@ -76,14 +77,14 @@ class GeluGradProgram implements WebGPUProgram {
 
     constructor(shape: number[]) {
         this.outputShape = shape;
-        // d/dx gelu(x) = 0.5*(1 + t) + 0.5*x*(1 - t^2)*k*(1 + 3a x^2)
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
         this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);
     }
 
     getUserCode(): string {
         return `
-            fn polyTanh(x: f32) -> f32 {
+            // TODO: revisit after https://github.com/gpuweb/gpuweb/issues/4458 is resolved
+            fn tanhComplete(x: f32) -> f32 {
                 return select(tanh(x), sign(x), abs(x) > 15.0);
             }
             ${main('index')} {
@@ -92,7 +93,7 @@ class GeluGradProgram implements WebGPUProgram {
                     let x2 = X * X;
                     let x3 = x2 * X;
                     let u  = ${K} * (X + ${A} * x3);
-                    let t  = polyTanh(u);
+                    let t  = tanhComplete(u);
                     let sech2 = 1.0 - t * t;
                     let du_dx = ${K} * (1.0 + 3.0 * ${A} * x2);
                     let dgelu = 0.5 * (1.0 + t) + 0.5 * X * sech2 * du_dx;

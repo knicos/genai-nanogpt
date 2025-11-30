@@ -155,4 +155,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     getProgress(): ExtendedTrainingProgress | null {
         return this.progress;
     }
+
+    isPrepared(): boolean {
+        return this.trainDataset !== undefined && this.validationDataset !== undefined;
+    }
 }

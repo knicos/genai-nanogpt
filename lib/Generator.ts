@@ -17,6 +17,8 @@ import {
 import { CharTokeniser } from './main';
 import multinomialCPU from './utilities/multinomialCPU';
 import Model, { ModelForwardAttributes } from './models/model';
+import topP from './utilities/topP';
+import { sparseSoftmaxCrossEntropy } from './training/sparseCrossEntropy';
 
 export interface GenerateOptions {
     temperature?: number;
@@ -25,7 +27,8 @@ export interface GenerateOptions {
     usePadding?: boolean;
     attentionScores?: boolean;
     includeProbabilities?: boolean;
-    embeddings?: boolean;
+    embeddings?: 'embedding' | 'logits' | 'softmax' | 'all';
+    targets?: number[];
 }
 
 const CHARS = [
@@ -66,6 +69,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     private probabilitiesData: number[][][] = [];
     private embeddingsData: { name: string; tensor: number[][] }[][] = [];
     private tokens: number[] = [];
+    private lastLoss: number | null = null;
 
     constructor(private readonly model: Model<ModelForwardAttributes>, private readonly tokeniser: ITokeniser) {
         super();
@@ -74,6 +78,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
     private async tokenisePrompt(tokeniser: ITokeniser, prompt?: string): Promise<Tensor> {
         const tokenisedPrompt = prompt ? await tokeniser.tokenise([prompt], true) : [[tokeniser.eosToken]];
+        if (tokenisedPrompt[0].length > this.model.config.blockSize) {
+            tokenisedPrompt[0] = tokenisedPrompt[0].slice(-this.model.config.blockSize);
+        }
         const inputTensor: Tensor = tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
         return inputTensor;
     }
@@ -82,7 +89,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         tokeniser: ITokeniser,
         generatedToken: Tensor,
         attention: Tensor[] | undefined,
-        probabilities: Tensor | undefined
+        probabilities: number[][] | undefined
     ): Promise<string | null> {
         const newToken = ((await generatedToken.array()) as number[][])[0][0];
         this.lastToken = newToken;
@@ -100,9 +107,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         }
 
         if (probabilities) {
-            const probabilitiesArray = (await probabilities.array()) as number[][];
-            probabilities.dispose();
-            this.probabilitiesData.push(probabilitiesArray);
+            this.probabilitiesData.push(probabilities);
         }
 
         this.tokens.push(newToken);
@@ -116,7 +121,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         idx: Tensor,
         cache?: KVCache[],
         options?: GenerateOptions
-    ): Promise<{ output: Tensor; probabilities?: Tensor; attention?: Tensor[] }> {
+    ): Promise<{ output: Tensor; probabilities?: number[][]; attention?: Tensor[]; loss?: number }> {
         const temperature = options?.temperature ?? 1.0;
         const tK = options?.topK;
         const tP = options?.topP;
@@ -130,10 +135,10 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
                   }
                 : undefined,
             cache,
-            outputEmbeddings: options?.embeddings ?? false,
+            outputEmbeddings: !!options?.embeddings,
         };
 
-        const logits = tidy(() => {
+        const [logits, loss] = tidy(() => {
             const currentIdx = idx;
 
             // Crop sequence if it exceeds block size
@@ -161,6 +166,19 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             const lastTimeStep = logits.shape[1]! - 1 - padding;
             const lastLogits = logits.slice([0, lastTimeStep, 0], [logits.shape[0], 1, logits.shape[2]!]); // (b, 1, vocab_size)
 
+            let lossValue: Tensor | undefined = undefined;
+            if (options?.targets) {
+                // Compute loss for the last time step
+                const currentTarget = options.targets.shift();
+                if (currentTarget !== undefined) {
+                    const targetTensor = tensor2d([[currentTarget]], [1, 1], 'int32');
+                    const loss = sparseSoftmaxCrossEntropy(lastLogits, targetTensor);
+                    lossValue = loss.mean();
+                    targetTensor.dispose();
+                    loss.dispose();
+                }
+            }
+
             // Double check that attention output is only the last step
             if (attrs.attentionScores?.attentionOut) {
                 attrs.attentionScores.attentionOut.forEach((a, i) => {
@@ -177,37 +195,30 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
             const scaledLogits = lastLogits.div(temperature);
 
-            return scaledLogits.squeeze([1]) as Tensor2D;
+            return [scaledLogits.squeeze([1]) as Tensor2D, lossValue];
         });
 
         let nextToken: Tensor;
+        let probabilities: number[][] | undefined;
 
         if (tP) {
             // Top-p (nucleus) sampling
             const probs = softmax(logits);
             const probsArray = (await probs.array()) as number[][];
-
             probs.dispose();
-            const sorted = probsArray[0].map((p, i) => ({ prob: p, index: i })).sort((a, b) => b.prob - a.prob);
 
-            let cumulativeProb = 0;
-            const masked = new Array<number>(sorted.length).fill(0);
-            for (const item of sorted) {
-                cumulativeProb += item.prob;
-                masked[item.index] = item.prob;
-                if (cumulativeProb >= tP) {
-                    break;
-                }
+            // Do topP on CPU.
+            const renormProbs = topP(probsArray, tP);
+
+            if (options?.includeProbabilities) {
+                probabilities = probsArray;
             }
-
-            // Renormalize
-            const sumMasked = masked.reduce((a, b) => a + b, 0);
-            const renormProbs = masked.map((p) => p / sumMasked);
 
             // Do the multinomial on the CPU
             nextToken = multinomialCPU(renormProbs);
         } else if (tK) {
             const { values: topKValues, indices: topKIndices } = topk(logits, tK);
+            // FIXME: Broken in Tensorflow.js for WebGPU backend
             const sampledIdx = multinomial(topKValues, 1);
             nextToken = gather(topKIndices, sampledIdx, 1);
 
@@ -215,19 +226,42 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             topKIndices.dispose();
             sampledIdx.dispose();
         } else {
+            // FIXME: Broken in Tensorflow.js for WebGPU backend
             nextToken = multinomial(logits, 1);
-        }
-
-        let probabilities: Tensor | undefined;
-        if (options?.includeProbabilities) {
-            probabilities = softmax(logits);
+            if (options?.includeProbabilities) {
+                const probs = softmax(logits);
+                probabilities = (await probs.array()) as number[][];
+                probs.dispose();
+            }
         }
 
         if (attrs.embeddings) {
-            const promises = attrs.embeddings.map(async (e) => {
-                const arr = (await e.tensor.array()) as number[][];
+            const filtered =
+                options?.embeddings === 'all'
+                    ? attrs.embeddings
+                    : attrs.embeddings.filter((e) => e.name.startsWith('block_output_'));
+            const promises = filtered.map(async (e) => {
+                const seqLen = e.tensor.shape[1]!;
+                const lastStep = e.tensor.slice([0, seqLen - 1, 0], [e.tensor.shape[0], 1, e.tensor.shape[2]!]);
                 e.tensor.dispose();
-                return { name: e.name, tensor: arr };
+                const squeezed = lastStep.squeeze([1]);
+                lastStep.dispose();
+
+                if (options?.embeddings === 'softmax') {
+                    const projected = this.model.project(squeezed);
+                    squeezed.dispose();
+                    const softmaxed = softmax(projected, -1);
+                    projected.dispose();
+                    return { name: e.name, tensor: (await softmaxed.array()) as number[][] };
+                } else if (options?.embeddings === 'logits') {
+                    const projected = this.model.project(squeezed);
+                    squeezed.dispose();
+                    return { name: e.name, tensor: (await projected.array()) as number[][] };
+                } else {
+                    const arr = (await squeezed.array()) as number[][];
+                    squeezed.dispose();
+                    return { name: e.name, tensor: arr };
+                }
             });
             const embeddingsResult = await Promise.all(promises);
             this.embeddingsData.push(embeddingsResult);
@@ -239,7 +273,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
         logits.dispose();
 
-        return { output: nextToken, probabilities, attention: attrs.attentionScores?.attentionOut };
+        let lossValue: number | undefined = undefined;
+        if (loss) {
+            lossValue = (await loss.array()) as number;
+            loss.dispose();
+        }
+
+        return { output: nextToken, probabilities, attention: attrs.attentionScores?.attentionOut, loss: lossValue };
     }
 
     /** Generate multiple tokens in a loop and produce text */
@@ -261,10 +301,15 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
                 output: generatedToken,
                 probabilities,
                 attention,
+                loss,
             } = await this._generateToken(inputTensor, this.cache ? this.cache : undefined, {
                 ...options,
                 usePadding: !this.cache,
             });
+
+            if (loss !== undefined) {
+                this.lastLoss = loss;
+            }
 
             if (this.cache) {
                 inputTensor.dispose();
@@ -305,6 +350,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         this.attentionData = [];
         this.probabilitiesData = [];
         this.tokens = [];
+        this.lastLoss = null;
     }
 
     public dispose() {
@@ -312,16 +358,11 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     }
 
     private initialise(prompt?: string, options?: IGenerateOptions) {
-        const slicePrompt =
-            prompt && prompt.length > this.model.config.blockSize
-                ? prompt.slice(-this.model.config.blockSize)
-                : prompt ?? null;
-
         if (this.cache && options?.noCache) {
             this.reset();
         }
 
-        this.initialPrompt = slicePrompt || null;
+        this.initialPrompt = prompt || null;
         if (this.lastToken === -1) {
             this.outputText = this.initialPrompt || '';
         }
@@ -349,7 +390,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     public async generate(prompt?: string, options?: IGenerateOptions): Promise<string> {
         this.initialise(prompt, options);
         this.active = true;
-        this.emit('start');
+        if (options?.maxLength !== 1) this.emit('start');
         const result = this._generate(options);
         const r = await result;
         this.active = false;
@@ -379,5 +420,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
 
     public getTokens(): number[] {
         return this.tokens;
+    }
+
+    public getLastLoss(): number | null {
+        return this.lastLoss;
     }
 }

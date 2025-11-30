@@ -26,6 +26,8 @@ export default abstract class Model<T extends ModelForwardAttributes> extends Ba
 
     abstract forward(attrs: T, idx: Tensor, targets?: Tensor): Tensor[];
 
+    abstract project(embeddings: Tensor): Tensor;
+
     abstract dispose(): void;
 
     getNumParams(): number {

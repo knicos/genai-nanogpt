@@ -131,6 +131,13 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
         });
     }
 
+    project(embeddings: Tensor): Tensor {
+        return tidy(() => {
+            const logits = this.wte.project(embeddings) as Tensor;
+            return logits;
+        });
+    }
+
     dispose() {
         this.wte.dispose();
         if (this.wpe) this.wpe.dispose();

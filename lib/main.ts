@@ -18,6 +18,7 @@ export {
     estimateResources,
     validateConfig,
 } from './utilities/parameters';
+export { default as topP } from './utilities/topP';
 
 import './ops/scatterSub';
 import './ops/gatherSub';
