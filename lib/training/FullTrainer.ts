@@ -110,18 +110,20 @@ export default class FullTrainer extends GPTTrainer {
 
                 const lossScalar = this.trainBatch(state, batch);
 
-                const entry = this.createLogEntry(state, startTime, batch.xs.shape[0], options?.advancedMetrics);
-                this.model.trainingState = {
-                    steps: state.totalSteps,
-                    learningRate: this.optimizer.lr,
-                    batchSize: batch.xs.shape[0],
-                    loss: state.lastLoss,
-                };
-
                 if (state.step % logInterval === 0) {
-                    await lossScalar.data();
+                    const lossValue = (await lossScalar.data())[0];
+                    state.lastLoss = lossValue;
                     const logEndTime = Date.now();
                     state.trainingDuration += logEndTime - state.logStartTime;
+
+                    const entry = this.createLogEntry(state, startTime, batch.xs.shape[0], options?.advancedMetrics);
+                    this.model.trainingState = {
+                        steps: state.totalSteps,
+                        learningRate: this.optimizer.lr,
+                        batchSize: batch.xs.shape[0],
+                        loss: state.lastLoss,
+                    };
+
                     // Validation
                     if (evaluator) {
                         try {
@@ -196,12 +198,20 @@ export default class FullTrainer extends GPTTrainer {
 
                 const lossScalar = this.trainBatch(state, batch);
 
-                const entry = this.createLogEntry(state, startTime, batch.xs.shape[0], options?.advancedMetrics);
-
                 if (state.step % logInterval === 0) {
-                    await lossScalar.data();
+                    const lossValue = (await lossScalar.data())[0];
+                    state.lastLoss = lossValue;
                     const logEndTime = Date.now();
                     state.trainingDuration += logEndTime - state.logStartTime;
+
+                    const entry = this.createLogEntry(state, startTime, batch.xs.shape[0], options?.advancedMetrics);
+                    this.model.trainingState = {
+                        steps: state.totalSteps,
+                        learningRate: this.optimizer.lr,
+                        batchSize: batch.xs.shape[0],
+                        loss: state.lastLoss,
+                    };
+
                     // Validation
                     if (evaluator) {
                         try {
