@@ -11,8 +11,12 @@ trigger:
         include:
             - '*'
 
-pool:
-    vmImage: ubuntu-latest
+#pool:
+#    vmImage: ubuntu-latest
+pool: Default
+
+variables:
+    NPM_CACHE_FOLDER: $(Pipeline.Workspace)/.npm
 
 stages:
     - stage: Static
@@ -27,11 +31,11 @@ stages:
                       restoreKeys: |
                           npmcache | "$(Agent.OS)"
                           npmcache
-                      path: $(System.DefaultWorkingDirectory)/.npm
+                      path: $(NPM_CACHE_FOLDER)
                   displayName: Cache NPM packages
                 - script: |
-                      npm set cache .npm
-                      npm ci
+                      npm set cache $(NPM_CACHE_FOLDER)
+                      npm ci --cache $(NPM_CACHE_FOLDER)
                       npm run lint
     - stage: Build
       dependsOn: Static
@@ -50,12 +54,12 @@ stages:
                       restoreKeys: |
                           npmcache | "$(Agent.OS)"
                           npmcache
-                      path: $(System.DefaultWorkingDirectory)/.npm
+                      path: $(NPM_CACHE_FOLDER)
                   displayName: Cache NPM packages
 
                 - script: |
-                      npm set cache .npm
-                      npm ci
+                      npm set cache $(NPM_CACHE_FOLDER)
+                      npm ci --cache $(NPM_CACHE_FOLDER)
                       npm run build
                   displayName: 'Build'
 
@@ -71,11 +75,11 @@ stages:
                       restoreKeys: |
                           npmcache | "$(Agent.OS)"
                           npmcache
-                      path: $(System.DefaultWorkingDirectory)/.npm
+                      path: $(NPM_CACHE_FOLDER)
                   displayName: Cache NPM packages
                 - script: |
-                      npm set cache .npm
-                      npm ci
+                      npm set cache $(NPM_CACHE_FOLDER)
+                      npm ci --cache $(NPM_CACHE_FOLDER)
                       CI=true npm run ci:test
                   displayName: 'Test'
                 - task: PublishTestResults@2
@@ -102,13 +106,12 @@ stages:
                       restoreKeys: |
                           npmcache | "$(Agent.OS)"
                           npmcache
-                      path: $(System.DefaultWorkingDirectory)/.npm
+                      path: $(NPM_CACHE_FOLDER)
                   displayName: Cache NPM packages
                 - script: |
                       echo -e "\n//registry.npmjs.org/:_authToken=$(NPM_TOKEN)" >> ./.npmrc
-                      npm set cache .npm
-                      npm ci
-                      npm install
+                      npm set cache $(NPM_CACHE_FOLDER)
+                      npm ci --cache $(NPM_CACHE_FOLDER)
                       npm run build
                       npm version --git-tag-version=false ${BUILD_SOURCEBRANCHNAME}
                       npm publish --access public
