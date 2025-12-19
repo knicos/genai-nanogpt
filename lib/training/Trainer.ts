@@ -1,10 +1,11 @@
 import type { ITokeniser } from '../tokeniser/type';
 import { DatasetBuilder, flattenTokens, PAGE_FACTOR } from './DatasetBuilder';
 import AdamExt from './AdamExt';
-import { NamedVariableMap, TensorContainer } from '@tensorflow/tfjs-core/dist/tensor_types';
-import { dispose, Scalar, Tensor, tidy, variableGrads, zeros } from '@tensorflow/tfjs-core';
+import { NamedTensorMap, NamedVariableMap, TensorContainer } from '@tensorflow/tfjs-core/dist/tensor_types';
+import { dispose, keep, scalar, Scalar, Tensor, tidy, variableGrads, zeros } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
 import Model, { ModelForwardAttributes } from '@base/models/model';
+import { TensorStatistics } from '../checks/weights';
 
 export interface TrainingLogEntry {
     loss: number;
@@ -13,7 +14,7 @@ export interface TrainingLogEntry {
     time: number;
     example?: string;
     batchSize: number;
-    gradientNorm?: number;
+    gradientMetrics?: Map<string, TensorStatistics>;
     learningRate?: number;
 }
 
@@ -23,7 +24,7 @@ export interface TrainingState {
     totalSteps: number;
     losses: number[];
     validationLosses: number[];
-    gradientNorm?: Promise<number>;
+    gradients?: NamedTensorMap;
 }
 
 export interface TrainingProgress {
@@ -46,6 +47,7 @@ export interface TrainingOptions {
     prompt?: string;
     maxSteps: number;
     advancedMetrics?: boolean;
+    gradientMetrics?: boolean;
     onStep?: (log: TrainingLogEntry, progress: TrainingProgress) => Promise<void> | void;
 }
 
@@ -58,9 +60,12 @@ export default abstract class GPTTrainer {
     protected running = false;
     protected lastState?: TrainingState;
     protected _gradientCheckpointing: boolean = false;
+    protected _mixedPrecision: boolean = false;
+    protected lossScaling: number;
 
     constructor(model: Model<ModelForwardAttributes>, protected tokenizer: ITokeniser, learningRate: number = 1e-3) {
         this.model = model;
+        this.lossScaling = model.lossScaling;
         this.learningRate = learningRate;
         this.resetOptimizer();
         this.datasetBuilder = new DatasetBuilder(tokenizer, model.config.blockSize);
@@ -68,6 +73,10 @@ export default abstract class GPTTrainer {
 
     setGradientCheckpointing(enabled: boolean): void {
         this._gradientCheckpointing = enabled;
+    }
+
+    setMixedPrecision(enabled: boolean): void {
+        this._mixedPrecision = enabled;
     }
 
     setLearningRate(learningRate: number): void {
@@ -100,24 +109,36 @@ export default abstract class GPTTrainer {
                 decaySteps: 20000,
                 minLearningRate: 1e-4,
                 weightDecay: 0,
+                lossScaling: this.lossScaling,
             }
         );
         this.optimizer = adam;
     }
 
-    protected trainStep(_state: Partial<TrainingState>, batch: { xs: Tensor; ys: Tensor }, dummy = false): Scalar {
+    protected trainStep(
+        state: Partial<TrainingState>,
+        batch: { xs: Tensor; ys: Tensor },
+        dummy = false,
+        keepGrads = false
+    ): Scalar {
         return tidy(() => {
             this.model.getProfiler()?.startMemory();
             const { xs, ys } = batch;
 
             const f = () => {
                 const [logits, loss] = this.model.forward(
-                    { training: true, checkpointing: this._gradientCheckpointing },
+                    {
+                        training: true,
+                        checkpointing: this._gradientCheckpointing,
+                        mixedPrecision: this._mixedPrecision,
+                    },
                     xs,
                     ys
                 );
                 logits.dispose();
-                return loss! as Scalar;
+                const scaledLoss = loss.mul(scalar(this.lossScaling));
+                loss.dispose();
+                return scaledLoss as Scalar;
             };
 
             const { value: lossValue, grads } = variableGrads(f);
@@ -128,12 +149,17 @@ export default abstract class GPTTrainer {
 
                 this.model.getProfiler()?.endMemory('Training');
 
-                dispose(grads);
+                if (keepGrads) {
+                    state.gradients = grads;
+                    Object.values(grads).forEach((g) => keep(g));
+                } else {
+                    dispose(grads);
+                }
             } else {
                 this.model.getProfiler()?.endMemory('Training');
             }
 
-            return lossValue;
+            return lossValue.mul(scalar(1 / this.lossScaling)) as Scalar;
         });
     }
 
@@ -154,10 +180,10 @@ export default abstract class GPTTrainer {
         }
     }
 
-    protected trainBatch(state: TrainingState, batch: { xs: Tensor; ys: Tensor }): Scalar {
+    protected trainBatch(state: TrainingState, batch: { xs: Tensor; ys: Tensor }, keepGrads = false): Scalar {
         try {
             //console.log('Batch XS', batch.xs.toString());
-            const lossScalar = this.trainStep(state, batch, false);
+            const lossScalar = this.trainStep(state, batch, false, keepGrads);
             batch.xs.dispose();
             batch.ys.dispose();
 

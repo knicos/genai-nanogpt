@@ -44,6 +44,7 @@
         "vite-plugin-dts": "^4.5.4",
         "vite-plugin-node-polyfills": "^0.24.0",
         "vitest": "^3.2.4",
+        "webgpu": "^0.3.8",
         "yargs": "^18.0.0"
     },
     "dependencies": {

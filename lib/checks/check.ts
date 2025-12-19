@@ -10,13 +10,14 @@ interface Result {
 
 export default async function runCheck(
     check: (backend: string) => Promise<unknown>,
-    epsilon?: number
+    epsilon?: number,
+    backends?: string[]
 ): Promise<Result[]> {
-    const backends = ['cpu', 'webgl', 'webgpu'];
+    const actualBackends = backends ?? ['cpu', 'webgl', 'webgpu'];
 
     const results: Result[] = [];
 
-    for (const backend of backends) {
+    for (const backend of actualBackends) {
         try {
             const result = await check(backend);
             results.push({ backend, result, passed: true });

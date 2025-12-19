@@ -3,10 +3,16 @@ import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { qkv } from '../ops/qkv';
 import { rope } from '../ops/rope';
 import { appendCache } from '@base/ops/appendCache';
-import { dropout, keep, matMul, randomNormal, reshape, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
-import { fusedSoftmax } from '@base/ops/fusedSoftmax';
-import { dot } from '@tensorflow/tfjs-layers/dist/backend/tfjs_backend';
+import { dropout, keep, randomNormal, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
 import { GPTConfig } from '@base/models/config';
+import { unpack16 } from '@base/ops/unpack16';
+import { softmax16 } from '@base/ops/softmax16';
+import { matMul16 } from '@base/ops/matMul16';
+import { pack16 } from '@base/ops/pack16';
+import { transpose16 } from '@base/ops/transpose16';
+import { dot16 } from '@base/ops/dot16';
+import { reshape16 } from '@base/ops/reshape16';
+import { isPackedTensor } from '@base/utilities/packed';
 
 export type KVCache = {
     k?: Tensor; // [B, nHead, T_cache, headDim]
@@ -72,27 +78,15 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
         }
     }
 
-    private getAttentionScores(q: Tensor, k: Tensor, training: boolean, seed: number): Tensor {
-        const maskedAtt = attentionMask(q, k, this.divisor);
-        const s = fusedSoftmax(maskedAtt, training ? this.config.dropout : 0, seed);
+    private getAttentionScores(q: Tensor, k: Tensor, pastLen?: number): Tensor {
+        const maskedAtt = attentionMask(q, k, this.divisor, pastLen);
+        const s = softmax16(maskedAtt);
         maskedAtt.dispose();
         return s;
     }
 
-    // Attention with optional past. If pastLen > 0 and T_cur == 1, no mask needed.
-    private getAttentionScoresWithPast(
-        q: Tensor, // [B, nh, T_cur, hs]
-        kTotal: Tensor, // [B, nh, T_total, hs] where T_total=pastLen+T_cur
-        pastLen: number
-    ): Tensor {
-        const att = attentionMask(q, kTotal, this.divisor, pastLen);
-        const s = fusedSoftmax(att, 0, 0);
-        att.dispose();
-        return s;
-    }
-
-    private getQKV(x: Tensor): [Tensor, Tensor, Tensor] {
-        return qkv(x, this.getVariable(this.ATTN), this.config.nHead) as [Tensor, Tensor, Tensor];
+    private getQKV(x: Tensor, packed: boolean): [Tensor, Tensor, Tensor] {
+        return qkv(x, this.getVariable(this.ATTN), this.config.nHead, packed) as [Tensor, Tensor, Tensor];
     }
 
     private getOutputProjection(x: Tensor): Tensor {
@@ -100,15 +94,20 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
         const T = x.shape[2]!; // sequence length
         const C = this.config.nEmbed; // embedding dimensionality
 
+        const packed = isPackedTensor(x);
+
         // Re-assemble all head outputs side by side
-        const yTransposed = x.transpose([0, 2, 1, 3]); // (B, T, nh, hs)
-        const yReshaped = reshape(yTransposed, [B, T, C]); // (B, T, C)
+        const yTransposed = transpose16(x, [0, 2, 1, 3]); // (B, T, nh, hs)
+
+        const yReshaped = reshape16(yTransposed, [B, T, packed ? C / 2 : C]); // (B, T, C)
+
+        yTransposed.dispose();
 
         // Output projection
-        // This dot is used by dense layers so it should be optimized
-        const output = dot(yReshaped, this.getVariable(this.PROJ));
+        const packedPROJ = packed ? pack16(this.getVariable(this.PROJ)) : this.getVariable(this.PROJ); // (C, C) float16
+        const output = dot16(yReshaped, packedPROJ); // (B, T, C / 2) float16
+        if (packed) packedPROJ.dispose();
         yReshaped.dispose();
-        yTransposed.dispose();
         return output;
     }
 
@@ -141,7 +140,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
     forward(attr: AttentionForwardAttributes, x: Tensor): Tensor {
         return tidy(() => {
             this.startMemory();
-            const [qI, kNewI, vNew] = this.getQKV(x); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
+            const [qI, kNewI, vNew] = this.getQKV(x, attr.mixedPrecision || false); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
 
             // Apply RoPE to current chunk before concatenating with past
             // The rope operator ensures the cache is large enough
@@ -165,10 +164,10 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             // Attention scores: mask for full forward or multi-token chunk; skip for single-token incremental
             let attScores: Tensor;
             if (pastLen > 0) {
-                attScores = this.getAttentionScoresWithPast(q, kTotal, pastLen);
+                attScores = this.getAttentionScores(q, kTotal, pastLen);
             } else {
                 // No past: regular causal mask over a square (training/full forward)
-                attScores = this.getAttentionScores(q, kTotal, attr.training, attr.seed || 0);
+                attScores = this.getAttentionScores(q, kTotal);
             }
             q.dispose();
             if (!attr.pastKV) {
@@ -176,7 +175,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             }
 
             // Attention applied to values
-            const y = matMul(attScores, vTotal); // (B, nh, T_cur, hs)
+            const y = matMul16(attScores, vTotal); // (B, nh, T_cur, hs)
 
             const shouldOutputAttention =
                 attr.attentionScores !== undefined && attr.attentionScores.attentionOut !== undefined;
@@ -188,13 +187,19 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
                 vTotal.dispose();
             }
 
-            const output = this.getOutputProjection(y); // (B, T_cur, C)
+            const packedOutput = this.getOutputProjection(y); // (B, T_cur, C)
             y.dispose();
+            const output = unpack16(packedOutput); // (B, T_cur, C) float32
+            if (packedOutput !== output) {
+                packedOutput.dispose();
+            }
 
             // Optionally return attention scores for a head
             if (shouldOutputAttention && attr.attentionScores && attr.attentionScores.attentionOut !== undefined) {
                 const H = attScores.shape[1]!;
                 const T_cur = attScores.shape[2]!;
+
+                console.log('Outputting attention scores shape:', attScores.shape);
 
                 attr.attentionScores.attentionOut?.push(
                     keep(attScores.slice([0, 0, 0, 0], [1, -1, -1, -1]).reshape([H, T_cur, -1]))

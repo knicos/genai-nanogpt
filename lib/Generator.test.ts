@@ -1,3 +1,4 @@
+import '@base/patches/engine';
 import { afterEach, describe, it } from 'vitest';
 import Generator from './Generator';
 import NanoGPT from './models/NanoGPTV1';

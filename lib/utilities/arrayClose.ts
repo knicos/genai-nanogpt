@@ -1,6 +1,6 @@
 export function arraysClose(a: unknown, b: unknown) {
     let maxError = 0.0;
-    if (Array.isArray(a) && Array.isArray(b)) {
+    if ((Array.isArray(a) || a instanceof Float32Array) && (Array.isArray(b) || b instanceof Float32Array)) {
         if (a.length !== b.length) return Number.POSITIVE_INFINITY;
         for (let i = 0; i < a.length; ++i) {
             maxError = Math.max(maxError, arraysClose(a[i], b[i]));

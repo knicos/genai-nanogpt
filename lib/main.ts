@@ -1,3 +1,5 @@
+import './patches/engine';
+
 export { default as NanoGPT } from './models/NanoGPTV1';
 export { default as TeachableLLM } from './TeachableLLM';
 export { default as CharTokeniser } from './tokeniser/CharTokeniser';
@@ -33,6 +35,11 @@ import './ops/normRMS';
 import './ops/log';
 import './ops/adamMoments';
 import './ops/adamAdjust';
+import './ops/pack16';
+import './ops/unpack16';
+import './ops/softmax16';
+import './ops/matMul16';
+import './ops/transpose16';
 
 export { selectBackend } from './backend';
 export { default as performanceTest } from './utilities/performance';

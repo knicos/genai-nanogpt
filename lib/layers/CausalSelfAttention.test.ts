@@ -1,15 +1,27 @@
-import { describe, it } from 'vitest';
+import { describe, it, afterEach, afterAll } from 'vitest';
+import '@base/patches/engine';
+import '@tensorflow/tfjs-core/dist/base_side_effects';
+import * as tf from '@tensorflow/tfjs-core';
+import { create, globals } from 'webgpu';
 import CausalSelfAttention, { KVCache } from './CausalSelfAttention';
-import * as tf from '@tensorflow/tfjs';
 import RoPECache from './RoPECache';
-import { afterEach } from 'node:test';
+import { selectBackend } from '@base/backend';
+
+Object.assign(globalThis, globals);
+const navigator = { gpu: create([]) };
+Object.assign(globalThis.navigator, navigator);
 
 describe('CausalSelfAttention', () => {
     afterEach(() => {
         tf.disposeVariables();
     });
+    afterAll(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (globalThis as any).navigator;
+    });
 
-    it('generates a correctly shaped output', ({ expect }) => {
+    it('generates a correctly shaped output', async ({ expect }) => {
+        await selectBackend('webgpu');
         const layer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
             vocabSize: 20,
@@ -32,7 +44,8 @@ describe('CausalSelfAttention', () => {
         layer.dispose();
     });
 
-    it('can accept dropout', ({ expect }) => {
+    it('can accept dropout', async ({ expect }) => {
+        await selectBackend('webgpu');
         const layer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
             vocabSize: 20,
@@ -55,7 +68,8 @@ describe('CausalSelfAttention', () => {
         layer.dispose();
     });
 
-    it('can generate attention scores', ({ expect }) => {
+    it('can generate attention scores', async ({ expect }) => {
+        await selectBackend('webgpu');
         const layer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
             vocabSize: 20,
@@ -78,12 +92,11 @@ describe('CausalSelfAttention', () => {
         const attention = attr.attentionScores?.attentionOut;
         expect(attention).toHaveLength(1);
         expect(attention![0].shape).toEqual([2, 4, 4]);
-
-        console.log('Attention', attention!.toString());
         layer.dispose();
     });
 
-    it('can use a KV cache', ({ expect }) => {
+    it('can use a KV cache', async ({ expect }) => {
+        await selectBackend('webgpu');
         const layer = new CausalSelfAttention(0, {
             biasInLayerNorm: false,
             vocabSize: 20,
@@ -123,7 +136,8 @@ describe('CausalSelfAttention', () => {
         layer.dispose();
     });
 
-    it('saves and loads weights correctly', ({ expect }) => {
+    it('saves and loads weights correctly', async ({ expect }) => {
+        await selectBackend('webgpu');
         const input = tf.randomNormal([1, 4, 16]);
 
         const layer = new CausalSelfAttention(0, {
@@ -163,13 +177,14 @@ describe('CausalSelfAttention', () => {
 
         const newOutput = newLayer.call({ training: false }, input) as tf.Tensor;
         expect(originalOutput.shape).toEqual(newOutput.shape);
-        expect(originalOutput.dataSync()).toEqual(newOutput.dataSync());
+        expect(await originalOutput.data()).toEqual(await newOutput.data());
 
         //layer.dispose();
         newLayer.dispose();
     });
 
     it('can be trained', async ({ expect }) => {
+        await selectBackend('webgpu');
         const config = {
             biasInLayerNorm: false,
             vocabSize: 20,
@@ -202,6 +217,34 @@ describe('CausalSelfAttention', () => {
         const lossValue = (await loss.data())[0];
         console.log('Final loss:', lossValue);
         expect(lossValue).toBeLessThan(1.5);
+
+        layer.dispose();
+    });
+
+    it('supports mixed precision', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const layer = new CausalSelfAttention(0, {
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 64,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.0,
+            blockSize: 4,
+            mlpFactor: 4,
+            useRope: true,
+        });
+
+        expect(layer).toBeInstanceOf(CausalSelfAttention);
+
+        const input = tf.randomNormal([1, 32, 64], 0, 1);
+        const output = layer.call({ training: false, mixedPrecision: true }, input) as tf.Tensor;
+        expect(output).toBeInstanceOf(tf.Tensor);
+        expect(output.shape).toEqual([1, 32, 64]);
+
+        const outputData = await output.data();
+        expect(outputData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
 
         layer.dispose();
     });

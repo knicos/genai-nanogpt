@@ -12,7 +12,11 @@ import {
 // CPU fallback implementation
 export function qkvCPU(args: { inputs: NamedTensorInfoMap; attrs?: NamedAttrMap }): TensorInfo[] {
     const { x, kernel } = args.inputs as { x: Tensor; kernel: Tensor };
-    const { heads } = args.attrs as { heads: number };
+    const { heads, packed } = args.attrs as { heads: number; packed: boolean };
+
+    if (packed) {
+        throw new Error('QKV CPU implementation does not support packed tensors.');
+    }
 
     const [B, T, C] = x.shape; // batch size, sequence length, embedding dimensionality
 

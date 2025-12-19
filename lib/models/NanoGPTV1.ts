@@ -6,6 +6,7 @@ import RMSNorm from '../layers/RMSNorm';
 import { keep, Tensor, tidy } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from './model';
 import PositionEmbedding from '@base/layers/PositionEmbedding';
+import { packingSupported } from '@base/utilities/packed';
 
 // Main NanoGPT model
 export default class NanoGPT extends Model<ModelForwardAttributes> {
@@ -92,6 +93,7 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
                     ...attrs,
                     seed,
                     pastKV: attrs.cache ? attrs.cache[i] : undefined,
+                    mixedPrecision: packingSupported() && attrs.mixedPrecision === true,
                 };
 
                 const output =

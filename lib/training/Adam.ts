@@ -41,6 +41,7 @@ export class AdamOptimizer extends Optimizer {
         protected learningRate: number,
         protected beta1: number,
         protected beta2: number,
+        protected lossScaling: number,
         protected epsilon: number | null = null
     ) {
         super();
@@ -79,7 +80,7 @@ export class AdamOptimizer extends Optimizer {
 
                 const moments = this.accumulatedMoments[i].variable;
 
-                const newMoments = adamMoments(moments, gradient, this.beta1, this.beta2);
+                const newMoments = adamMoments(moments, gradient, this.beta1, this.beta2, this.lossScaling);
                 moments.assign(newMoments);
 
                 const newValue = adamAdjust(

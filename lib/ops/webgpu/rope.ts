@@ -1,3 +1,5 @@
+import { PackedTensorInfo } from '@base/patches/PackedTensor';
+import { isPackedTensor } from '@base/utilities/packed';
 import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
@@ -12,7 +14,7 @@ import {
 } from '@tensorflow/tfjs-core';
 import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
-class RopeProgram implements WebGPUProgram {
+class RopeProgram32 implements WebGPUProgram {
     variableNames = ['x', 'sin', 'cos'];
     outputShape: number[];
     shaderKey = 'Rope';
@@ -78,16 +80,77 @@ class RopeProgram implements WebGPUProgram {
     }
 }
 
+class RopeProgram16 implements WebGPUProgram {
+    variableNames = ['x', 'sin', 'cos'];
+    outputShape: number[];
+    shaderKey = 'Rope';
+    dispatchLayout: { x: number[] };
+    dispatch: [number, number, number];
+    workgroupSize: [number, number, number] = [64, 1, 1];
+    size = true;
+    uniforms = 'pastLen: i32';
+
+    constructor(batch: number, heads: number, T: number, C: number) {
+        this.shaderKey = `Rope_${C}`;
+        // C / 2 due to packing
+        this.outputShape = [batch, heads, T, C / 2];
+        this.dispatchLayout = flatDispatchLayout(this.outputShape);
+        this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);
+    }
+
+    getUserCode() {
+        return `
+        ${main('index')} {
+            if (index < uniforms.size) {
+                let coords = getCoordsFromIndex(index); // [b, h, t, d]
+                let b = coords[0];
+                let h = coords[1];
+                let t = coords[2];
+                let d = coords[3];
+
+                var outVal = vec2<f32>(0.0, 0.0);
+
+                let xIdx = b * uniforms.outShapeStrides[0] +
+                    h * uniforms.outShapeStrides[1] +
+                    t * uniforms.outShapeStrides[2] +
+                    d;
+
+                let idx = (t + uniforms.pastLen) * uniforms.cosShape[1] + d;
+                let cos = cos[idx];
+                let sin = sin[idx];
+
+                let xPair = unpack2x16float(u32(x[xIdx]));
+                let ownX = vec2<f32>(xPair.x * cos, xPair.y * cos);
+
+                let evenOdd = vec2<f32>(
+                    -xPair.y,
+                    xPair.x
+                );
+
+                outVal = vec2<f32>(
+                    fma(evenOdd.x, sin, ownX.x),
+                    fma(evenOdd.y, sin, ownX.y)
+                );
+
+                result[index] = i32(pack2x16float(outVal));
+            }
+        }
+        `;
+    }
+}
+
 function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { x, sin, cos } = args.inputs as { x: Tensor; sin: Tensor; cos: Tensor };
     const { pastLen } = args.attrs as { pastLen: number };
 
     const backend = args.backend as WebGPUBackend;
 
+    const packed = isPackedTensor(x);
     const batchSize = x.shape[0];
     const heads = x.shape[1]!;
     const seqLength = x.shape[2]!;
-    const C = x.shape[3]!;
+    // C is doubled due to packing
+    const C = packed ? x.shape[3]! * 2 : x.shape[3]!;
 
     assertShapesMatch(sin.shape, cos.shape, 'Error in Rope: ');
     if (sin.shape[0] < seqLength + pastLen) {
@@ -102,9 +165,15 @@ function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: N
         throw new Error(`Sin tensor must be 3-dimensional, but got shape ${sin.shape}.`);
     }
 
-    const program = new RopeProgram(batchSize, heads, seqLength, C);
+    const program = packed
+        ? new RopeProgram16(batchSize, heads, seqLength, C)
+        : new RopeProgram32(batchSize, heads, seqLength, C);
+
     const uniformData = [{ type: 'int32', data: [pastLen] }];
-    return backend.runWebGPUProgram(program, [x, sin, cos], 'float32', uniformData);
+    const dtype = packed ? 'int32' : x.dtype;
+    const result: PackedTensorInfo = backend.runWebGPUProgram(program, [x, sin, cos], dtype, uniformData);
+    result.packed = packed;
+    return result;
 }
 
 const kernelConfig: KernelConfig = {

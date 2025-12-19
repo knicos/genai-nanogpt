@@ -13,6 +13,11 @@ export interface TensorStatistics {
 }
 
 export async function createTensorStatistics(weight: Tensor | number[]): Promise<TensorStatistics> {
+    if (!Array.isArray(weight)) {
+        if (weight.dtype !== 'float32') {
+            throw new Error(`Unsupported dtype ${weight.dtype} for weight statistics.`);
+        }
+    }
     const data = Array.isArray(weight) ? weight : await weight.data();
     const size = data.length;
 

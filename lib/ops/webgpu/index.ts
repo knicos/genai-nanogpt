@@ -9,3 +9,8 @@ import './qkv';
 import './gelu';
 import './adamMoments';
 import './adamAdjust';
+import './pack16';
+import './unpack16';
+import './softmax16';
+import './matMul16';
+import './transpose16';

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>EfficientScatterSub WebGL Test</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
+        <script
+            type="module"
+            src="../dist/ops/webgpu/index.js"
+        ></script>
+    </head>
+    <body>
+        <script type="module">
+            import { checks } from '../dist/main.js';
+
+            async function runTest() {
+                const results = await checks.runCheck(checks.packUnpack);
+
+                const pass = results.reduce((acc, curr) => acc && curr.passed, true);
+                document.body.innerText = pass ? 'PASS' : 'FAIL';
+                console.log('Results:', results);
+            }
+            runTest();
+        </script>
+    </body>
+</html>

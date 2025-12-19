@@ -16,6 +16,8 @@ export interface ITrainerOptions {
     validationSplit?: number; // Fraction of data to use for validation
     advancedMetrics?: boolean; // Whether to compute advanced metrics during training
     gradientCheckpointing?: boolean; // Whether to use gradient checkpointing
+    gradientMetrics?: boolean; // Whether to compute gradient metrics during training
+    mixedPrecision?: boolean; // Whether to use mixed precision training
 }
 
 interface ExtendedTrainingProgress extends TrainingProgress {
@@ -76,6 +78,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         this.emit('start');
 
         this.trainer.setGradientCheckpointing(options?.gradientCheckpointing || false);
+        this.trainer.setMixedPrecision(options?.mixedPrecision || false);
 
         await this.trainer.trainOnDataset(
             this.trainDataset,
@@ -85,6 +88,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                 desiredLoss: options?.desiredLoss || 0.01,
                 maxSteps: options?.maxSteps || 1000,
                 advancedMetrics: options?.advancedMetrics || false,
+                gradientMetrics: options?.gradientMetrics || false,
                 onStep: async (log: TrainingLogEntry, progress: TrainingProgress) => {
                     this.log.push(log);
                     this.progress = {

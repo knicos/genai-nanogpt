@@ -6,6 +6,7 @@ import { customGrad, engine, grads, GradSaveFunc, Tensor, variable, Variable } f
 export interface ForwardAttributes {
     training: boolean;
     checkpointing?: boolean;
+    mixedPrecision?: boolean;
     ropeCache?: RoPECache;
     outputEmbeddings?: boolean;
     embeddings?: { name: string; tensor: Tensor }[];

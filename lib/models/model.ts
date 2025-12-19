@@ -20,6 +20,7 @@ interface TrainingState {
 
 // Abstract base class for models
 export default abstract class Model<T extends ModelForwardAttributes> extends BaseLayer<T> {
+    public lossScaling = 1;
     public trainingState: TrainingState | null = null;
 
     abstract getClassName(): string;
@@ -50,7 +51,10 @@ export default abstract class Model<T extends ModelForwardAttributes> extends Ba
         try {
             //return this.tf.losses.softmaxCrossEntropy(targets, logits, this.tf.Reduction.MEAN);
             const lossFn = createSoftmaxCrossEntropyWithGrad();
-            return lossFn(logits, targets).mean();
+            const losses = lossFn(logits, targets);
+            const meanLoss = losses.mean();
+            losses.dispose();
+            return meanLoss;
         } catch (error) {
             console.error('Error computing loss:', error);
             throw new Error(`Loss computation failed: ${error}`);

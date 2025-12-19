@@ -1,12 +1,18 @@
 import type { ITokeniser } from '../tokeniser/type';
-import GPTTrainer, { TrainingLogEntry, TrainingOptions, TrainingProgress } from './Trainer';
+import GPTTrainer, {
+    TrainingLogEntry,
+    TrainingOptions,
+    TrainingProgress,
+    TrainingState as TTrainingState,
+} from './Trainer';
 import Evaluator from './Evaluator';
-import { dispose, Tensor } from '@tensorflow/tfjs-core';
+import { dispose, NamedTensorMap, Tensor } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
 import MemoryProfiler from '@base/utilities/profile';
 import Model, { ModelForwardAttributes } from '@base/models/model';
+import { createTensorStatistics, TensorStatistics } from '../checks/weights';
 
-interface TrainingState {
+interface TrainingState extends TTrainingState {
     step: number;
     lastLoss: number;
     totalSteps: number;
@@ -14,7 +20,7 @@ interface TrainingState {
     validationLosses: number[];
     logStartTime: number;
     trainingDuration: number;
-    //gradientNorm?: Promise<number>;
+    gradients?: NamedTensorMap;
 }
 
 const DEFAULT_OPTIONS: TrainingOptions = {
@@ -181,6 +187,8 @@ export default class FullTrainer extends GPTTrainer {
             }
         }
 
+        console.log('Training options', options);
+
         this.running = true;
         state.logStartTime = startTime;
 
@@ -195,10 +203,13 @@ export default class FullTrainer extends GPTTrainer {
                 const result = await iterator.next();
                 if (result.done) break;
                 const batch = result.value;
+                const isLogStep = state.step % logInterval === 0;
+                const keepGrads = (options?.gradientMetrics || false) && isLogStep;
 
-                const lossScalar = this.trainBatch(state, batch);
+                // Do the actual training step
+                const lossScalar = this.trainBatch(state, batch, keepGrads);
 
-                if (state.step % logInterval === 0) {
+                if (isLogStep) {
                     const lossValue = (await lossScalar.data())[0];
                     state.lastLoss = lossValue;
                     const logEndTime = Date.now();
@@ -211,6 +222,15 @@ export default class FullTrainer extends GPTTrainer {
                         batchSize: batch.xs.shape[0],
                         loss: state.lastLoss,
                     };
+
+                    if (options?.gradientMetrics && keepGrads && state.gradients) {
+                        const gradMetrics = new Map<string, TensorStatistics>();
+                        for (const [name, grad] of Object.entries(state.gradients)) {
+                            gradMetrics.set(name, await createTensorStatistics(grad));
+                            grad.dispose();
+                        }
+                        entry.gradientMetrics = gradMetrics;
+                    }
 
                     // Validation
                     if (evaluator) {
