@@ -60,3 +60,4 @@ export { default as AdamExt } from './training/AdamExt';
 
 export { default as checks } from './checks';
 export type { TensorStatistics } from './checks/weights';
+export { sentenceEmbeddings, sentenceEmbeddingsTensor } from './utilities/sentences';

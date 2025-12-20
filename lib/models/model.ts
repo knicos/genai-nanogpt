@@ -9,6 +9,7 @@ export interface ModelForwardAttributes extends ForwardAttributes {
     cache?: KVCache[];
     attentionScores?: AttentionScores;
     seed?: number;
+    skipLogits?: boolean; // Whether to output embeddings instead of logits
 }
 
 interface TrainingState {

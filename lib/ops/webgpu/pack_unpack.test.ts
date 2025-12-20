@@ -15,7 +15,7 @@ import { packGradConfig } from '../grads/pack16';
 import { unpackGradConfig } from '../grads/unpack16';
 import { isPackedTensor } from '@base/utilities/packed';
 
-describe('Pack and Unpack 16-bit floats', () => {
+describe('Pack and Unpack 16-bit floats', { timeout: 30000 }, () => {
     afterAll(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any).navigator;

@@ -113,6 +113,11 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
             // Final layer norm
             x = this.lnF.call(attrs, x) as Tensor;
 
+            if (attrs.skipLogits) {
+                this.endMemory('Forward');
+                return [x];
+            }
+
             // Embedding to logits
             const logits = this.wte.project(x) as Tensor;
             if (attrs.outputEmbeddings) {

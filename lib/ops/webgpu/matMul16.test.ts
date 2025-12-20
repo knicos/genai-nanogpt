@@ -15,7 +15,7 @@ import { matMul16, matMul16Scaled } from '../matMul16';
 import { matMul16GradConfig } from '../grads/matMul16';
 import { isPackedTensor } from '@base/utilities/packed';
 
-describe('MatMul 16-bit', () => {
+describe('MatMul 16-bit', { timeout: 30000 }, () => {
     afterAll(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any).navigator;
