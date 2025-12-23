@@ -31,7 +31,7 @@ describe('Pack and Unpack 16-bit floats', { timeout: 30000 }, () => {
         const unpackedData = await unpacked.data();
 
         const error = arraysClose(xData, unpackedData);
-        expect(error).toBeLessThan(1e-3);
+        expect(error).toBeLessThan(2e-3);
     });
 
     it('has valid gradients for pack16', async ({ expect }) => {

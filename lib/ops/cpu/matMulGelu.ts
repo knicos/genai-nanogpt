@@ -1,6 +1,7 @@
 import {
     KernelConfig,
     KernelFunc,
+    matMul,
     NamedTensorInfoMap,
     registerKernel,
     Tensor,
@@ -17,7 +18,7 @@ function matMulGelu(args: { inputs: { x: TensorInfo; kernel: TensorInfo }; backe
 
     // 0.5 * x * (1 + tanh( sqrt(2/pi) * (x + 0.044715 x^3) ))
     return tidy(() => {
-        const m = x.matMul(kernel);
+        const m = matMul(x, kernel);
         /*const m3 = m.mul(m).mul(m);
         const inner = m.add(m3.mul(A)).mul(K).tanh().add(1).mul(0.5);
         return m.mul(inner);*/
@@ -56,7 +57,7 @@ function matMulGeluGradKernelFunc(args: { inputs: NamedTensorInfoMap; backend: u
 
     return tidy(() => {
         // From forward pass
-        const m = x.matMul(kernel);
+        const m = matMul(x, kernel);
         const dL_dm = dGelu(dy, m);
 
         // Gradients w.r.t. x and kernel

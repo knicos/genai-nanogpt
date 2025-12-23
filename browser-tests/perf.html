@@ -3,12 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <title>Performance Test</title>
-        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgpu/dist/tf-backend-webgpu.min.js"></script>
-        <script
-            type="module"
-            src="../dist/ops/webgpu/index.js"
-        ></script>
+
         <script
             type="module"
             src="/dist/main.js"
@@ -24,6 +19,9 @@
             <option value="gelu">Gelu</option>
             <option value="appendCache">AppendCache</option>
             <option value="matMulGelu">MatMulGelu</option>
+            <option value="matMul16">MatMul16</option>
+            <option value="matMul16Packed">MatMul16 Packed</option>
+            <option value="pack16">Pack16</option>
             <option value="causalSelfAttention">CausalSelfAttention</option>
             <option value="transformer">TransformerBlock</option>
             <option value="generator">LLM Generation</option>
@@ -33,7 +31,8 @@
         </select>
         <button id="run-perf">Run Performance Test</button>
         <script type="module">
-            import { performanceTest, layers, TeachableLLM, AdamExt } from '/dist/main.js';
+            import { performanceTest, layers, TeachableLLM, AdamExt, selectBackend, ops } from '/dist/main.js';
+            import * as tf from '@tensorflow/tfjs-core';
 
             async function rope(backend) {
                 await tf.setBackend(backend);
@@ -130,6 +129,35 @@
 
                 return performanceTest(() => {
                     return tf.engine().runKernel('MatMulGelu', { x, kernel });
+                }, 1000);
+            }
+
+            async function matMul16(backend) {
+                await selectBackend(backend);
+                const B = tf.randomNormal([32, 1024, 256]);
+                const A = tf.randomNormal([32, 256, 1024]);
+
+                return performanceTest(() => {
+                    return tf.engine().runKernel('MatMul16', { A, B }, {});
+                }, 1000);
+            }
+
+            async function matMul16Packed(backend) {
+                await selectBackend(backend);
+                const B = ops.pack16(tf.randomNormal([32, 1024, 256]));
+                const A = ops.pack16(tf.randomNormal([32, 256, 1024]));
+
+                return performanceTest(() => {
+                    return tf.engine().runKernel('MatMul16', { A, B }, {});
+                }, 1000);
+            }
+
+            async function pack16(backend) {
+                await selectBackend(backend);
+                const A = tf.randomNormal([32, 256, 1024]);
+
+                return performanceTest(() => {
+                    return tf.engine().runKernel('Pack16', { x: A }, {});
                 }, 1000);
             }
 
@@ -328,6 +356,8 @@
                 gelu,
                 appendCache,
                 matMulGelu,
+                matMul16,
+                matMul16Packed,
                 normRMSGrad,
                 causalSelfAttention,
                 transformer,
@@ -336,12 +366,13 @@
                 gradCalc,
                 training,
                 qkv,
+                pack16,
             };
 
             async function runTest() {
                 const op = document.getElementById('perf-op').value;
-                const webglTime = await OPS[op]('webgl');
-                console.log('WebGL time:', webglTime);
+                const webglTime = 0.0; //await OPS[op]('webgl');
+                //console.log('WebGL time:', webglTime);
                 const webgpuTime = await OPS[op]('webgpu');
                 console.log('WebGPU time:', webgpuTime);
 

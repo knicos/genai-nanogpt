@@ -13,7 +13,7 @@ describe('adamMoments CPU kernel', () => {
 
         realOptimiser.applyGradients([{ name: 'var', tensor: gradient }]);
 
-        const newMoments = adamMoments(moments, gradient, 0.99, 0.95);
+        const newMoments = adamMoments(moments, gradient, 0.99, 0.95, 1);
 
         const updatedM1 = newMoments.slice([0, 0, 0], [-1, -1, 1]).squeeze([-1]);
         const updatedM2 = newMoments.slice([0, 0, 1], [-1, -1, 1]).squeeze([-1]);
@@ -38,8 +38,5 @@ describe('adamMoments CPU kernel', () => {
         newMoments.dispose();
         realM1.dispose();
         realM2.dispose();
-
-        console.log('m1RealArray:', m1RealArray);
-        console.log('m1TestArray:', m1TestArray);
     });
 });

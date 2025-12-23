@@ -35,11 +35,18 @@ import './ops/normRMS';
 import './ops/log';
 import './ops/adamMoments';
 import './ops/adamAdjust';
-import './ops/pack16';
-import './ops/unpack16';
+import { pack16 } from './ops/pack16';
+import { unpack16 } from './ops/unpack16';
 import './ops/softmax16';
 import './ops/matMul16';
 import './ops/transpose16';
+
+const ops = {
+    pack16,
+    unpack16,
+};
+
+export { ops };
 
 export { selectBackend } from './backend';
 export { default as performanceTest } from './utilities/performance';

@@ -10,370 +10,539 @@ const navigator = { gpu: create([]) };
 Object.assign(globalThis.navigator, navigator);
 
 import { selectBackend } from '@base/backend';
-import { matMul, mul, randomNormal, scalar } from '@tensorflow/tfjs-core';
-import { matMul16, matMul16Scaled } from '../matMul16';
+import { getGradient, matMul, mul, randomNormal, scalar } from '@tensorflow/tfjs-core';
+import '@tensorflow/tfjs-core/dist/register_all_gradients';
+import { matMul16, matMul16Gelu, matMul16Scaled } from '../matMul16';
 import { matMul16GradConfig } from '../grads/matMul16';
 import { isPackedTensor } from '@base/utilities/packed';
+import { matMulGelu } from '../matMulGelu';
 
 describe('MatMul 16-bit', { timeout: 30000 }, () => {
     afterAll(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any).navigator;
     });
-    it('produce correct output without transpose', async ({ expect }) => {
-        await selectBackend('webgpu');
-        const scores = randomNormal([100, 3, 128, 64], 0, 1, 'float32');
-        const values = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
 
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
+    describe('Untransposed ranks', () => {
+        it('produce correct output without transpose', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([100, 3, 128, 64], 0, 1, 'float32');
+            const values = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
 
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
 
-        const rawMatMul = matMul(unpackedScores, unpackedValues);
-        const packedMatMul = matMul16(packedScores, packedValues);
-        const unpackedMatMul = unpack16(packedMatMul);
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
 
-        const repackedRaw = unpack16(pack16(rawMatMul));
+            const rawMatMul = matMul(unpackedScores, unpackedValues);
+            const packedMatMul = matMul16(packedScores, packedValues);
+            const unpackedMatMul = unpack16(packedMatMul);
 
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
+            const repackedRaw = unpack16(pack16(rawMatMul));
 
-        expect(repackedRaw.shape).toEqual(unpackedMatMul.shape);
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
 
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
+            expect(repackedRaw.shape).toEqual(unpackedMatMul.shape);
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
+
+        it('can support rank 3', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([100, 64, 128], 0, 1, 'float32');
+            const values = randomNormal([100, 128, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues);
+            const packedMatMul = matMul16(packedScores, packedValues);
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
+
+        it('can support rank 2', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([64, 64], 0, 1, 'float32');
+            const values = randomNormal([64, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues);
+            const packedMatMul = matMul16(packedScores, packedValues);
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
+
+        it('can support different ranks', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([100, 128, 64], 0, 1, 'float32');
+            const values = randomNormal([64, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues);
+            const packedMatMul = matMul16(packedScores, packedValues);
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
+
+        it('can support rank 4 tensors', async ({ expect }) => {
+            await selectBackend('webgpu');
+            // [batch, heads, seq, head_size]
+            const scores = randomNormal([2, 3, 64, 64], 0, 1, 'float32');
+            const values = randomNormal([2, 3, 64, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues);
+            const packedMatMul = matMul16(packedScores, packedValues);
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+
+            expect(unpackedMatMulData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+        });
     });
 
-    it('produce correct output with transposeA', async ({ expect }) => {
-        await selectBackend('webgpu');
-        const scores = randomNormal([100, 3, 64, 128], 0, 1, 'float32');
-        const values = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
+    describe('Transposed cases', () => {
+        it('produce correct output with transposeA', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([100, 3, 64, 128], 0, 1, 'float32');
+            const values = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
 
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
 
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
 
-        const rawMatMul = matMul(unpackedScores, unpackedValues, true, false);
-        const packedMatMul = matMul16(packedScores, packedValues, true, false);
-        const unpackedMatMul = unpack16(packedMatMul);
+            const rawMatMul = matMul(unpackedScores, unpackedValues, true, false);
+            const packedMatMul = matMul16(packedScores, packedValues, true, false);
+            const unpackedMatMul = unpack16(packedMatMul);
 
-        const repackedRaw = unpack16(pack16(rawMatMul));
+            const repackedRaw = unpack16(pack16(rawMatMul));
 
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
 
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
+
+        it('produce correct output with transposeB', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([100, 3, 128, 32], 0, 1, 'float32');
+            const values = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues, false, true);
+            const packedMatMul = matMul16(packedScores, packedValues, false, true);
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
+
+        it('can support different ranks with transposeA', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([100, 128, 64], 0, 1, 'float32');
+            const values = randomNormal([128, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues, true, false);
+            const packedMatMul = matMul16(packedScores, packedValues, true, false);
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            console.log('Out shapes', repackedRaw.shape, unpackedMatMul.shape);
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
+
+        it('can support different ranks with transposeB', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([100, 64, 64], 0, 1, 'float32');
+            const values = randomNormal([128, 64], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues, false, true);
+            const packedMatMul = matMul16(packedScores, packedValues, false, true);
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
     });
 
-    it('produce correct output with transposeB', async ({ expect }) => {
-        await selectBackend('webgpu');
-        const scores = randomNormal([100, 3, 128, 32], 0, 1, 'float32');
-        const values = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
+    describe('Broadcasting and higher ranks', () => {
+        it('can support broadcasting batch dimensions', async ({ expect }) => {
+            await selectBackend('webgpu');
+            // A: [1, 64, 64], B: [100, 64, 32] -> broadcast A over batch
+            const scores = randomNormal([1, 64, 64], 0, 1, 'float32');
+            const values = randomNormal([100, 64, 32], 0, 1, 'float32');
 
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
 
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
 
-        const rawMatMul = matMul(unpackedScores, unpackedValues, false, true);
-        const packedMatMul = matMul16(packedScores, packedValues, false, true);
-        const unpackedMatMul = unpack16(packedMatMul);
+            const rawMatMul = matMul(unpackedScores, unpackedValues);
+            const packedMatMul = matMul16(packedScores, packedValues);
+            const unpackedMatMul = unpack16(packedMatMul);
 
-        const repackedRaw = unpack16(pack16(rawMatMul));
+            const repackedRaw = unpack16(pack16(rawMatMul));
 
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
 
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
+
+        it('can support broadcasting batch dimensions with transposeA', async ({ expect }) => {
+            await selectBackend('webgpu');
+            // A: [1, 64, 64], B: [100, 64, 32] -> broadcast A over batch, transposeA
+            const scores = randomNormal([1, 64, 64], 0, 1, 'float32');
+            const values = randomNormal([100, 64, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues, true, false);
+            const packedMatMul = matMul16(packedScores, packedValues, true, false);
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
+
+        it('can support broadcasting batch dimensions with transposeB', async ({ expect }) => {
+            await selectBackend('webgpu');
+            // A: [100, 64, 32], B: [1, 32, 32] -> broadcast B over batch, transposeB
+            const scores = randomNormal([100, 64, 32], 0, 1, 'float32');
+            const values = randomNormal([1, 32, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues, false, true);
+            const packedMatMul = matMul16(packedScores, packedValues, false, true);
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
     });
 
-    it('can support rank 3', async ({ expect }) => {
-        await selectBackend('webgpu');
-        const scores = randomNormal([100, 64, 128], 0, 1, 'float32');
-        const values = randomNormal([100, 128, 32], 0, 1, 'float32');
+    describe('Gradients', () => {
+        it('has valid gradients', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const A = randomNormal([64, 32], 0, 1, 'float32');
+            const B = randomNormal([32, 128], 0, 1, 'float32');
 
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
+            const packedA = pack16(A);
+            const packedB = pack16(B);
+            const packedMatMul = matMul16(packedA, packedB);
 
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
+            const grads = matMul16GradConfig.gradFunc(packedMatMul, [packedA, packedB], {});
+            const gradA = grads.A();
+            const gradB = grads.B();
+            const gradAUnpacked = unpack16(gradA);
+            const gradBUnpacked = unpack16(gradB);
 
-        const rawMatMul = matMul(unpackedScores, unpackedValues);
-        const packedMatMul = matMul16(packedScores, packedValues);
-        const unpackedMatMul = unpack16(packedMatMul);
+            const gradAData = await gradAUnpacked.data();
+            const gradBData = await gradBUnpacked.data();
 
-        const repackedRaw = unpack16(pack16(rawMatMul));
+            expect(gradA.size).toBe(packedA.size);
+            expect(gradAData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+            expect(gradAData.some((v) => isNaN(v))).toBe(false);
+            expect(gradAData.some((v) => !isFinite(v))).toBe(false);
+            expect(gradA.dtype).toBe('int32');
+            expect(isPackedTensor(gradA)).toBe(true);
 
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
+            expect(gradB.size).toBe(packedB.size);
+            expect(gradBData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+            expect(gradBData.some((v) => isNaN(v))).toBe(false);
+            expect(gradBData.some((v) => !isFinite(v))).toBe(false);
+            expect(gradB.dtype).toBe('int32');
+            expect(isPackedTensor(gradB)).toBe(true);
+        });
 
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
+        it('has valid transposeA gradients', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const A = randomNormal([32, 64], 0, 1, 'float32');
+            const B = randomNormal([32, 128], 0, 1, 'float32');
+
+            const packedA = pack16(A);
+            const packedB = pack16(B);
+            const packedMatMul = matMul16(packedA, packedB, true, false);
+
+            const grads = matMul16GradConfig.gradFunc(packedMatMul, [packedA, packedB], {
+                transposeA: true,
+                transposeB: false,
+            });
+            const gradA = grads.A();
+            const gradB = grads.B();
+            const gradAUnpacked = unpack16(gradA);
+            const gradBUnpacked = unpack16(gradB);
+
+            const gradAData = await gradAUnpacked.data();
+            const gradBData = await gradBUnpacked.data();
+
+            expect(gradA.size).toBe(packedA.size);
+            expect(gradAData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+            expect(gradAData.some((v) => isNaN(v))).toBe(false);
+            expect(gradAData.some((v) => !isFinite(v))).toBe(false);
+            expect(gradA.dtype).toBe('int32');
+            expect(isPackedTensor(gradA)).toBe(true);
+
+            expect(gradB.size).toBe(packedB.size);
+            expect(gradBData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+            expect(gradBData.some((v) => isNaN(v))).toBe(false);
+            expect(gradBData.some((v) => !isFinite(v))).toBe(false);
+            expect(gradB.dtype).toBe('int32');
+            expect(isPackedTensor(gradB)).toBe(true);
+        });
+
+        it('has valid transposeB gradients', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const A = randomNormal([64, 32], 0, 1, 'float32');
+            const B = randomNormal([128, 32], 0, 1, 'float32');
+
+            const packedA = pack16(A);
+            const packedB = pack16(B);
+            const packedMatMul = matMul16(packedA, packedB, false, true);
+
+            const grads = matMul16GradConfig.gradFunc(packedMatMul, [packedA, packedB], {
+                transposeA: false,
+                transposeB: true,
+            });
+            const gradA = grads.A();
+            const gradB = grads.B();
+            const gradAUnpacked = unpack16(gradA);
+            const gradBUnpacked = unpack16(gradB);
+
+            const gradAData = await gradAUnpacked.data();
+            const gradBData = await gradBUnpacked.data();
+
+            expect(gradA.size).toBe(packedA.size);
+            expect(gradAData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+            expect(gradAData.some((v) => isNaN(v))).toBe(false);
+            expect(gradAData.some((v) => !isFinite(v))).toBe(false);
+            expect(gradA.dtype).toBe('int32');
+            expect(isPackedTensor(gradA)).toBe(true);
+
+            expect(gradB.size).toBe(packedB.size);
+            expect(gradBData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+            expect(gradBData.some((v) => isNaN(v))).toBe(false);
+            expect(gradBData.some((v) => !isFinite(v))).toBe(false);
+            expect(gradB.dtype).toBe('int32');
+            expect(isPackedTensor(gradB)).toBe(true);
+        });
+
+        it('has correct grad', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const A = randomNormal([64, 32], 0, 1, 'float32');
+            const B = randomNormal([32, 128], 0, 1, 'float32');
+            const gradY = randomNormal([64, 128], 0, 1, 'float32');
+            const packedGradY = pack16(gradY);
+
+            const packedA = pack16(A);
+            const packedB = pack16(B);
+            const uA = unpack16(packedA);
+            const uB = unpack16(packedB);
+            // const unpackedMatMul = matMul(uA, uB);
+
+            const matMulGradFunc = getGradient('BatchMatMul').gradFunc;
+
+            const grads = matMul16GradConfig.gradFunc(packedGradY, [packedA, packedB], {});
+            const gradA = grads.A();
+            const gradAUnpacked = unpack16(gradA);
+
+            const gradsReal = unpack16(pack16(matMulGradFunc(unpack16(packedGradY), [uA, uB], {}).a()));
+
+            const gradAData = await gradAUnpacked.data();
+            const gradARealData = await gradsReal.data();
+
+            const error = arraysClose(gradAData, gradARealData);
+            expect(error).toBeLessThan(1e-3);
+        });
     });
 
-    it('can support rank 2', async ({ expect }) => {
-        await selectBackend('webgpu');
-        const scores = randomNormal([64, 64], 0, 1, 'float32');
-        const values = randomNormal([64, 32], 0, 1, 'float32');
+    describe('Special features', () => {
+        it('can scale outputs', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([100, 3, 128, 64], 0, 1, 'float32');
+            const values = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
 
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
 
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
 
-        const rawMatMul = matMul(unpackedScores, unpackedValues);
-        const packedMatMul = matMul16(packedScores, packedValues);
-        const unpackedMatMul = unpack16(packedMatMul);
+            const rawMatMul = mul(matMul(unpackedScores, unpackedValues), scalar(2.0, 'float32'));
+            const packedMatMul = matMul16Scaled(packedScores, packedValues, 2.0);
+            const unpackedMatMul = unpack16(packedMatMul);
 
-        const repackedRaw = unpack16(pack16(rawMatMul));
+            const repackedRaw = unpack16(pack16(rawMatMul));
 
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
 
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
-    });
+            expect(repackedRaw.shape).toEqual(unpackedMatMul.shape);
 
-    it('can support different ranks', async ({ expect }) => {
-        await selectBackend('webgpu');
-        const scores = randomNormal([100, 128, 64], 0, 1, 'float32');
-        const values = randomNormal([64, 32], 0, 1, 'float32');
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
 
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
+        it('has correct grad for scaled outputs', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const A = randomNormal([64, 32], 0, 1, 'float32');
+            const B = randomNormal([32, 128], 0, 1, 'float32');
+            const gradY = randomNormal([64, 128], 0, 1, 'float32');
+            const packedGradY = pack16(gradY);
 
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
+            const packedA = pack16(A);
+            const packedB = pack16(B);
+            const unpackedMatMul = matMul(A, B);
 
-        const rawMatMul = matMul(unpackedScores, unpackedValues);
-        const packedMatMul = matMul16(packedScores, packedValues);
-        const unpackedMatMul = unpack16(packedMatMul);
+            const mulGradFunc = getGradient('Multiply').gradFunc;
+            const matMulGradFunc = getGradient('BatchMatMul').gradFunc;
 
-        const repackedRaw = unpack16(pack16(rawMatMul));
+            const grads = matMul16GradConfig.gradFunc(packedGradY, [packedA, packedB], { scale: 2.0 });
+            const gradA = grads.A();
+            const gradAUnpacked = unpack16(gradA);
 
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
+            const gradsRealMul = mulGradFunc(unpack16(packedGradY), [unpackedMatMul, scalar(2.0, 'float32')], {}).a();
+            const gradsReal = unpack16(
+                pack16(matMulGradFunc(gradsRealMul, [unpack16(packedA), unpack16(packedB)], {}).a())
+            );
 
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
-    });
+            const gradAData = await gradAUnpacked.data();
+            const gradARealData = await gradsReal.data();
 
-    it('can support different ranks with transposeA', async ({ expect }) => {
-        await selectBackend('webgpu');
-        const scores = randomNormal([100, 128, 64], 0, 1, 'float32');
-        const values = randomNormal([128, 32], 0, 1, 'float32');
+            const error = arraysClose(gradAData, gradARealData);
+            expect(error).toBeLessThan(1e-3);
+        });
 
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
+        it('supports gelu activation', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([100, 3, 128, 64], 0, 1, 'float32');
+            const values = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
 
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
 
-        const rawMatMul = matMul(unpackedScores, unpackedValues, true, false);
-        const packedMatMul = matMul16(packedScores, packedValues, true, false);
-        const unpackedMatMul = unpack16(packedMatMul);
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
 
-        const repackedRaw = unpack16(pack16(rawMatMul));
+            const rawMatMul = matMulGelu(unpackedScores, unpackedValues);
+            const packedMatMul = matMul16Gelu(packedScores, packedValues);
+            const unpackedMatMul = unpack16(packedMatMul);
 
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
+            const repackedRaw = unpack16(pack16(rawMatMul));
 
-        console.log('Out shapes', repackedRaw.shape, unpackedMatMul.shape);
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
 
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
-    });
+            expect(repackedRaw.shape).toEqual(unpackedMatMul.shape);
 
-    it('can support different ranks with transposeB', async ({ expect }) => {
-        await selectBackend('webgpu');
-        const scores = randomNormal([100, 64, 64], 0, 1, 'float32');
-        const values = randomNormal([128, 64], 0, 1, 'float32');
-
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
-
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
-
-        const rawMatMul = matMul(unpackedScores, unpackedValues, false, true);
-        const packedMatMul = matMul16(packedScores, packedValues, false, true);
-        const unpackedMatMul = unpack16(packedMatMul);
-
-        const repackedRaw = unpack16(pack16(rawMatMul));
-
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
-
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
-    });
-
-    it('can support broadcasting batch dimensions', async ({ expect }) => {
-        await selectBackend('webgpu');
-        // A: [1, 64, 64], B: [100, 64, 32] -> broadcast A over batch
-        const scores = randomNormal([1, 64, 64], 0, 1, 'float32');
-        const values = randomNormal([100, 64, 32], 0, 1, 'float32');
-
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
-
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
-
-        const rawMatMul = matMul(unpackedScores, unpackedValues);
-        const packedMatMul = matMul16(packedScores, packedValues);
-        const unpackedMatMul = unpack16(packedMatMul);
-
-        const repackedRaw = unpack16(pack16(rawMatMul));
-
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
-
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
-    });
-
-    it('can support broadcasting batch dimensions with transposeA', async ({ expect }) => {
-        await selectBackend('webgpu');
-        // A: [1, 64, 64], B: [100, 64, 32] -> broadcast A over batch, transposeA
-        const scores = randomNormal([1, 64, 64], 0, 1, 'float32');
-        const values = randomNormal([100, 64, 32], 0, 1, 'float32');
-
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
-
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
-
-        const rawMatMul = matMul(unpackedScores, unpackedValues, true, false);
-        const packedMatMul = matMul16(packedScores, packedValues, true, false);
-        const unpackedMatMul = unpack16(packedMatMul);
-
-        const repackedRaw = unpack16(pack16(rawMatMul));
-
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
-
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
-    });
-
-    it('can support broadcasting batch dimensions with transposeB', async ({ expect }) => {
-        await selectBackend('webgpu');
-        // A: [100, 64, 32], B: [1, 32, 32] -> broadcast B over batch, transposeB
-        const scores = randomNormal([100, 64, 32], 0, 1, 'float32');
-        const values = randomNormal([1, 32, 32], 0, 1, 'float32');
-
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
-
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
-
-        const rawMatMul = matMul(unpackedScores, unpackedValues, false, true);
-        const packedMatMul = matMul16(packedScores, packedValues, false, true);
-        const unpackedMatMul = unpack16(packedMatMul);
-
-        const repackedRaw = unpack16(pack16(rawMatMul));
-
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
-
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
-    });
-
-    it('can support rank 4 tensors', async ({ expect }) => {
-        await selectBackend('webgpu');
-        // [batch, heads, seq, head_size]
-        const scores = randomNormal([2, 3, 64, 64], 0, 1, 'float32');
-        const values = randomNormal([2, 3, 64, 32], 0, 1, 'float32');
-
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
-
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
-
-        const rawMatMul = matMul(unpackedScores, unpackedValues);
-        const packedMatMul = matMul16(packedScores, packedValues);
-        const unpackedMatMul = unpack16(packedMatMul);
-
-        const repackedRaw = unpack16(pack16(rawMatMul));
-
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
-
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
-
-        expect(unpackedMatMulData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
-    });
-
-    it('has valid gradients', async ({ expect }) => {
-        await selectBackend('webgpu');
-        const A = randomNormal([64, 32], 0, 1, 'float32');
-        const B = randomNormal([32, 128], 0, 1, 'float32');
-
-        const packedA = pack16(A);
-        const packedB = pack16(B);
-        const packedMatMul = matMul16(packedA, packedB);
-
-        const grads = matMul16GradConfig.gradFunc(packedMatMul, [packedA, packedB], {});
-        const gradA = grads.A();
-        const gradB = grads.B();
-        const gradAUnpacked = unpack16(gradA);
-        const gradBUnpacked = unpack16(gradB);
-
-        const gradAData = await gradAUnpacked.data();
-        const gradBData = await gradBUnpacked.data();
-
-        expect(gradA.size).toBe(packedA.size);
-        expect(gradAData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
-        expect(gradAData.some((v) => isNaN(v))).toBe(false);
-        expect(gradAData.some((v) => !isFinite(v))).toBe(false);
-        expect(gradA.dtype).toBe('int32');
-        expect(isPackedTensor(gradA)).toBe(true);
-
-        expect(gradB.size).toBe(packedB.size);
-        expect(gradBData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
-        expect(gradBData.some((v) => isNaN(v))).toBe(false);
-        expect(gradBData.some((v) => !isFinite(v))).toBe(false);
-        expect(gradB.dtype).toBe('int32');
-        expect(isPackedTensor(gradB)).toBe(true);
-    });
-
-    it('can scale outputs', async ({ expect }) => {
-        await selectBackend('webgpu');
-        const scores = randomNormal([100, 3, 128, 64], 0, 1, 'float32');
-        const values = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
-
-        const packedScores = pack16(scores);
-        const packedValues = pack16(values);
-
-        const unpackedScores = unpack16(packedScores);
-        const unpackedValues = unpack16(packedValues);
-
-        const rawMatMul = mul(matMul(unpackedScores, unpackedValues), scalar(2.0, 'float32'));
-        const packedMatMul = matMul16Scaled(packedScores, packedValues, 2.0);
-        const unpackedMatMul = unpack16(packedMatMul);
-
-        const repackedRaw = unpack16(pack16(rawMatMul));
-
-        const rawMatMulData = await repackedRaw.data();
-        const unpackedMatMulData = await unpackedMatMul.data();
-
-        expect(repackedRaw.shape).toEqual(unpackedMatMul.shape);
-
-        const error = arraysClose(rawMatMulData, unpackedMatMulData);
-        expect(error).toBeLessThan(1e-3);
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
     });
 });

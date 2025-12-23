@@ -2,6 +2,8 @@ import { KernelConfig, NamedTensorInfoMap, registerKernel, Tensor, TensorInfo } 
 import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
+import { isPackedTensor } from '@base/utilities/packed';
+import { PackedTensorInfo } from '@base/patches/PackedTensor';
 
 const K = 0.7978845608028654; // sqrt(2/pi)
 const A = 0.044715;
@@ -65,7 +67,7 @@ registerKernel(geluConfig);
 
 // Backward
 
-class GeluGradProgram implements WebGPUProgram {
+class GeluGradProgram16 implements WebGPUProgram {
     // Inputs: dy, x
     variableNames = ['dy', 'x'];
     outputShape: number[];
@@ -87,18 +89,68 @@ class GeluGradProgram implements WebGPUProgram {
             fn tanhComplete(x: f32) -> f32 {
                 return select(tanh(x), sign(x), abs(x) > 15.0);
             }
+            fn activationGrad(dy: f32, X: f32) -> f32 {
+                let x2 = X * X;
+                let x3 = x2 * X;
+                let u  = ${K} * (X + ${A} * x3);
+                let t  = tanhComplete(u);
+                let sech2 = 1.0 - t * t;
+                let du_dx = ${K} * (1.0 + 3.0 * ${A} * x2);
+                let dgelu = 0.5 * (1.0 + t) + 0.5 * X * sech2 * du_dx;
+                return dy *dgelu;
+            }
+            ${main('index')} {
+                if (index < uniforms.size) {
+                    let X  = unpack2x16float(u32(x[index]));
+                    let DY = unpack2x16float(u32(dy[index]));
+                    let dgelu = vec2<f32>(
+                        activationGrad(DY.x, X.x),
+                        activationGrad(DY.y, X.y)
+                    );
+                    result[index] = i32(pack2x16float(dgelu));
+                }
+            }`;
+    }
+}
+
+class GeluGradProgram32 implements WebGPUProgram {
+    // Inputs: dy, x
+    variableNames = ['dy', 'x'];
+    outputShape: number[];
+    shaderKey = 'GeluGrad';
+    dispatchLayout: { x: number[] };
+    dispatch: [number, number, number];
+    workgroupSize: [number, number, number] = [128, 1, 1];
+    size = true;
+
+    constructor(shape: number[]) {
+        this.outputShape = shape;
+        this.dispatchLayout = flatDispatchLayout(this.outputShape);
+        this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);
+    }
+
+    getUserCode(): string {
+        return `
+            // TODO: revisit after https://github.com/gpuweb/gpuweb/issues/4458 is resolved
+            fn tanhComplete(x: f32) -> f32 {
+                return select(tanh(x), sign(x), abs(x) > 15.0);
+            }
+            fn activationGrad(dy: f32, X: f32) -> f32 {
+                let x2 = X * X;
+                let x3 = x2 * X;
+                let u  = ${K} * (X + ${A} * x3);
+                let t  = tanhComplete(u);
+                let sech2 = 1.0 - t * t;
+                let du_dx = ${K} * (1.0 + 3.0 * ${A} * x2);
+                let dgelu = 0.5 * (1.0 + t) + 0.5 * X * sech2 * du_dx;
+                return dy *dgelu;
+            }
             ${main('index')} {
                 if (index < uniforms.size) {
                     let X  = getXByOutputIndex(index);
-                    let x2 = X * X;
-                    let x3 = x2 * X;
-                    let u  = ${K} * (X + ${A} * x3);
-                    let t  = tanhComplete(u);
-                    let sech2 = 1.0 - t * t;
-                    let du_dx = ${K} * (1.0 + 3.0 * ${A} * x2);
-                    let dgelu = 0.5 * (1.0 + t) + 0.5 * X * sech2 * du_dx;
                     let DY = getDyByOutputIndex(index);
-                    setOutputAtIndex(index, DY * dgelu);
+                    let dgelu = activationGrad(DY, X);
+                    setOutputAtIndex(index, dgelu);
                 }
             }`;
     }
@@ -108,8 +160,11 @@ class GeluGradProgram implements WebGPUProgram {
 function geluGradKernelFunc(args: { inputs: NamedTensorInfoMap; backend: unknown }): TensorInfo {
     const { dy, x } = args.inputs as { dy: Tensor; x: Tensor };
     const backend = args.backend as WebGPUBackend;
-    const program = new GeluGradProgram(x.shape);
-    return backend.runWebGPUProgram(program, [dy, x], 'float32');
+    const packed = isPackedTensor(dy);
+    const program = packed ? new GeluGradProgram16(x.shape) : new GeluGradProgram32(x.shape);
+    const result: PackedTensorInfo = backend.runWebGPUProgram(program, [dy, x], packed ? 'int32' : 'float32');
+    result.packed = packed;
+    return result;
 }
 
 const geluGradKernelConfig: KernelConfig = {

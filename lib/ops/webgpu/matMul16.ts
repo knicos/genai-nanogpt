@@ -16,17 +16,19 @@ import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dis
 import { isPackedTensor } from '@base/utilities/packed';
 import { reshape16 } from '../reshape16';
 import { matMulMul } from '../matMulMul';
+import { matMulGelu } from '../matMulGelu';
+import { PackedTensorInfo } from '@base/patches/PackedTensor';
 
 type ProgramUniform = Array<{
     type: string;
     data: number[];
 }>;
 
-class MatMulAttention16ProgramGeneric implements WebGPUProgram {
+class MatMul16ProgramGeneric implements WebGPUProgram {
     variableNames = ['A', 'B'];
     outputShape: number[];
 
-    shaderKey = 'MatMulAttention16TB';
+    shaderKey = 'MatMul16TB';
     dispatchLayout: { x: number[]; y: number[]; z: number[] };
     dispatch: [number, number, number];
     workgroupSize: [number, number, number] = [8, 8, 1]; // TILE_T2 * TILE_D = 8 * 8
@@ -37,31 +39,37 @@ class MatMulAttention16ProgramGeneric implements WebGPUProgram {
     tileInner = 32;
     uniforms?: string;
     scale = false;
+    scaleA = false;
+    scaleB = false;
+    activation?: 'gelu';
+    outputComponent?: number | undefined;
+    variableComponents?: number[];
 
     constructor(batch: number, O1: number, O2: number, I1: number, I2: number, transposeA = false, transposeB = false) {
         this.transposeA = transposeA;
         this.transposeB = transposeB;
-        this.shaderKey = `MatMulAttention16TB_${O1}_${O2}_${I1}_${I2}_${transposeA ? 'TA' : ''}${
-            transposeB ? 'TB' : ''
-        }`;
+        this.variableComponents = [4, 4];
+        this.outputComponent = 2;
+
+        this.shaderKey = `MatMul16TB_${O1}_${O2}_${I1}_${I2}_${transposeA ? 'TA' : ''}${transposeB ? 'TB' : ''}`;
         if (transposeA) {
             this.outputShape = [batch, I1, I2 / 2];
             this.dimInner = O1; // or O2
             if (O1 !== O2) {
-                throw new Error('Inner dimensions of A and B must match for MatMulAttention16 transposeA');
+                throw new Error('Inner dimensions of A and B must match for MatMul16 transposeA');
             }
         } else if (transposeB) {
             this.outputShape = [batch, O1, O2 / 2];
             this.dimInner = I2; // or I1
             if (I2 !== I1) {
-                throw new Error('Inner dimensions of A and B must match for MatMulAttention16 transposeB');
+                throw new Error('Inner dimensions of A and B must match for MatMul16 transposeB');
             }
             // Neither transposed (both transposed is not supported)
         } else {
             this.outputShape = [batch, O1, I2 / 2];
             this.dimInner = I1; // or O2
             if (I1 !== O2) {
-                throw new Error('Inner dimensions of A and B must match for MatMulAttention16');
+                throw new Error('Inner dimensions of A and B must match for MatMul16');
             }
         }
 
@@ -80,16 +88,16 @@ class MatMulAttention16ProgramGeneric implements WebGPUProgram {
         ];
 
         if (I2 % 32 !== 0) {
-            throw new Error('Head size must be even for MatMulAttention16 transposeB');
+            throw new Error('Head size must be even for MatMul16 transposeB');
         }
         if (I1 % 32 !== 0) {
-            throw new Error('Head size must be even for MatMulAttention16 transposeB');
+            throw new Error('Head size must be even for MatMul16 transposeB');
         }
         if (O1 % 32 !== 0) {
-            throw new Error('Sequence length must be multiple of 32 for MatMulAttention16 transposeB');
+            throw new Error('Sequence length must be multiple of 32 for MatMul16 transposeB');
         }
         if (O2 % 32 !== 0) {
-            throw new Error('Sequence length must be multiple of 32 for MatMulAttention16 transposeB');
+            throw new Error('Sequence length must be multiple of 32 for MatMul16 transposeB');
         }
     }
 
@@ -99,83 +107,182 @@ class MatMulAttention16ProgramGeneric implements WebGPUProgram {
         this.shaderKey += '_scaled';
     }
 
-    private readASnippet(): string {
-        // Workgroup 8x8 = 64 threads.
-        // We need to load 32x32 floats = 1024 floats = 512 packed ints.
-        // Each thread loads 512 / 64 = 8 ints.
-        if (this.transposeA) {
-            return `
-                // tileAHeight=32, tileAWidth=32. Packed shape [32, 16].
-                for (var i = 0; i < 8; i = i + 1) {
-                    let localIndex = i * 64 + i32(localId.y) * 8 + i32(localId.x);
-                    let row = localIndex / 16;
-                    let col = localIndex % 16;
-                    
-                    let index = getIndexFromCoords3D(vec3<i32>(batchA, kStart + row, globalRowStart / 2 + col), uniforms.aShape);
-                    let packedA = A[index];
-                    let unpackedA = unpack2x16float(u32(packedA));
-                    mm_Asub[row][col * 2] = unpackedA.x;
-                    mm_Asub[row][col * 2 + 1] = unpackedA.y;
-                }
-            `;
-        } else {
-            return `
-                // tileAHeight=32, tileAWidth=32. Packed shape [32, 16].
-                for (var i = 0; i < 8; i = i + 1) {
-                    let localIndex = i * 64 + i32(localId.y) * 8 + i32(localId.x);
-                    let row = localIndex / 16;
-                    let col = localIndex % 16;
+    useScaleA() {
+        this.uniforms = 'scaleA: f32';
+        this.scaleA = true;
+        this.shaderKey += '_scaledA';
+    }
 
-                    let index = getIndexFromCoords3D(vec3<i32>(batchA, globalRowStart + row, kStart / 2 + col), uniforms.aShape);
-                    let packedA = A[index];
-                    let unpackedA = unpack2x16float(u32(packedA));
-                    mm_Asub[row][col * 2] = unpackedA.x;
-                    mm_Asub[row][col * 2 + 1] = unpackedA.y;
+    useScaleB() {
+        this.uniforms = 'scaleB: f32';
+        this.scaleB = true;
+        this.shaderKey += '_scaledB';
+    }
+
+    useActivation(activation: 'gelu') {
+        this.activation = activation;
+        this.shaderKey += `_${activation}`;
+    }
+
+    private activationSnippet(): string {
+        if (this.activation === 'gelu') {
+            const K = 0.7978845608028654; // sqrt(2/pi)
+            const A = 0.044715;
+            return `
+                // TODO: revisit after https://github.com/gpuweb/gpuweb/issues/4458 is resolved
+                fn tanhComplete(x: vec4<f32>) -> vec4<f32> {
+                    return vec4<f32>(
+                        select(tanh(x.x), sign(x.x), abs(x.x) > 15.0f),
+                        select(tanh(x.y), sign(x.y), abs(x.y) > 15.0f),
+                        select(tanh(x.z), sign(x.z), abs(x.z) > 15.0f),
+                        select(tanh(x.w), sign(x.w), abs(x.w) > 15.0f),
+                    );
                 }
-            `;
+                fn activation(x : vec4<f32>) -> vec4<f32> {
+                    let x3 = x * x * x;
+                    var inner = fma(vec4<f32>(${A}f), x3, x);
+                    inner = ${K}f * inner;
+                    inner = tanhComplete(inner);
+                    inner = 0.5f * (1.0f + inner);
+                    return x * inner;
+                }
+                `;
+        }
+        return '';
+    }
+
+    private readASnippet(): string {
+        const loadIndex = `let indexA = offsetA + row * strideA + col;`;
+
+        const unpackSnippet = `
+            let packedA = A[indexA];
+            var unpackedA1 = vec4<f32>(
+                unpack2x16float(u32(packedA.x)),
+                unpack2x16float(u32(packedA.y))
+            );
+            var unpackedA2 = vec4<f32>(
+                unpack2x16float(u32(packedA.z)),
+                unpack2x16float(u32(packedA.w))
+            );
+            ${this.scaleA ? 'unpackedA1 = unpackedA1 * uniforms.scaleA;' : ''}
+            ${this.scaleA ? 'unpackedA2 = unpackedA2 * uniforms.scaleA;' : ''}
+        `;
+
+        if (this.transposeA) {
+            return `{
+                ${loadIndex}
+                ${unpackSnippet}
+                mm_Asub[row][col * 2] = unpackedA1;
+                mm_Asub[row][col * 2 + 1] = unpackedA2;
+        }`;
+        } else {
+            return `{
+                ${loadIndex}
+                ${unpackSnippet}
+                let cx = row / 4;
+                let cy = row % 4;
+                let colBase = col * 8;
+                mm_Asub[colBase][cx][cy] = unpackedA1.x;
+                mm_Asub[colBase + 1][cx][cy] = unpackedA1.y;
+                mm_Asub[colBase + 2][cx][cy] = unpackedA1.z;
+                mm_Asub[colBase + 3][cx][cy] = unpackedA1.w;
+                mm_Asub[colBase + 4][cx][cy] = unpackedA2.x;
+                mm_Asub[colBase + 5][cx][cy] = unpackedA2.y;
+                mm_Asub[colBase + 6][cx][cy] = unpackedA2.z;
+                mm_Asub[colBase + 7][cx][cy] = unpackedA2.w;
+        }`;
         }
     }
 
     private readBSnippet(): string {
-        // Workgroup 8x8 = 64 threads.
-        // We need to load 32x32 floats = 512 packed ints.
+        const loadIndex = `let indexB = offsetB + row * strideB + col;`;
+
+        const unpackSnippet = `
+            let packedB = B[indexB];
+            var unpackedB1 = vec4<f32>(
+                unpack2x16float(u32(packedB.x)),
+                unpack2x16float(u32(packedB.y))
+            );
+            var unpackedB2 = vec4<f32>(
+                unpack2x16float(u32(packedB.z)),
+                unpack2x16float(u32(packedB.w))
+            );
+            ${this.scaleB ? 'unpackedB1 = unpackedB1 * uniforms.scaleB;' : ''}
+            ${this.scaleB ? 'unpackedB2 = unpackedB2 * uniforms.scaleB;' : ''}
+        `;
+
         if (this.transposeB) {
-            return `
-                // tileBOuter=32, tileInner=32. We need B^T [32, 32].
-                // Maps to B [32, 32]. Packed B [32, 16].
-                for (var i = 0; i < 8; i = i + 1) {
-                    let localIndex = i * 64 + i32(localId.y) * 8 + i32(localId.x);
-                    let row = localIndex / 16;
-                    let col = localIndex % 16;
-
-                    let index = getIndexFromCoords3D(vec3<i32>(batchB, globalColStart + row, kStart / 2 + col), uniforms.bShape);
-                    let packedB = B[index];
-                    let unpackedB = unpack2x16float(u32(packedB));
-                    // Transpose into shared memory
-                    mm_Bsub[col * 2][row] = unpackedB.x;
-                    mm_Bsub[col * 2 + 1][row] = unpackedB.y;
-                }
-            `;
+            return `{
+                ${loadIndex}
+                ${unpackSnippet}
+                // Transpose into shared memory, reorganise the vec4s
+                let rx = row / 4;
+                let ry = row % 4;
+                let colBase = col * 8;
+                mm_Bsub[colBase][rx][ry] = unpackedB1.x;
+                mm_Bsub[colBase + 1][rx][ry] = unpackedB1.y;
+                mm_Bsub[colBase + 2][rx][ry] = unpackedB1.z;
+                mm_Bsub[colBase + 3][rx][ry] = unpackedB1.w;
+                mm_Bsub[colBase + 4][rx][ry] = unpackedB2.x;
+                mm_Bsub[colBase + 5][rx][ry] = unpackedB2.y;
+                mm_Bsub[colBase + 6][rx][ry] = unpackedB2.z;
+                mm_Bsub[colBase + 7][rx][ry] = unpackedB2.w;
+            }`;
         } else {
-            return `
-                // tileBOuter=32, tileInner=32. We need B [32, 32].
-                // Packed B [32, 16].
-                for (var i = 0; i < 8; i = i + 1) {
-                    let localIndex = i * 64 + i32(localId.y) * 8 + i32(localId.x);
-                    //let row = localIndex / 8; // Wait, 32 rows / 8? No.
-                    // Packed B is [32, 16]. Total 512 ints.
-                    // row should be localIndex / 16 (0..31).
-                    let row = localIndex / 16;
-                    let col = localIndex % 16;
-
-                    let index = getIndexFromCoords3D(vec3<i32>(batchB, kStart + row, globalColStart / 2 + col), uniforms.bShape);
-                    let packedB = B[index];
-                    let unpackedB = unpack2x16float(u32(packedB));
-                    mm_Bsub[row][col * 2] = unpackedB.x;
-                    mm_Bsub[row][col * 2 + 1] = unpackedB.y;
-                }
-            `;
+            return `{
+                ${loadIndex}
+                ${unpackSnippet}
+                mm_Bsub[row][col * 2] = unpackedB1;
+                mm_Bsub[row][col * 2 + 1] = unpackedB2;
+            }`;
         }
+    }
+
+    private baseIndexSnippets(): string {
+        const strides = `
+            let strideA = uniforms.aShape.z / 4;
+            let strideB = uniforms.bShape.z / 4;
+        `;
+        let baseB = '';
+        if (this.transposeB) {
+            baseB = `let baseB = getIndexFromCoords3D(vec3<i32>(batchB, globalColStart, 0), vec3<i32>(uniforms.bShape.x, uniforms.bShape.y, strideB));`;
+        } else {
+            baseB = `let baseB = getIndexFromCoords3D(vec3<i32>(batchB, 0, globalColStart / 8), vec3<i32>(uniforms.bShape.x, uniforms.bShape.y, strideB));`;
+        }
+
+        let baseA = '';
+        if (this.transposeA) {
+            baseA = `let baseA = getIndexFromCoords3D(vec3<i32>(batchA, 0, globalRowStart / 8), vec3<i32>(uniforms.aShape.x, uniforms.aShape.y, strideA));`;
+        } else {
+            baseA = `let baseA = getIndexFromCoords3D(vec3<i32>(batchA, globalRowStart, 0), vec3<i32>(uniforms.aShape.x, uniforms.aShape.y, strideA));`;
+        }
+
+        return `
+            ${strides}
+            ${baseA}
+            ${baseB}
+        `;
+    }
+
+    private offsetSnippets(): string {
+        let offsetA = '';
+        if (this.transposeA) {
+            offsetA = `let offsetA = baseA + kStart * strideA;`;
+        } else {
+            offsetA = `let offsetA = baseA + kStart / 8;`;
+        }
+
+        let offsetB = '';
+        if (this.transposeB) {
+            offsetB = `let offsetB = baseB + kStart / 8;`;
+        } else {
+            offsetB = `let offsetB = baseB + kStart * strideB;`;
+        }
+
+        return `
+            ${offsetA}
+            ${offsetB}
+        `;
     }
 
     getUserCode(): string {
@@ -192,8 +299,10 @@ class MatMulAttention16ProgramGeneric implements WebGPUProgram {
         // ...assertions...
 
         const userCode = `
-            var<workgroup> mm_Asub : array<array<f32, ${tileAWidth + 1}>, ${tileAHeight}>;
-            var<workgroup> mm_Bsub : array<array<f32, ${tileBOuter + 1}>, ${tileInner}>;
+            var<workgroup> mm_Asub : array<array<vec4<f32>, ${tileAWidth / 4}>, ${tileAHeight}>;
+            var<workgroup> mm_Bsub : array<array<vec4<f32>, ${tileBOuter / 4}>, ${tileInner}>;
+
+            ${this.activation ? this.activationSnippet() : ''}
 
             ${main()} {
                 let batch = i32(globalId.z);
@@ -211,36 +320,32 @@ class MatMulAttention16ProgramGeneric implements WebGPUProgram {
                     vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0)
                 );
 
+                let offset = i32(localId.y) * ${this.workgroupSize[0]} + i32(localId.x);
+
+                ${this.baseIndexSnippets()}
+
                 for (var t = 0; t < ${numTiles}; t++) {
-                    ${this.readASnippet()}
-                    ${this.readBSnippet()}
+                    ${this.offsetSnippets()}
+
+                    for (var i = 0; i < ${2 * 64}; i = i + 64) {
+                        let localIndex = i + offset;
+                        let row = localIndex / 4;
+                        let col = localIndex % 4;
+                        ${this.readASnippet()}
+                        ${this.readBSnippet()}
+                    }
                     kStart = kStart + ${tileInner};
                     workgroupBarrier();
 
-                    let lCol4 = localCol * 4;
-                    let lRow4 = localRow * 4;
-
                     for (var k = 0; k < ${tileInner}; k++) {
                         // Load 4 columns of B as a vec4
-                        let bVec = vec4<f32>(
-                            mm_Bsub[k][lCol4],
-                            mm_Bsub[k][lCol4 + 1],
-                            mm_Bsub[k][lCol4 + 2],
-                            mm_Bsub[k][lCol4 + 3]
-                        );
+                        let bVec = mm_Bsub[k][localCol];
+                        let aVec = mm_Asub[k][localRow];
 
                         // Compute 4 rows
-                        let a0 = ${transposeA ? `mm_Asub[k][lRow4]` : `mm_Asub[lRow4][k]`};
-                        acc[0] = fma(vec4<f32>(a0), bVec, acc[0]);
-
-                        let a1 = ${transposeA ? `mm_Asub[k][lRow4 + 1]` : `mm_Asub[lRow4 + 1][k]`};
-                        acc[1] = fma(vec4<f32>(a1), bVec, acc[1]);
-
-                        let a2 = ${transposeA ? `mm_Asub[k][lRow4 + 2]` : `mm_Asub[lRow4 + 2][k]`};
-                        acc[2] = fma(vec4<f32>(a2), bVec, acc[2]);
-
-                        let a3 = ${transposeA ? `mm_Asub[k][lRow4 + 3]` : `mm_Asub[lRow4 + 3][k]`};
-                        acc[3] = fma(vec4<f32>(a3), bVec, acc[3]);
+                        for (var r = 0; r < 4; r = r + 1) {
+                            acc[r] = fma(vec4<f32>(aVec[r]), bVec, acc[r]);
+                        }
                     }
                     workgroupBarrier();
                 }
@@ -249,29 +354,17 @@ class MatMulAttention16ProgramGeneric implements WebGPUProgram {
                 let gRow = globalRowStart + localRow * 4;
                 let gColPacked = i32(workgroupId.x) * ${this.workgroupSize[0] * 2} + localCol * 2;
                 
-                // Row 0
-                let idx0 = getOutputIndexFromCoords(vec3<i32>(batch, gRow, gColPacked));
-                ${this.scale ? `acc[0] = acc[0] * uniforms.scale;` : ''}
-                result[idx0] = i32(pack2x16float(acc[0].xy));
-                result[idx0 + 1] = i32(pack2x16float(acc[0].zw));
+                var idx0 = getOutputIndexFromCoords(vec3<i32>(batch, gRow, gColPacked));
+                for (var i = 0; i < 4; i = i + 1) {
+                    ${this.scale ? `acc[i] = acc[i] * uniforms.scale;` : ''}
+                    ${this.activation ? `acc[i] = activation(acc[i]);` : ''}
+                    result[idx0 / 2] = vec2<i32>(
+                        i32(pack2x16float(acc[i].xy)),
+                        i32(pack2x16float(acc[i].zw))
+                    );
 
-                // Row 1
-                let idx1 = idx0 + uniforms.outShapeStrides[1];
-                ${this.scale ? `acc[1] = acc[1] * uniforms.scale;` : ''}
-                result[idx1] = i32(pack2x16float(acc[1].xy));
-                result[idx1 + 1] = i32(pack2x16float(acc[1].zw));
-
-                // Row 2
-                let idx2 = idx1 + uniforms.outShapeStrides[1];
-                ${this.scale ? `acc[2] = acc[2] * uniforms.scale;` : ''}
-                result[idx2] = i32(pack2x16float(acc[2].xy));
-                result[idx2 + 1] = i32(pack2x16float(acc[2].zw));
-
-                // Row 3
-                let idx3 = idx2 + uniforms.outShapeStrides[1];
-                ${this.scale ? `acc[3] = acc[3] * uniforms.scale;` : ''}
-                result[idx3] = i32(pack2x16float(acc[3].xy));
-                result[idx3 + 1] = i32(pack2x16float(acc[3].zw));
+                    idx0 = idx0 + uniforms.outShapeStrides[1];  // Next row
+                }
             }
         `;
         return userCode;
@@ -280,10 +373,13 @@ class MatMulAttention16ProgramGeneric implements WebGPUProgram {
 
 function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { A, B } = args.inputs as { A: Tensor; B: Tensor };
-    const { transposeA, transposeB, scale } = args.attrs as {
+    const { transposeA, transposeB, scale, activation, scaleA, scaleB } = args.attrs as {
         transposeA: boolean;
         transposeB: boolean;
         scale?: number;
+        scaleA?: number;
+        scaleB?: number;
+        activation?: 'gelu';
     };
 
     const backend = args.backend as WebGPUBackend;
@@ -295,7 +391,18 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
         if (scale !== undefined) {
             return matMulMul(A, B, scalar(scale), transposeA, transposeB);
         }
+        if (activation === 'gelu') {
+            return matMulGelu(A, B);
+        }
         return matMul(A, B, transposeA, transposeB);
+    }
+
+    if (wasAUnpacked && !wasBUnpacked) {
+        throw new Error('When using mixed precision, A must be packed if B is packed.');
+    }
+
+    if (!wasAUnpacked && wasBUnpacked) {
+        throw new Error('When using mixed precision, B must be packed if A is packed.');
     }
 
     const aRank = A.shape.length;
@@ -319,7 +426,7 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
     const Areshaped = reshape16(A, [batchDimA, A.shape[aRank - 2]!, A.shape[aRank - 1]!]);
     const BReshaped = reshape16(B, [batchDimB, B.shape[bRank - 2]!, B.shape[bRank - 1]!]);
 
-    const program = new MatMulAttention16ProgramGeneric(batchSize, O1, O2, I1, I2, transposeA, transposeB);
+    const program = new MatMul16ProgramGeneric(batchSize, O1, O2, I1, I2, transposeA, transposeB);
 
     let uniforms: ProgramUniform | undefined;
 
@@ -327,8 +434,21 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
         program.useScale();
         uniforms = [{ type: 'float32', data: [scale] }];
     }
+    if (scaleA !== undefined) {
+        program.useScaleA();
+        uniforms = [{ type: 'float32', data: [scaleA] }];
+    }
+    if (scaleB !== undefined) {
+        program.useScaleB();
+        uniforms = [{ type: 'float32', data: [scaleB] }];
+    }
 
-    const result = backend.runWebGPUProgram(program, [Areshaped, BReshaped], 'int32', uniforms);
+    if (activation !== undefined) {
+        program.useActivation(activation);
+    }
+
+    const result: PackedTensorInfo = backend.runWebGPUProgram(program, [Areshaped, BReshaped], 'int32', uniforms);
+    result.packed = true;
     Areshaped.dispose();
     BReshaped.dispose();
 

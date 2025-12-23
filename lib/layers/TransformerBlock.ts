@@ -35,7 +35,7 @@ export default class Block extends BaseLayer<BlockAttributes> {
 
     private getMLPOutput(x: Tensor, attrs: BlockAttributes): Tensor {
         const norm = this.ln2.call({ training: attrs.training }, x) as Tensor;
-        const mlpOut = this.mlp.call({ training: attrs.training }, norm) as Tensor;
+        const mlpOut = this.mlp.call(attrs, norm) as Tensor;
         if (attrs.outputEmbeddings) {
             keep(norm);
             attrs.embeddings!.push({ name: `block_ln2_${this.index}`, tensor: norm });

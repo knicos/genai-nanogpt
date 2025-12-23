@@ -535,10 +535,6 @@ export class Engine implements TensorTracker, DataMover {
                 const attrs = { dtype };
                 const wasPacked = isPackedTensor(x);
 
-                if (wasPacked) {
-                    console.log('Packed clone');
-                }
-
                 const newTensor = ENGINE.runKernel(
                     Cast,
                     gradInputs as unknown as NamedTensorMap,

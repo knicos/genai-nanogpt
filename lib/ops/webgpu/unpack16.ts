@@ -19,22 +19,34 @@ class UnpackProgram implements WebGPUProgram {
     workgroupSize: [number, number, number] = [64, 1, 1];
     variableNames = ['x'];
     size = true;
-    uniforms = 'scaling : f32,';
+    uniforms?: string;
+    outputComponent = 4;
+    variableComponents = [2];
+    scaling = false;
 
     constructor(outShape: number[]) {
         this.outputShape = [...outShape.slice(0, -1), outShape[outShape.length - 1] * 2];
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
-        this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize, [2, 1, 1]);
+        this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize, [4, 1, 1]);
+    }
+
+    useScaling() {
+        this.shaderKey += '_Scaled';
+        this.uniforms = 'scaling : f32,';
+        this.scaling = true;
     }
 
     getUserCode(): string {
         return `
                 ${main('index')} {
-                    let outIndex = index * 2i;
+                    let outIndex = index;
                     if (outIndex < uniforms.size) {
-                        let v = unpack2x16float(u32(x[index]));
-                        result[outIndex] = v.x * uniforms.scaling;
-                        result[outIndex + 1] = v.y * uniforms.scaling;
+                        let xvec2 = x[index];
+                        let v1 = vec4<f32>(
+                            unpack2x16float(u32(xvec2.x)),
+                            unpack2x16float(u32(xvec2.y))
+                        ) ${this.scaling ? '* uniforms.scaling' : ''};
+                        result[outIndex] = v1;
                     }
                 }`;
     }
@@ -47,9 +59,14 @@ function unpackGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?:
 
     const program = new UnpackProgram(x.shape);
 
+    const hasScaling = scaling !== 1.0;
+    if (hasScaling) {
+        program.useScaling();
+    }
+
     const uniformData = [{ type: 'float32', data: [1.0 / scaling] }];
 
-    return backend.runWebGPUProgram(program, [x], 'float32', uniformData);
+    return backend.runWebGPUProgram(program, [x], 'float32', hasScaling ? uniformData : undefined);
 }
 
 const kernelConfig: KernelConfig = {
