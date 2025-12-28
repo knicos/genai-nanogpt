@@ -33,8 +33,8 @@ describe('rope', () => {
 
         const f2 = () => {
             const r = ropeCPU({
-                inputs: { x: input, cos: cache.getCos()!, sin: cache.getSin()! },
-                attrs: { pastLen: 0 },
+                inputs: { x: input },
+                attrs: { pastLen: 0, negSin: false, ropeCache: cache } as unknown as tf.NamedAttrMap,
             }) as tf.Tensor;
             return r;
         };

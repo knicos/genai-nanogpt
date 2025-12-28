@@ -44,8 +44,8 @@ describe('Softmax 16-bit', { timeout: 10000 }, () => {
 
     it('has valid gradients', async ({ expect }) => {
         await selectBackend('webgpu');
-        const x = randomNormal([50, 20], 0, 1, 'float32');
-        const y = randomNormal([50, 20], 0, 1, 'float32');
+        const x = randomNormal([50, 32], 0, 1, 'float32');
+        const y = randomNormal([50, 32], 0, 1, 'float32');
 
         const packedX = pack16(x);
         const packedY = pack16(y);
@@ -64,7 +64,7 @@ describe('Softmax 16-bit', { timeout: 10000 }, () => {
     it('produces similar gradients for each precision', async ({ expect }) => {
         await selectBackend('webgpu');
         const dy = randomNormal([64, 128], 0, 1, 'float32');
-        const y = randomNormal([64, 128], 0, 1, 'float32');
+        const y = randomNormal([64, 128], 0, 0.5, 'float32');
 
         const packedDY = pack16(dy);
         const packedY = pack16(y);

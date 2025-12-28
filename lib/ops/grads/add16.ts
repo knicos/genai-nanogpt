@@ -19,7 +19,9 @@ const addGradConfig: GradConfig = {
             if (reduceAxes.length > 0) {
                 res = sum16(res, reduceAxes);
             }
-            return reshape16(res, a.shape);
+            const result = reshape16(res, a.shape);
+            res.dispose();
+            return result;
         };
         const derB = () => {
             let res = dy;
@@ -27,7 +29,9 @@ const addGradConfig: GradConfig = {
             if (reduceAxes.length > 0) {
                 res = sum16(res, reduceAxes);
             }
-            return reshape16(res, b.shape);
+            const result = reshape16(res, b.shape);
+            res.dispose();
+            return result;
         };
 
         return { a: derA, b: derB };

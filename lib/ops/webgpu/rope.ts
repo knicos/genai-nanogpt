@@ -1,3 +1,4 @@
+import RoPECache from '@base/layers/RoPECache';
 import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import { isPackedTensor } from '@base/utilities/packed';
 import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
@@ -140,8 +141,12 @@ class RopeProgram16 implements WebGPUProgram {
 }
 
 function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
-    const { x, sin, cos } = args.inputs as { x: Tensor; sin: Tensor; cos: Tensor };
-    const { pastLen } = args.attrs as { pastLen: number };
+    const { x } = args.inputs as { x: Tensor };
+    const { pastLen, negSin, ropeCache } = args.attrs as unknown as {
+        pastLen: number;
+        negSin: boolean;
+        ropeCache: RoPECache;
+    };
 
     const backend = args.backend as WebGPUBackend;
 
@@ -151,6 +156,9 @@ function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: N
     const seqLength = x.shape[2]!;
     // C is doubled due to packing
     const C = packed ? x.shape[3]! * 2 : x.shape[3]!;
+
+    const sin = negSin ? ropeCache.getNegSin()! : ropeCache.getSin()!;
+    const cos = ropeCache.getCos()!;
 
     assertShapesMatch(sin.shape, cos.shape, 'Error in Rope: ');
     if (sin.shape[0] < seqLength + pastLen) {

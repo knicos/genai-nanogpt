@@ -19,6 +19,11 @@ const qkvGradConfig: GradConfig = {
         // Concatenate along head axis (axis=1): [B, heads, T, hs] * 3 -> [B, 3*heads, T, hs]
         const dQKV = concat16([dq, dk, dv], 1);
 
+        // Probably ok, but check it
+        dq.dispose();
+        dk.dispose();
+        dv.dispose();
+
         const originalShape = [x.shape[0], x.shape[1]!, 3 * x.shape[2]!];
 
         // Call matMul16's gradient
@@ -28,6 +33,8 @@ const qkvGradConfig: GradConfig = {
             originalShape,
             perm: [0, 2, 1, 3],
         });
+
+        dQKV.dispose();
 
         // grads: { x: Tensor, kernel: Tensor }
         return {

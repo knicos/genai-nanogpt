@@ -10,7 +10,7 @@ const navigator = { gpu: create([]) };
 Object.assign(globalThis.navigator, navigator);
 
 import { selectBackend } from '@base/backend';
-import { randomNormal } from '@tensorflow/tfjs-core';
+import { NamedAttrMap, randomNormal } from '@tensorflow/tfjs-core';
 import { rope } from '../../rope';
 import RoPECache from '@base/layers/RoPECache';
 import { ropeGradConfig } from '../../grads/rope';
@@ -106,7 +106,7 @@ describe('Rope WebGPU', { timeout: 10000 }, () => {
 
         const packedX = pack16(x);
 
-        const gradX = ropeGradConfig.gradFunc(packedX, [cache.getSin()!, cache.getCos()!], {}).x();
+        const gradX = ropeGradConfig.gradFunc(packedX, [], { ropeCache: cache } as unknown as NamedAttrMap).x();
         const gradXData = await gradX.data();
 
         expect(gradXData.length).toBe(packedX.size);
@@ -136,11 +136,13 @@ describe('Rope WebGPU', { timeout: 10000 }, () => {
 
         const packedX = pack16(x);
 
-        const gradX16 = unpack16(ropeGradConfig.gradFunc(packedX, [cache.getSin()!, cache.getCos()!], {}).x());
+        const gradX16 = unpack16(
+            ropeGradConfig.gradFunc(packedX, [], { ropeCache: cache } as unknown as NamedAttrMap).x()
+        );
         const gradX16Data = await gradX16.data();
 
         const gradX32 = unpack16(
-            pack16(ropeGradConfig.gradFunc(unpack16(packedX), [cache.getSin()!, cache.getCos()!], {}).x())
+            pack16(ropeGradConfig.gradFunc(unpack16(packedX), [], { ropeCache: cache } as unknown as NamedAttrMap).x())
         );
         const gradX32Data = await gradX32.data();
 

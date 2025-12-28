@@ -15,7 +15,8 @@ function createReductionShader16_keepDims(
     reductionOp: 'mean' | 'sum',
     inputSnippet: string,
     reducedSnippet: string,
-    outputSnippet: string
+    outputSnippet: string,
+    inputReadSnippet?: string
 ): string {
     const sharedMemorySnippet = `
              var<workgroup> xBestValues : array<f32, ${workgroupSizeX}>;
@@ -25,6 +26,17 @@ function createReductionShader16_keepDims(
            fn DIV_CEIL(a : u32, b : u32) -> u32 {
             return ((a - 1u) / b + 1u);
            }
+
+            fn readInput(index: i32) -> vec2<f32> {
+                ${
+                    inputReadSnippet
+                        ? inputReadSnippet
+                        : `
+                let packed = u32(x[index]);
+                return unpack2x16float(packed);
+                `
+                }
+            }
 
            ${sharedMemorySnippet}
     
@@ -36,8 +48,7 @@ function createReductionShader16_keepDims(
     
                 for (var k = i32(localId.x); k < Length;
                     k = k + ${workgroupSizeX}) {
-                    let packedX = unpack2x16float(u32(x[offset + k]));
-                    var candidate = packedX;
+                    var candidate = readInput(offset + k);
                     ${inputSnippet}
                     bestValue = bestValue + candidate.x + candidate.y;
                 }
@@ -75,7 +86,8 @@ function createReductionShader16_flatten(
     reductionOp: 'mean' | 'sum',
     inputSnippet: string,
     reducedSnippet: string,
-    outputSnippet: string
+    outputSnippet: string,
+    inputReadSnippet?: string
 ): string {
     const sharedMemorySnippet = `
              var<workgroup> bestValues : array<vec2<f32>, ${workgroupSizeX}>;
@@ -85,6 +97,17 @@ function createReductionShader16_flatten(
            fn DIV_CEIL(a : u32, b : u32) -> u32 {
             return ((a - 1u) / b + 1u);
            }
+
+           fn readInput(index: i32) -> vec2<f32> {
+                ${
+                    inputReadSnippet
+                        ? inputReadSnippet
+                        : `
+                let packed = u32(x[index]);
+                return unpack2x16float(packed);
+                `
+                }
+            }
 
            ${sharedMemorySnippet}
     
@@ -97,13 +120,11 @@ function createReductionShader16_flatten(
     
                 for (var k = i32(localId.x); k < Length;
                     k = k + ${workgroupSizeX}) {
-                    let packed1 = unpack2x16float(u32(x[offset1 + k]));
-                    var candidate = packed1;
+                    var candidate = readInput(offset1 + k);
                     ${inputSnippet}
                     let bv1 = candidate.x + candidate.y;
 
-                    let packed2 = unpack2x16float(u32(x[offset2 + k]));
-                    candidate = packed2;
+                    candidate = readInput(offset2 + k);
                     ${inputSnippet}
                     let bv2 = candidate.x + candidate.y;
 
@@ -140,11 +161,26 @@ export function createReductionShader16(
     inputSnippet: string,
     reducedSnippet: string,
     outputSnippet: string,
+    inputReadSnippet?: string,
     keepDims = true
 ): string {
     return keepDims
-        ? createReductionShader16_keepDims(workgroupSizeX, reductionOp, inputSnippet, reducedSnippet, outputSnippet)
-        : createReductionShader16_flatten(workgroupSizeX, reductionOp, inputSnippet, reducedSnippet, outputSnippet);
+        ? createReductionShader16_keepDims(
+              workgroupSizeX,
+              reductionOp,
+              inputSnippet,
+              reducedSnippet,
+              outputSnippet,
+              inputReadSnippet
+          )
+        : createReductionShader16_flatten(
+              workgroupSizeX,
+              reductionOp,
+              inputSnippet,
+              reducedSnippet,
+              outputSnippet,
+              inputReadSnippet
+          );
 }
 
 export function createReductionShader32(
@@ -152,7 +188,8 @@ export function createReductionShader32(
     reductionOp: 'mean' | 'sum',
     inputSnippet: string,
     reducedSnippet: string,
-    outputSnippet: string
+    outputSnippet: string,
+    inputReadSnippet?: string
 ): string {
     const sharedMemorySnippet = `
              var<workgroup> xBestValues : array<f32, ${workgroupSizeX}>;
@@ -162,6 +199,16 @@ export function createReductionShader32(
            fn DIV_CEIL(a : u32, b : u32) -> u32 {
             return ((a - 1u) / b + 1u);
            }
+
+           fn readInput(index: i32) -> f32 {
+                ${
+                    inputReadSnippet
+                        ? inputReadSnippet
+                        : `
+                return x[index];
+                `
+                }
+            }
 
            ${sharedMemorySnippet}
     
@@ -173,7 +220,7 @@ export function createReductionShader32(
     
                 for (var k = i32(localId.x); k < Length;
                     k = k + ${workgroupSizeX}) {
-                    var candidate = f32(x[offset + k]);
+                    var candidate = readInput(offset + k);
                     ${inputSnippet}
                     bestValue = bestValue + candidate;
                 }

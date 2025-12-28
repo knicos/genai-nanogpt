@@ -46,7 +46,7 @@ class SumProgram16 implements ReduceWebGPUProgram {
 
         const outputSnippet = `result[outputIndex] = i32(pack2x16float(bestValue));`;
 
-        return createReductionShader16(workgroupSizeX, 'sum', '', '', outputSnippet, false);
+        return createReductionShader16(workgroupSizeX, 'sum', '', '', outputSnippet, undefined, false);
     }
 }
 

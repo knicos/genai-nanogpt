@@ -20,3 +20,4 @@ import './add16';
 import './concat16';
 import './mul16';
 import './sub16';
+import './softmax16grad';

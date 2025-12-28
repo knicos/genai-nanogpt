@@ -1,3 +1,4 @@
+import RoPECache from '@base/layers/RoPECache';
 import { GPGPUProgram, MathBackendWebGL } from '@tensorflow/tfjs-backend-webgl';
 import { UniformType } from '@tensorflow/tfjs-backend-webgl/dist/shader_compiler';
 import {
@@ -59,9 +60,14 @@ class RopeProgram implements GPGPUProgram {
 }
 
 function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
-    const { x, sin, cos } = args.inputs as { x: Tensor; sin: Tensor; cos: Tensor };
-    const { pastLen } = args.attrs as { pastLen: number };
-
+    const { x } = args.inputs as { x: Tensor };
+    const { pastLen, ropeCache, negSin } = args.attrs as unknown as {
+        pastLen: number;
+        ropeCache: RoPECache;
+        negSin: boolean;
+    };
+    const sin = negSin ? ropeCache.getNegSin()! : ropeCache.getSin()!;
+    const cos = ropeCache.getCos()!;
     const backend = args.backend as MathBackendWebGL;
 
     const batchSize = x.shape[0];

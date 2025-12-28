@@ -7,6 +7,7 @@ export default class RoPECache {
     private ropeInvFreq: Tensor;
     private ropeCos: Tensor | null = null; // [cacheLen, rotaryDim/2]
     private ropeSin: Tensor | null = null; // [cacheLen, rotaryDim/2]
+    private ropeNegSin: Tensor | null = null; // [cacheLen, rotaryDim/2]
     private ropeCacheLen = 0;
 
     constructor(private readonly config: GPTConfig) {
@@ -28,6 +29,7 @@ export default class RoPECache {
         if (this.config.useRope === false) {
             this.ropeCos = null;
             this.ropeSin = null;
+            this.ropeNegSin = null;
             this.ropeCacheLen = 0;
         } else {
             tidy(() => {
@@ -46,6 +48,7 @@ export default class RoPECache {
             const freqs = positions.mul(this.ropeInvFreq.expandDims(0)); // [L, rd/2]
             this.ropeCos = keep(cos(freqs).expandDims(-1)); // [L, rd/2, 1]
             this.ropeSin = keep(sin(freqs).expandDims(-1)); // [L, rd/2, 1]
+            this.ropeNegSin = keep(this.ropeSin.neg()); // [L, rd/2, 1]
             this.ropeCacheLen = nextSize;
         });
     }
@@ -56,6 +59,10 @@ export default class RoPECache {
 
     public getSin(): Tensor | null {
         return this.ropeSin;
+    }
+
+    public getNegSin(): Tensor | null {
+        return this.ropeNegSin;
     }
 
     public dispose() {

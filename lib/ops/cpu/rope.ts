@@ -1,3 +1,4 @@
+import RoPECache from '@base/layers/RoPECache';
 import {
     concat,
     gather,
@@ -73,10 +74,16 @@ export function applyRoPE(sinCache: Tensor, cosCache: Tensor, rotaryDim: number,
 
 // CPU fallback implementation
 export function ropeCPU(args: { inputs: NamedTensorInfoMap; attrs?: NamedAttrMap }): TensorInfo {
-    const { x, sin, cos } = args.inputs as { x: Tensor; sin: Tensor; cos: Tensor };
-    const { pastLen } = args.attrs as { pastLen: number };
+    const { x } = args.inputs as { x: Tensor };
+    const { pastLen, negSin, ropeCache } = args.attrs as unknown as {
+        pastLen: number;
+        negSin: boolean;
+        ropeCache: RoPECache;
+    };
 
     const rotaryDim = x.shape[3]!;
+    const sin = negSin ? ropeCache.getNegSin()! : ropeCache.getSin()!;
+    const cos = ropeCache.getCos()!;
     return applyRoPE(sin, cos, rotaryDim, x, pastLen);
 }
 
