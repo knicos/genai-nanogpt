@@ -1,6 +1,7 @@
 import { Tensor, engine } from '@tensorflow/tfjs-core';
 
 import './grads/matMul16';
+import './webgl/matMul16';
 import './cpu/matMul16';
 import { isPackedTensor, packTensor } from '@base/utilities/packed';
 import { pack16 } from './pack16';
@@ -10,7 +11,14 @@ export function matMul16(
     B: Tensor,
     transposeA = false,
     transposeB = false,
-    attrs: { scale?: number; scaleA?: number; scaleB?: number; activation?: 'gelu' } = {}
+    attrs: {
+        scale?: number;
+        scaleA?: number;
+        scaleB?: number;
+        activation?: 'gelu';
+        forceOutputShape?: number[];
+        perm?: number[];
+    } = {}
 ): Tensor {
     const isPackedA = isPackedTensor(A);
     const isPackedB = isPackedTensor(B);

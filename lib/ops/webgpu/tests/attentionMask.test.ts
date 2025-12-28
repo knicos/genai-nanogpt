@@ -1,8 +1,8 @@
 import '@base/patches/engine';
 import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
-import { pack16 } from '../pack16';
-import { unpack16 } from '../unpack16';
+import { pack16 } from '../../pack16';
+import { unpack16 } from '../../unpack16';
 import { arraysClose } from '@base/utilities/arrayClose';
 
 Object.assign(globalThis, globals);
@@ -11,7 +11,7 @@ Object.assign(globalThis.navigator, navigator);
 
 import { selectBackend } from '@base/backend';
 import { matMul, randomNormal } from '@tensorflow/tfjs-core';
-import { attentionMask } from '../attentionMask';
+import { attentionMask } from '../../attentionMask';
 
 describe('Attention mask 16 bit', () => {
     afterAll(() => {

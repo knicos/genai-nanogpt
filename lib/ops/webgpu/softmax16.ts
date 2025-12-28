@@ -22,13 +22,14 @@ import {
     KernelConfig,
     KernelFunc,
     registerKernel,
+    reshape,
     SoftmaxAttrs,
     SoftmaxInputs,
+    Tensor,
     TensorInfo,
     util,
 } from '@tensorflow/tfjs-core';
 import { WebGPUBackend, WebGPUProgram } from '@tensorflow/tfjs-backend-webgpu';
-import { reshape } from '@tensorflow/tfjs-backend-webgpu/dist/kernels/Reshape';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import { reshape16 } from '../reshape16';
@@ -121,19 +122,17 @@ function softmax(args: { inputs: SoftmaxInputs; backend: WebGPUBackend; attrs: S
     const { logits } = inputs;
     const { dim } = attrs;
 
-    const logitsReshaped = reshape({
-        inputs: { x: logits },
-        backend,
-        attrs: {
-            shape: [util.sizeFromShape(logits!.shape) / logits!.shape[dim], logits!.shape[dim]],
-        },
-    });
+    const logitsReshaped = reshape(logits as Tensor, [
+        util.sizeFromShape(logits!.shape) / logits!.shape[dim],
+        logits!.shape[dim],
+    ]);
     const program = new SoftmaxProgram(logitsReshaped.shape);
     const res: PackedTensorInfo = backend.runWebGPUProgram(program, [logitsReshaped], 'int32');
     res.packed = true;
-    const resReshaped = reshape16(engine().makeTensorFromTensorInfo(res), logits!.shape);
-    backend.disposeData(logitsReshaped.dataId);
-    backend.disposeData(res.dataId);
+    logitsReshaped.dispose();
+    const resTensor = engine().makeTensorFromTensorInfo(res);
+    const resReshaped = reshape16(resTensor, logits!.shape);
+    resTensor.dispose();
     return resReshaped;
 }
 

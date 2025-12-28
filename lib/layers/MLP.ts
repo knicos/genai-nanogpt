@@ -1,9 +1,8 @@
-import { dropout, randomNormal, reshape, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
+import { dropout, randomNormal, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
 import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { GPTConfig } from '@base/main';
 import { matMul16, matMul16Gelu } from '@base/ops/matMul16';
-import { pack16 } from '@base/ops/pack16';
-import { unpack16 } from '@base/ops/unpack16';
+import { reshape16 } from '@base/ops/reshape16';
 
 // Multi-layer perceptron
 export default class MLP extends BaseLayer {
@@ -47,33 +46,18 @@ export default class MLP extends BaseLayer {
         }
     }
 
-    forward(attr: ForwardAttributes, x: Tensor): Tensor {
+    forward(_: ForwardAttributes, x: Tensor): Tensor {
         return tidy(() => {
             this.startMemory();
             const [B, T, C] = x.shape;
-            const x2d = reshape(x, [B! * T!, C!]); // (B*T, C)
+            const x2d = reshape16(x, [B! * T!, C!]); // (B*T, C)
 
-            const packedx2d = attr.mixedPrecision ? pack16(x2d) : x2d;
-
-            if (attr.mixedPrecision) {
-                x2d.dispose();
-            }
-
-            const h = matMul16Gelu(packedx2d, this.getVariable(this.MLPHIDDEN)); // (B*T, hidden)
-
-            if (attr.mixedPrecision) {
-                packedx2d.dispose();
-            }
+            const h = matMul16Gelu(x2d, this.getVariable(this.MLPHIDDEN)); // (B*T, hidden)
 
             const out2d = matMul16(h, this.getVariable(this.MLPOUT)); // (B*T, C)
             h.dispose();
 
-            const unpackedOut2d = attr.mixedPrecision ? unpack16(out2d) : out2d;
-            if (attr.mixedPrecision) {
-                out2d.dispose();
-            }
-
-            const projected = reshape(unpackedOut2d, [B!, T!, C!]);
+            const projected = reshape16(out2d, [B!, T!, C!]);
             this.endMemory('MLP');
             return projected;
         });

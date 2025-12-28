@@ -1,14 +1,16 @@
-import { isPackedTensor, packTensor } from '@base/utilities/packed';
-import { Rank, slice, Tensor } from '@tensorflow/tfjs-core';
+import { isPackedTensor } from '@base/utilities/packed';
+import { engine, Rank, slice, Tensor } from '@tensorflow/tfjs-core';
 
 export function slice16<R extends Rank = Rank>(
     x: Tensor<R>,
     begin: number | number[],
     size: number | number[]
 ): Tensor<R> {
-    const r = slice(x, begin, size);
-    if (isPackedTensor(x)) {
-        packTensor(r);
+    const packed = isPackedTensor(x);
+
+    if (!packed) {
+        return slice(x, begin, size);
     }
-    return r;
+
+    return engine().runKernel('Slice16', { x }, { begin, size }) as Tensor<R>;
 }

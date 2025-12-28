@@ -28,7 +28,6 @@ import './ops/attentionMask';
 import './ops/qkv';
 import './ops/rope';
 import './ops/appendCache';
-import './ops/fusedSoftmax';
 import './ops/matMulGelu';
 import './ops/gelu';
 import './ops/normRMS';

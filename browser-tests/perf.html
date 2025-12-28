@@ -13,8 +13,10 @@
         <select id="perf-op">
             <option value="rope">RoPE</option>
             <option value="qkv">QKV</option>
+            <option value="qkvManual">QKV Manual 16</option>
             <option value="attentionMask">AttentionMask</option>
             <option value="normRMS">RMSNorm</option>
+            <option value="normRMS16">RMSNorm16</option>
             <option value="normRMSGrad">RMSNormGrad</option>
             <option value="gelu">Gelu</option>
             <option value="appendCache">AppendCache</option>
@@ -61,9 +63,21 @@
             }
 
             async function normRMS(backend) {
-                await tf.setBackend(backend);
-                const gamma = tf.randomNormal([192]);
-                const x = tf.randomNormal([16, 128, 192]);
+                await selectBackend(backend);
+                const gamma = tf.randomNormal([192 * 2]);
+                const x = tf.randomNormal([64, 128, 192 * 2]);
+
+                // Use valueAndGrads for both value and gradients
+                const time = await performanceTest(() => {
+                    return tf.engine().runKernel('RMSNorm', { x, gamma });
+                }, 1000);
+                return time;
+            }
+
+            async function normRMS16(backend) {
+                await selectBackend(backend);
+                const gamma = ops.pack16(tf.randomNormal([192 * 4]));
+                const x = ops.pack16(tf.randomNormal([64, 128, 192 * 4]));
 
                 // Use valueAndGrads for both value and gradients
                 const time = await performanceTest(() => {
@@ -73,13 +87,30 @@
             }
 
             async function qkv(backend) {
-                await tf.setBackend(backend);
+                await selectBackend(backend);
                 const kernel = tf.randomNormal([192, 192 * 3]);
                 const x = tf.randomNormal([16, 128, 192]);
 
                 // Use valueAndGrads for both value and gradients
                 const time = await performanceTest(() => {
-                    const r = tf.engine().runKernel('QKV', { x, kernel }, { heads: 3 });
+                    const r = tf.engine().runKernel('QKV', { x, kernel }, { heads: 3, packed: true });
+                    r[1].dispose();
+                    r[2].dispose();
+                    return r[0];
+                }, 1000);
+                return time;
+            }
+
+            async function qkvManual(backend) {
+                await selectBackend(backend);
+                const kernel = ops.pack16(tf.randomNormal([192, 192 * 3]));
+                const x = ops.pack16(tf.randomNormal([16, 128, 192]));
+
+                const C = 192 / 2;
+
+                // Use valueAndGrads for both value and gradients
+                const time = await performanceTest(() => {
+                    const r = tf.engine().runKernel('QKV', { x, kernel }, { heads: 3, packed: true });
                     r[1].dispose();
                     r[2].dispose();
                     return r[0];
@@ -353,6 +384,7 @@
                 rope,
                 attentionMask,
                 normRMS,
+                normRMS16,
                 gelu,
                 appendCache,
                 matMulGelu,
@@ -366,6 +398,7 @@
                 gradCalc,
                 training,
                 qkv,
+                qkvManual,
                 pack16,
             };
 

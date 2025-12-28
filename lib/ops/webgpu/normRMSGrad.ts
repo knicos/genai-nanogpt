@@ -5,8 +5,6 @@ import {
     NamedAttrMap,
     NamedTensorInfoMap,
     registerKernel,
-    slice,
-    sum,
     Tensor,
     TensorInfo,
 } from '@tensorflow/tfjs-core';
@@ -15,6 +13,13 @@ import { flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
+import { pack16 } from '../pack16';
+import { isPackedTensor } from '@base/utilities/packed';
+import { PackedTensorInfo } from '@base/patches/PackedTensor';
+import { reshape16 } from '../reshape16';
+import { sum16 } from '../sum16';
+import { slice16 } from '../slice16';
+import { unpack16 } from '../unpack16';
 
 class RMSGradProgram implements ReduceWebGPUProgram {
     outputShape: number[];
@@ -27,8 +32,12 @@ class RMSGradProgram implements ReduceWebGPUProgram {
     inputShape: number[];
     size = false;
     rowsPerWorkgroup: number;
+    packed = false;
+    outputComponent?: number;
 
-    constructor(reduceInfo: backend_util.ReduceInfo, rowsPerWorkgroup = 4) {
+    constructor(reduceInfo: backend_util.ReduceInfo, rowsPerWorkgroup = 4, packed = false) {
+        this.packed = packed;
+        // this.outputComponent = packed ? 2 : 1;
         this.shaderKey = `RMSNormGrad_${rowsPerWorkgroup}`;
         this.rowsPerWorkgroup = rowsPerWorkgroup;
         this.inputShape = [reduceInfo.batchSize, reduceInfo.inSize];
@@ -56,7 +65,64 @@ class RMSGradProgram implements ReduceWebGPUProgram {
         // NOTE: This is far from ideal, hard coded accumulation size.
         const sharedMemorySnippet = `
           var<workgroup> partials : array<vec2<f32>, ${workgroupSizeX}>;
-          var<workgroup> accumulation: array<f32, 1024>;
+          var<workgroup> accumulation: array<${this.packed ? 'vec2<f32>' : 'f32'}, 1024>;
+        `;
+
+        const sumRead = this.packed
+            ? `
+                let X = unpack2x16float(u32(x[offset + k]));
+                let DY = unpack2x16float(u32(dy[offset + k]));
+                let G  = unpack2x16float(u32(gamma[k]));
+                sum_x2 = fma(X.x, X.x, sum_x2);
+                sum_x2 = fma(X.y, X.y, sum_x2);
+                sum_dygx = fma(DY.x * G.x, X.x, sum_dygx);
+                sum_dygx = fma(DY.y * G.y, X.y, sum_dygx);
+        `
+            : `
+                let X = f32(x[offset + k]);
+                let DY = f32(dy[offset + k]);
+                let G  = f32(gamma[k]);
+                sum_x2 = fma(X, X, sum_x2);
+                sum_dygx = fma(DY * G, X, sum_dygx);
+            `;
+
+        const writeDx = this.packed
+            ? `
+                let X  = unpack2x16float(u32(x[offset + k]));
+                let DY = unpack2x16float(u32(dy[offset + k]));
+                let G  = unpack2x16float(u32(gamma[k]));
+
+                let dyGamma = DY * G;
+                let dx = vec2<f32>(
+                    fma(dyGamma.x, invRMS, -X.x * scale),
+                    fma(dyGamma.y, invRMS, -X.y * scale)
+                );
+
+                result[offset + k] = i32(pack2x16float(dx));
+
+                // dGamma
+                accumulation[k] = fma(DY, X * invRMS, accumulation[k]);
+        `
+            : `
+                let X  = f32(x[offset + k]);
+                let DY = f32(dy[offset + k]);
+                let G  = f32(gamma[k]);
+
+                let dyGamma = DY * G;
+                let dx = fma(dyGamma, invRMS, -X * scale);
+
+                result[offset + k] = dx;
+
+                // dGamma
+                accumulation[k] = fma(DY, X * invRMS, accumulation[k]);
+        `;
+
+        const writeGamma = this.packed
+            ? `
+                result[outDgBase + k] = i32(pack2x16float(accumulation[k]));
+        `
+            : `
+                result[outDgBase + k] = accumulation[k];
         `;
 
         const userCode = `
@@ -71,22 +137,18 @@ class RMSGradProgram implements ReduceWebGPUProgram {
             let Length = uniforms.reduceSize;
             let BatchSize = uniforms.batchSize;
             for (var k = i32(localId.x); k < Length; k = k + ${workgroupSizeX}) {
-                accumulation[k] = 0.0;
+                accumulation[k] = ${this.packed ? 'vec2<f32>(0.0f)' : '0.0f'};
             }
 
             for (var rowOff = 0; rowOff < ${rowsPerWorkgroup}; rowOff = rowOff + 1) {
                 let row = i32(workgroupId.x) * ${rowsPerWorkgroup} + rowOff;
                 let offset = row * Length;
                 
-                var sum_x2 = 0.0;
-                var sum_dygx = 0.0;
+                var sum_x2 = 0.0f;
+                var sum_dygx = 0.0f;
 
                 for (var k = i32(localId.x); k < Length; k = k + ${workgroupSizeX}) {
-                    let X = f32(x[offset + k]);
-                    let DY = f32(dy[offset + k]);
-                    let G  = f32(gamma[k]);
-                    sum_x2 = fma(X, X, sum_x2);
-                    sum_dygx = fma(DY * G, X, sum_dygx);
+                    ${sumRead}
                 }
 
                 partials[localId.x] = vec2<f32>(sum_x2, sum_dygx);
@@ -102,7 +164,7 @@ class RMSGradProgram implements ReduceWebGPUProgram {
                     workgroupBarrier();
                 }
 
-                let invN = 1.0 / f32(Length);
+                let invN = 1.0f / f32(${this.packed ? 'Length * 2' : 'Length'});
                 let mean_x2   = fma(partials[0].x, invN, 1e-8);
                 let mean_dygx = partials[0].y * invN;
 
@@ -111,17 +173,7 @@ class RMSGradProgram implements ReduceWebGPUProgram {
 
                 // write dx and dGamma.
                 for (var k = i32(localId.x); k < Length; k = k + ${workgroupSizeX}) {
-                    let X  = f32(x[offset + k]);
-                    let DY = f32(dy[offset + k]);
-                    let G  = f32(gamma[k]);
-
-                    let dyGamma = DY * G;
-                    let dx = fma(dyGamma, invRMS, -X * scale);
-
-                    result[offset + k] = dx;
-
-                    // dGamma
-                    accumulation[k] = fma(DY, X * invRMS, accumulation[k]);
+                    ${writeDx}
                 }
 
                 workgroupBarrier();
@@ -130,7 +182,7 @@ class RMSGradProgram implements ReduceWebGPUProgram {
             // Write out the partially accumulated dGamma
             let outDgBase = BatchSize * Length + i32(workgroupId.x) * Length;
             for (var k = i32(localId.x); k < Length; k = k + ${workgroupSizeX}) {
-                result[outDgBase + k] = accumulation[k];
+                ${writeGamma}
             }
           }
         `;
@@ -144,11 +196,22 @@ function rmsNormGradGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
     const ROWS = 4;
 
     assertShapesMatch(x.shape, dy.shape, 'Error in RMSNormGrad dy: ');
-    assertShapesMatch(gamma.shape, [x.shape[x.shape.length - 1]], 'Error in RMSNormGrad gamma: ');
+
+    const packedX = isPackedTensor(x);
+    const packedGamma = isPackedTensor(gamma);
+    const packedDy = isPackedTensor(dy);
+    const packed = packedX || packedGamma || packedDy;
+
+    const pX = !packed || packedX ? x : pack16(x);
+    const pGamma = !packed || packedGamma ? gamma : pack16(gamma);
+    const pDy = !packed || packedDy ? dy : pack16(dy);
+
+    assertShapesMatch(pGamma.shape, [pX.shape[pX.shape.length - 1]], 'Error in RMSNormGrad gamma: ');
 
     const backend = args.backend as WebGPUBackend;
-    const reduceInfo = createReduceInfo([x, gamma, dy], -1);
-    const program = new RMSGradProgram(reduceInfo, ROWS);
+    const reduceInfo = createReduceInfo([pX, pGamma, pDy], -1);
+
+    const program = new RMSGradProgram(reduceInfo, ROWS, packed);
     const uniformData = [
         { type: 'int32', data: [program.inputShape[1]] }, // Reduce size
         { type: 'int32', data: [program.inputShape[0]] }, // Batch size
@@ -158,22 +221,42 @@ function rmsNormGradGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
         throw new Error(`rmsNormGradGPU: inSize ${reduceInfo.inSize} exceeds max of 1024`);
     }
 
-    const reduced = engine().makeTensorFromTensorInfo(
-        backend.runWebGPUProgram(program, [x, gamma, dy], 'float32', uniformData)
+    const result: PackedTensorInfo = backend.runWebGPUProgram(
+        program,
+        [pX, pGamma, pDy],
+        packed ? 'int32' : 'float32',
+        uniformData
     );
+    result.packed = packed;
+
+    if (packed && !packedX) {
+        pX.dispose();
+    }
+    if (packed && !packedGamma) {
+        pGamma.dispose();
+    }
+    if (packed && !packedDy) {
+        pDy.dispose();
+    }
+
+    const reduced = engine().makeTensorFromTensorInfo(result);
 
     // Now split reduced into dx and dGamma
-    const dxDense = slice(reduced, [0, 0], [reduceInfo.batchSize, reduceInfo.inSize]);
-    const dGammaFullDense = slice(reduced, [reduceInfo.batchSize, 0], [reduceInfo.batchSize / ROWS, reduceInfo.inSize]);
+    const dxDense = slice16(reduced, [0, 0], [reduceInfo.batchSize, reduceInfo.inSize]);
+    const dGammaFullDense = slice16(
+        reduced,
+        [reduceInfo.batchSize, 0],
+        [reduceInfo.batchSize / ROWS, reduceInfo.inSize]
+    );
     reduced.dispose();
 
-    const dx = dxDense.reshape(x.shape);
+    const dx = reshape16(dxDense, x.shape);
     dxDense.dispose();
 
-    const dGamma = sum(dGammaFullDense, [0]);
+    const dGamma = sum16(dGammaFullDense, [0]);
     dGammaFullDense.dispose();
 
-    return [dx, dGamma];
+    return [dx, !packed || packedGamma ? dGamma : unpack16(dGamma)];
 }
 
 const gradKernelConfig: KernelConfig = {

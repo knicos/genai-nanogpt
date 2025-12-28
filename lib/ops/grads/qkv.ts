@@ -1,6 +1,9 @@
-import { registerGradient, GradConfig, Tensor } from '@tensorflow/tfjs-core';
-import { unpack16 } from '../unpack16';
-import { isPackedTensor } from '@base/utilities/packed';
+import { registerGradient, GradConfig, Tensor, squeeze } from '@tensorflow/tfjs-core';
+import { matMul16GradConfig } from './matMul16';
+import { concat16 } from '../concat16';
+import { sum16 } from '../sum16';
+import { NamedGradientMap } from '@tensorflow/tfjs-core/dist/tape';
+import { isPackedTensor, packTensor } from '@base/utilities/packed';
 
 const qkvGradConfig: GradConfig = {
     kernelName: 'QKV',
@@ -11,79 +14,36 @@ const qkvGradConfig: GradConfig = {
         // x: input tensor
         // kernel: fused kernel weights
         const [dq, dk, dv] = dy as Tensor[];
-        const [x, kernel] = saved as Tensor[];
+        const [x] = saved;
 
-        const ispacked = isPackedTensor(dq);
+        // Concatenate along head axis (axis=1): [B, heads, T, hs] * 3 -> [B, 3*heads, T, hs]
+        const dQKV = concat16([dq, dk, dv], 1);
 
-        const dqUnpacked = ispacked ? unpack16(dq) : dq;
-        const dkUnpacked = ispacked ? unpack16(dk) : dk;
-        const dvUnpacked = ispacked ? unpack16(dv) : dv;
+        const originalShape = [x.shape[0], x.shape[1]!, 3 * x.shape[2]!];
 
-        if (ispacked) {
-            dq.dispose();
-            dk.dispose();
-            dv.dispose();
-        }
+        // Call matMul16's gradient
+        const grads = matMul16GradConfig.gradFunc(dQKV, saved, {
+            transposeA: false,
+            transposeB: false,
+            originalShape,
+            perm: [0, 2, 1, 3],
+        });
 
-        // Get shapes
-        const [B, T, C] = x.shape;
-
-        // Reshape dy to [B*T, C] for each Q, K, V
-        const dqT = dqUnpacked.transpose([0, 2, 1, 3]);
-        const dq2d = dqT.reshape([B * T, C]);
-        dqT.dispose();
-        const dkT = dkUnpacked.transpose([0, 2, 1, 3]);
-        const dk2d = dkT.reshape([B * T, C]);
-        dkT.dispose();
-        const dvT = dvUnpacked.transpose([0, 2, 1, 3]);
-        const dv2d = dvT.reshape([B * T, C]);
-        dvT.dispose();
-
-        dqUnpacked.dispose();
-        dkUnpacked.dispose();
-        dvUnpacked.dispose();
-
-        // Gradient w.r.t x: sum of matMul with each kernel slice
-
+        // grads: { x: Tensor, kernel: Tensor }
         return {
-            x: () => {
-                const kernelQ = kernel.slice([0, 0], [C, C]);
-                const dxQ = dq2d.matMul(kernelQ, false, true);
-                kernelQ.dispose();
-
-                const kernelK = kernel.slice([0, C], [C, C]);
-                const dxK = dk2d.matMul(kernelK, false, true);
-                kernelK.dispose();
-                const dx1 = dxQ.add(dxK);
-                dxQ.dispose();
-                dxK.dispose();
-
-                const kernelV = kernel.slice([0, 2 * C], [C, C]);
-                const dxV = dv2d.matMul(kernelV, false, true);
-                kernelV.dispose();
-
-                const dx = dx1.add(dxV).reshape([B, T, C]);
-                dx1.dispose();
-                dxV.dispose();
-                return dx;
-            },
+            x: () => grads.A(),
             kernel: () => {
-                // Gradient w.r.t kernel: x^T * dy for each Q, K, V
-                const x2d = x.reshape([B * T, C]);
-                const dKernelQ = x2d.matMul(dq2d, true, false);
-                const dKernelK = x2d.matMul(dk2d, true, false);
-                const dKernel1 = dKernelQ.concat(dKernelK, 1); // [C, 2*C]
-                dKernelQ.dispose();
-                dKernelK.dispose();
-                const dKernelV = x2d.matMul(dv2d, true, false);
-                const dKernel = dKernel1.concat(dKernelV, 1); // [C, 3*C]
-                dKernel1.dispose();
-                dKernelV.dispose();
-                x2d.dispose();
-                return dKernel;
+                const bGrad = grads.B();
+                const sumBgrad = bGrad.shape[0] === 1 ? squeeze(bGrad, [0]) : sum16(bGrad, 0);
+                bGrad.dispose();
+                return isPackedTensor(bGrad) ? packTensor(sumBgrad) : sumBgrad;
             },
         };
     },
 };
+
+export function qkvGrad(dy: Tensor[], x: Tensor, kernel: Tensor): NamedGradientMap {
+    return qkvGradConfig.gradFunc(dy, [x, kernel], {});
+}
 
 registerGradient(qkvGradConfig);

@@ -59,13 +59,19 @@ export function dot16(a: Tensor, b: Tensor): Tensor {
             }
             return i;
         });
-        b = reshape16(transpose16(b, perm), [ySecondLastDim, -1]);
+        const bt = transpose16(b, perm);
+        b = reshape16(bt, [ySecondLastDim, -1]);
+        bt.dispose();
 
         // Multiply x and y as 2D Tensors, and then reshape back to original.
         const outputShape = [...aFirstDims, ...yOtherDims];
         const transposeA = false;
         const transposeB = false;
         const m = matMul16(a, b, transposeA, transposeB);
-        return reshape16(m, outputShape);
+        a.dispose();
+        b.dispose();
+        const result = reshape16(m, outputShape);
+        m.dispose();
+        return result;
     }
 }

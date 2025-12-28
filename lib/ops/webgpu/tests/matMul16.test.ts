@@ -1,8 +1,8 @@
 import '@base/patches/engine';
 import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
-import { pack16 } from '../pack16';
-import { unpack16 } from '../unpack16';
+import { pack16 } from '../../pack16';
+import { unpack16 } from '../../unpack16';
 import { arraysClose } from '@base/utilities/arrayClose';
 
 Object.assign(globalThis, globals);
@@ -10,12 +10,12 @@ const navigator = { gpu: create([]) };
 Object.assign(globalThis.navigator, navigator);
 
 import { selectBackend } from '@base/backend';
-import { getGradient, matMul, mul, randomNormal, scalar } from '@tensorflow/tfjs-core';
+import { getGradient, matMul, mul, randomNormal, reshape, scalar, transpose } from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-core/dist/register_all_gradients';
-import { matMul16, matMul16Gelu, matMul16Scaled } from '../matMul16';
-import { matMul16GradConfig } from '../grads/matMul16';
+import { matMul16, matMul16Gelu, matMul16Scaled } from '../../matMul16';
+import { matMul16GradConfig } from '../../grads/matMul16';
 import { isPackedTensor } from '@base/utilities/packed';
-import { matMulGelu } from '../matMulGelu';
+import { matMulGelu } from '../../matMulGelu';
 
 describe('MatMul 16-bit', { timeout: 30000 }, () => {
     afterAll(() => {
@@ -137,6 +137,70 @@ describe('MatMul 16-bit', { timeout: 30000 }, () => {
             const rawMatMul = matMul(unpackedScores, unpackedValues);
             const packedMatMul = matMul16(packedScores, packedValues);
             const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+
+            expect(unpackedMatMulData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+        });
+
+        it('can split last dimension', async ({ expect }) => {
+            await selectBackend('webgpu');
+            // [batch, heads, seq, head_size]
+            const scores = randomNormal([12, 64, 64], 0, 1, 'float32');
+            const values = randomNormal([12, 64, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const outputShape = [12, 64, 2, 16 / 2];
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues);
+            const packedMatMul = matMul16(packedScores, packedValues, false, false, { forceOutputShape: outputShape });
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+
+            expect(unpackedMatMulData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+        });
+
+        it('can split last dimension and permute', async ({ expect }) => {
+            await selectBackend('webgpu');
+            // [batch, heads, seq, head_size]
+            const scores = randomNormal([12, 64, 64], 0, 1, 'float32');
+            const values = randomNormal([12, 64, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const outputShape = [12, 64, 2, 16 / 2];
+            const perm = [0, 2, 1, 3];
+
+            const rawMatMul = transpose(reshape(matMul(unpackedScores, unpackedValues), [12, 64, 2, 16]), perm);
+            const packedMatMul = matMul16(packedScores, packedValues, false, false, {
+                forceOutputShape: outputShape,
+                perm,
+            });
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            console.log('Output shapes:', rawMatMul.shape, unpackedMatMul.shape);
 
             const repackedRaw = unpack16(pack16(rawMatMul));
 

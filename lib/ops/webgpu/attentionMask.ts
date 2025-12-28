@@ -101,6 +101,8 @@ class AttentionMaskProgram16 implements WebGPUProgram {
         this.T1 = T1;
         this.T2 = T2;
 
+        this.workgroupSize = [Math.min(64, T2 / 2), 1, 1];
+
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
         this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize, [0.5, 1, 1]);
 

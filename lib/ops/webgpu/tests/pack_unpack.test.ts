@@ -1,8 +1,8 @@
 import '@base/patches/engine';
 import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
-import { pack16 } from '../pack16';
-import { unpack16 } from '../unpack16';
+import { pack16 } from '../../pack16';
+import { unpack16 } from '../../unpack16';
 import { arraysClose } from '@base/utilities/arrayClose';
 
 Object.assign(globalThis, globals);
@@ -11,8 +11,8 @@ Object.assign(globalThis.navigator, navigator);
 
 import { selectBackend } from '@base/backend';
 import { randomNormal } from '@tensorflow/tfjs-core';
-import { packGradConfig } from '../grads/pack16';
-import { unpackGradConfig } from '../grads/unpack16';
+import { packGradConfig } from '../../grads/pack16';
+import { unpackGradConfig } from '../../grads/unpack16';
 import { isPackedTensor } from '@base/utilities/packed';
 
 describe('Pack and Unpack 16-bit floats', { timeout: 30000 }, () => {

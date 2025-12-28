@@ -1,11 +1,9 @@
 import { attentionMask } from '../ops/attentionMask';
 import BaseLayer, { ForwardAttributes } from './BaseLayer';
-import { qkv } from '../ops/qkv';
 import { rope } from '../ops/rope';
 import { appendCache } from '@base/ops/appendCache';
 import { dropout, keep, randomNormal, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
 import { GPTConfig } from '@base/models/config';
-import { unpack16 } from '@base/ops/unpack16';
 import { softmax16 } from '@base/ops/softmax16';
 import { matMul16 } from '@base/ops/matMul16';
 import { pack16 } from '@base/ops/pack16';
@@ -13,6 +11,7 @@ import { transpose16 } from '@base/ops/transpose16';
 import { dot16 } from '@base/ops/dot16';
 import { reshape16 } from '@base/ops/reshape16';
 import { isPackedTensor } from '@base/utilities/packed';
+import { qkv } from '@base/ops/qkv';
 
 export type KVCache = {
     k?: Tensor; // [B, nHead, T_cache, headDim]
@@ -85,8 +84,13 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
         return s;
     }
 
-    private getQKV(x: Tensor, packed: boolean): [Tensor, Tensor, Tensor] {
-        return qkv(x, this.getVariable(this.ATTN), this.config.nHead, packed) as [Tensor, Tensor, Tensor];
+    private getQKV(x: Tensor): [Tensor, Tensor, Tensor] {
+        const kernel = isPackedTensor(x) ? pack16(this.getVariable(this.ATTN)) : this.getVariable(this.ATTN);
+        const result = qkv(x, kernel, this.config.nHead) as [Tensor, Tensor, Tensor];
+        if (isPackedTensor(x)) {
+            kernel.dispose();
+        }
+        return result;
     }
 
     private getOutputProjection(x: Tensor): Tensor {
@@ -140,7 +144,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
     forward(attr: AttentionForwardAttributes, x: Tensor): Tensor {
         return tidy(() => {
             this.startMemory();
-            const [qI, kNewI, vNew] = this.getQKV(x, attr.mixedPrecision || false); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
+            const [qI, kNewI, vNew] = this.getQKV(x); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
 
             // Apply RoPE to current chunk before concatenating with past
             // The rope operator ensures the cache is large enough
@@ -187,12 +191,8 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
                 vTotal.dispose();
             }
 
-            const packedOutput = this.getOutputProjection(y); // (B, T_cur, C)
+            const output = this.getOutputProjection(y); // (B, T_cur, C)
             y.dispose();
-            const output = unpack16(packedOutput); // (B, T_cur, C) float32
-            if (packedOutput !== output) {
-                packedOutput.dispose();
-            }
 
             // Optionally return attention scores for a head
             if (shouldOutputAttention && attr.attentionScores && attr.attentionScores.attentionOut !== undefined) {

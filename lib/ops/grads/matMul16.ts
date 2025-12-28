@@ -1,6 +1,8 @@
 import { GradConfig, registerGradient, Tensor } from '@tensorflow/tfjs-core';
 import { matMul16, matMul16ScaleA, matMul16ScaleB } from '../matMul16';
 import { dGelu } from '../gelu';
+import { transpose16 } from '../transpose16';
+import { reshape16 } from '../reshape16';
 
 export const matMul16GradConfig: GradConfig = {
     kernelName: 'MatMul16',
@@ -15,12 +17,32 @@ export const matMul16GradConfig: GradConfig = {
 
         let intDy = dy;
 
-        const { transposeA, transposeB, scale, activation } = attrs as {
+        const { transposeA, transposeB, scale, activation, originalShape, perm } = attrs as {
             transposeA: boolean;
             transposeB: boolean;
             scale?: number;
             activation?: 'gelu';
+            originalShape?: number[];
+            forceOutputShape?: number[];
+            perm?: number[];
         };
+
+        // Undo permutation and reshape if present
+        if (perm && originalShape) {
+            // Undo permutation
+            const undoPerm = new Array(perm.length);
+            for (let i = 0; i < perm.length; ++i) {
+                undoPerm[perm[i]] = i;
+            }
+            const oldDy = intDy;
+            intDy = transpose16(intDy, undoPerm);
+            oldDy.dispose();
+        }
+        if (originalShape) {
+            const oldDy = intDy;
+            intDy = reshape16(intDy, originalShape);
+            oldDy.dispose();
+        }
 
         if (activation === 'gelu') {
             const oldDy = intDy;

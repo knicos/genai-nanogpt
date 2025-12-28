@@ -1,6 +1,6 @@
-import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
-import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
-import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
+//import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
+//import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
+//import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import {
     KernelConfig,
     NamedAttrMap,
@@ -10,8 +10,11 @@ import {
     TensorInfo,
 } from '@tensorflow/tfjs-core';
 import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
+import { matMul16 } from '../matMul16';
+import { slice16 } from '../slice16';
+import { isPackedTensor } from '@base/utilities/packed';
 
-class QKVProgram16 implements WebGPUProgram {
+/*class QKVProgram16 implements WebGPUProgram {
     variableNames = ['x', 'kernel'];
     outputShape: number[];
     shaderKey = 'QKV';
@@ -46,7 +49,7 @@ class QKVProgram16 implements WebGPUProgram {
                 // Compute output channel index in fused kernel
                 let out_offset = uniforms.mode * ${C} + h * ${head_dim} + d * 2;
 
-                var sum = vec2(0.0, 0.0);
+                var sum = vec2<f32>(0.0f, 0.0f);
             
                 let baseX = b * uniforms.xShape[1] * uniforms.xShape[2] + t * uniforms.xShape[2];
                 for (var c = 0; c < ${C}; c += 1) {
@@ -111,32 +114,39 @@ class QKVProgram32 implements WebGPUProgram {
         }
         `;
     }
-}
+}*/
 
 function qkvGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo[] {
     const { x, kernel } = args.inputs as { x: Tensor; kernel: Tensor };
-    const { heads, packed } = args.attrs as { heads: number; packed?: boolean };
+    const { heads } = args.attrs as { heads: number };
 
-    const backend = args.backend as WebGPUBackend;
+    //const backend = args.backend as WebGPUBackend;
 
     const batchSize = x.shape[0];
     const seqLength = x.shape[1]!;
     const C = x.shape[2]!;
 
-    assertShapesMatch(kernel.shape, [C, 3 * C], 'Error in QKV: ');
+    const packed = isPackedTensor(x);
+
+    assertShapesMatch(kernel.shape, [packed ? C * 2 : C, 3 * C], 'Error in QKV: ');
     if (C % heads !== 0) {
         throw new Error(`Channel dimension ${C} must be divisible by number of heads ${heads} in QKV.`);
     }
 
-    const program = packed
-        ? new QKVProgram16(batchSize, heads, seqLength, C)
-        : new QKVProgram32(batchSize, heads, seqLength, C);
-    const dtype = packed ? 'int32' : x.dtype;
-    return [
-        backend.runWebGPUProgram(program, [x, kernel], dtype, [{ type: 'int32', data: [0] }]),
-        backend.runWebGPUProgram(program, [x, kernel], dtype, [{ type: 'int32', data: [1] }]),
-        backend.runWebGPUProgram(program, [x, kernel], dtype, [{ type: 'int32', data: [2] }]),
+    const qkvMat = matMul16(x, kernel, false, false, {
+        forceOutputShape: [batchSize, seqLength, 3 * heads, C / heads],
+        perm: [0, 2, 1, 3],
+    }); // [B, 3*nh, T, hs]
+
+    const result = [
+        slice16(qkvMat, [0, 0, 0, 0], [batchSize, heads, seqLength, C / heads]),
+        slice16(qkvMat, [0, heads, 0, 0], [batchSize, heads, seqLength, C / heads]),
+        slice16(qkvMat, [0, 2 * heads, 0, 0], [batchSize, heads, seqLength, C / heads]),
     ];
+
+    qkvMat.dispose();
+
+    return result;
 }
 
 const kernelConfig: KernelConfig = {

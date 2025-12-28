@@ -90,6 +90,7 @@ function transpose16_(args: { inputs: NamedTensorInfoMap; backend: unknown; attr
 
     if (packed && perm[perm.length - 1] !== x.shape.length - 1) {
         // Force unpacking in this case
+        // console.warn('Forcing unpacked transpose16 due to inner dim permutation');
         const unpacked = unpack16(x);
         const transposed = transpose(unpacked, perm);
         unpacked.dispose();

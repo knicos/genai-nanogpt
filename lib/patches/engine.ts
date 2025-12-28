@@ -207,7 +207,7 @@ export class Engine implements TensorTracker, DataMover {
     } = {};
 
     private profiler!: Profiler;
-    private backendInstance!: KernelBackend;
+    private backendInstance: KernelBackend | null = null;
     private pendingBackendInit!: Promise<boolean>;
     private pendingBackendInitId = 0;
 
@@ -256,7 +256,7 @@ export class Engine implements TensorTracker, DataMover {
             }
             this.setBackend(name);
         }
-        return this.backendInstance;
+        return this.backendInstance!;
     }
 
     backendNames(): string[] {
@@ -322,7 +322,7 @@ export class Engine implements TensorTracker, DataMover {
         const kernels = getKernelsForBackend(this.backendName);
         kernels.forEach((kernel) => {
             if (kernel.setupFunc != null) {
-                kernel.setupFunc(this.backendInstance);
+                kernel.setupFunc(this.backendInstance!);
             }
         });
     }
@@ -443,7 +443,7 @@ export class Engine implements TensorTracker, DataMover {
     moveData(backend: KernelBackend, dataId: DataId) {
         const info = this.state.tensorInfo.get(dataId)!;
         if (!info) {
-            console.log('Tried to move data that does not exist', this.state, dataId);
+            console.warn('Tried to move data that does not exist', this.state, dataId);
         }
         const srcBackend = info.backend;
         const values = this.readSync(dataId);
@@ -843,6 +843,7 @@ export class Engine implements TensorTracker, DataMover {
             backendVals = (values as string[]).map((d) => util.encodeString(d));
         }
         const dataId = backend.write(backendVals, shape, dtype);
+
         // NICK: Use PackableTensor
         const t = new PackableTensor(shape, dtype, dataId, this.nextTensorId());
         this.trackTensor(t, backend);
@@ -876,6 +877,7 @@ export class Engine implements TensorTracker, DataMover {
      */
     makeTensorFromTensorInfo(tensorInfo: TensorInfo, backend?: KernelBackend): Tensor {
         const { dataId, shape, dtype } = tensorInfo;
+
         // NICK: Use PackableTensor
         const t = new PackableTensor(shape, dtype, dataId, this.nextTensorId());
         t.packed = (tensorInfo as PackedTensorInfo).packed || false;
@@ -940,6 +942,9 @@ export class Engine implements TensorTracker, DataMover {
     }
 
     removeDataId(dataId: DataId, backend: KernelBackend) {
+        if ((dataId as { id: number }).id === 3) {
+            console.warn('Debugging dataId 3 removal', backend);
+        }
         if (this.state.tensorInfo.has(dataId) && this.state.tensorInfo.get(dataId)!.backend === backend) {
             this.state.tensorInfo.delete(dataId);
             this.state.numDataBuffers--;
@@ -1355,10 +1360,6 @@ export function add(a: Tensor, b: Tensor): Tensor {
     const isPacked = isPackedTensor(a) || isPackedTensor(b);
     // We duplicate Add here to avoid a circular dependency with add.ts.
 
-    if (isPacked) {
-        console.error('Packed add not supported in engine.add yet.');
-        throw new Error('Packed add not supported in engine.add yet.');
-    }
     const inputs = { a, b };
-    return ENGINE.runKernel(Add, inputs as unknown as NamedTensorMap);
+    return ENGINE.runKernel(isPacked ? 'Add16' : Add, inputs as unknown as NamedTensorMap);
 }

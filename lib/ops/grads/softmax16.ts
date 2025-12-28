@@ -30,9 +30,7 @@ export const softmax16GradConfig: GradConfig = {
         }
 
         const dyUnpacked = unpack16(dy as Tensor);
-        dy.dispose();
         const yUnpacked = unpack16(y);
-        y.dispose();
 
         // Mul dy by dropout mask if dropout was applied
         const dyTimesY =

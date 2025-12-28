@@ -7,9 +7,11 @@ import {
     Tensor,
     util,
     broadcast_util,
-    engine,
     matMul,
     scalar,
+    reshape,
+    transpose,
+    mul,
 } from '@tensorflow/tfjs-core';
 import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
@@ -31,7 +33,7 @@ class MatMul16ProgramGeneric implements WebGPUProgram {
     shaderKey = 'MatMul16TB';
     dispatchLayout: { x: number[]; y: number[]; z: number[] };
     dispatch: [number, number, number];
-    workgroupSize: [number, number, number] = [8, 8, 1]; // TILE_T2 * TILE_D = 8 * 8
+    workgroupSize: [number, number, number] = [8, 8, 1]; // 8x8 threads for 32x32 tile
     dimInner: number;
     transposeA = false;
     transposeB = true;
@@ -44,6 +46,8 @@ class MatMul16ProgramGeneric implements WebGPUProgram {
     activation?: 'gelu';
     outputComponent?: number | undefined;
     variableComponents?: number[];
+    outputIndexSnippet?: string;
+    outputStrideSnippet?: string;
 
     constructor(batch: number, O1: number, O2: number, I1: number, I2: number, transposeA = false, transposeB = false) {
         this.transposeA = transposeA;
@@ -77,10 +81,8 @@ class MatMul16ProgramGeneric implements WebGPUProgram {
             throw new Error(`Inner dimension ${this.dimInner} must be multiple of ${this.tileInner}`);
         }
 
-        this.dispatchLayout = { x: [2], y: [1], z: [0] }; //flatDispatchLayout(this.outputShape);
-        // One workgroup per (b,h,t1); each WG computes a strip of t2-packed outputs.
-        // WG width is 8. Each thread computes 2 packed columns (4 unpacked).
-        // So we need outputShape[2] / 2 threads in X.
+        this.dispatchLayout = { x: [2], y: [1], z: [0] };
+
         this.dispatch = [
             Math.ceil(this.outputShape[2] / (this.workgroupSize[0] * 2)), // 4 unpacked cols per thread = 2 packed cols
             Math.ceil(this.outputShape[1] / (this.workgroupSize[1] * 4)), // 4 rows per thread
@@ -98,6 +100,87 @@ class MatMul16ProgramGeneric implements WebGPUProgram {
         }
         if (O2 % 32 !== 0) {
             throw new Error('Sequence length must be multiple of 32 for MatMul16 transposeB');
+        }
+
+        this.outputIndexSnippet = `var idx0 = getOutputIndexFromCoords(vec3<i32>(batch, gRow, gColPacked));`;
+        this.outputStrideSnippet = `idx0 = idx0 + uniforms.outShapeStrides[1];  // Next row`;
+    }
+
+    /* Note: this is done after constructor because it shouldn't affect dispatch */
+    setOutputShape(shape: number[], perm?: number[]) {
+        const newSize = util.sizeFromShape(shape);
+        const currentSize = util.sizeFromShape(this.outputShape);
+        if (newSize !== currentSize) {
+            throw new Error(`New shape size ${newSize} must match current size ${currentSize}`);
+        }
+
+        // Helper to split an index into two dims
+        function splitIndex(idx: string, dim2: number): string[] {
+            return [`${idx} / ${dim2}`, `${idx} % ${dim2}`];
+        }
+
+        // Detect if batch or last dim was split
+        const oldShape = this.outputShape;
+        let logicalIndices: string[] = [];
+
+        // Note, this is always 4 since rank max is 4.
+        if (shape.length === oldShape.length + 1) {
+            // One dim was split into two
+            // Check batch split
+            if (shape[0] * shape[1] === oldShape[0]) {
+                // Batch split: [B, ...] -> [B1, B2, ...]
+                logicalIndices = [
+                    ...splitIndex('batch', shape[1]), // batch / B2, batch % B2
+                    'gRow',
+                    'gColPacked',
+                ];
+                this.shaderKey += `_batchSplit_${shape[1]}`;
+            } else if (shape[shape.length - 2] * shape[shape.length - 1] === oldShape[oldShape.length - 1]) {
+                // Last dim split: [..., N] -> [..., N1, N2]
+                logicalIndices = [
+                    'batch',
+                    'gRow',
+                    ...splitIndex('gColPacked', shape[shape.length - 1]), // gColPacked / N2, gColPacked % N2
+                ];
+                this.shaderKey += `_colSplit_${shape[shape.length - 1]}`;
+            } else {
+                throw new Error('Unsupported output shape split');
+            }
+        } else if (shape.length === oldShape.length) {
+            // No split, just reshape or transpose
+            logicalIndices = ['batch', 'gRow', 'gColPacked'];
+        } else if (shape.length === 2 && oldShape[0] === 1) {
+            // Batch dim was removed
+            logicalIndices = ['gRow', 'gColPacked'];
+            this.shaderKey += `_batchRemoved`;
+        } else {
+            throw new Error(`Unsupported output shape rank change: ${oldShape.length} -> ${shape.length}}`);
+        }
+
+        let coordExprs: string[] = [];
+        if (perm) {
+            if (perm.length !== shape.length) {
+                throw new Error('Permutation length must match output rank');
+            }
+            coordExprs = perm.map((i) => logicalIndices[i]);
+            this.shaderKey += `_perm_${perm.join('')}`;
+        } else {
+            coordExprs = logicalIndices;
+        }
+
+        const strideIdx = coordExprs.findIndex((expr) => expr === 'gRow');
+
+        const coordVec = `vec${shape.length}<i32>(${coordExprs.join(', ')})`;
+
+        // These provide the indexing and stride for correct output permutation and shape
+        this.outputIndexSnippet = `var idx0: i32 = getOutputIndexFromCoords(${coordVec});`;
+        this.outputStrideSnippet = `idx0 = idx0 + uniforms.outShapeStrides${strideIdx === 0 ? '' : `[${strideIdx}]`}; `;
+
+        // Finally, set the correct output shape for the WebGPU data buffer
+        if (perm) {
+            this.outputShape = perm.map((i) => shape[i]);
+        } else {
+            this.outputShape = shape;
         }
     }
 
@@ -151,6 +234,7 @@ class MatMul16ProgramGeneric implements WebGPUProgram {
         return '';
     }
 
+    /* Transpose when writing to shared memory */
     private readASnippet(): string {
         const loadIndex = `let indexA = offsetA + row * strideA + col;`;
 
@@ -194,6 +278,7 @@ class MatMul16ProgramGeneric implements WebGPUProgram {
         }
     }
 
+    /* Transpose when writing to shared memory */
     private readBSnippet(): string {
         const loadIndex = `let indexB = offsetB + row * strideB + col;`;
 
@@ -296,8 +381,6 @@ class MatMul16ProgramGeneric implements WebGPUProgram {
         const dimInner = this.dimInner;
         const numTiles = Math.ceil(dimInner / tileInner);
 
-        // ...assertions...
-
         const userCode = `
             var<workgroup> mm_Asub : array<array<vec4<f32>, ${tileAWidth / 4}>, ${tileAHeight}>;
             var<workgroup> mm_Bsub : array<array<vec4<f32>, ${tileBOuter / 4}>, ${tileInner}>;
@@ -354,7 +437,7 @@ class MatMul16ProgramGeneric implements WebGPUProgram {
                 let gRow = globalRowStart + localRow * 4;
                 let gColPacked = i32(workgroupId.x) * ${this.workgroupSize[0] * 2} + localCol * 2;
                 
-                var idx0 = getOutputIndexFromCoords(vec3<i32>(batch, gRow, gColPacked));
+                ${this.outputIndexSnippet}
                 for (var i = 0; i < 4; i = i + 1) {
                     ${this.scale ? `acc[i] = acc[i] * uniforms.scale;` : ''}
                     ${this.activation ? `acc[i] = activation(acc[i]);` : ''}
@@ -363,7 +446,7 @@ class MatMul16ProgramGeneric implements WebGPUProgram {
                         i32(pack2x16float(acc[i].zw))
                     );
 
-                    idx0 = idx0 + uniforms.outShapeStrides[1];  // Next row
+                    ${this.outputStrideSnippet}
                 }
             }
         `;
@@ -373,13 +456,16 @@ class MatMul16ProgramGeneric implements WebGPUProgram {
 
 function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { A, B } = args.inputs as { A: Tensor; B: Tensor };
-    const { transposeA, transposeB, scale, activation, scaleA, scaleB } = args.attrs as {
+    const { transposeA, transposeB, scale, activation, scaleA, scaleB, forceOutputShape, perm } = args.attrs as {
         transposeA: boolean;
         transposeB: boolean;
         scale?: number;
         scaleA?: number;
         scaleB?: number;
         activation?: 'gelu';
+        forceOutputShape?: number[];
+        perm?: number[];
+        originalShape?: number[];
     };
 
     const backend = args.backend as WebGPUBackend;
@@ -387,14 +473,41 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
     const wasAUnpacked = !isPackedTensor(A);
     const wasBUnpacked = !isPackedTensor(B);
 
+    // Unpacked 32-bit float version uses standard matMul
+    // This also adds the optional features but without fusion
     if (wasAUnpacked && wasBUnpacked) {
+        const sA = scaleA !== undefined ? mul(A, scalar(scaleA)) : A;
+        const sB = scaleB !== undefined ? mul(B, scalar(scaleB)) : B;
+
+        let result: Tensor;
         if (scale !== undefined) {
-            return matMulMul(A, B, scalar(scale), transposeA, transposeB);
+            result = matMulMul(sA, sB, scalar(scale), transposeA, transposeB);
+        } else if (activation === 'gelu') {
+            result = matMulGelu(sA, sB);
+        } else {
+            result = matMul(sA, sB, transposeA, transposeB);
         }
-        if (activation === 'gelu') {
-            return matMulGelu(A, B);
+
+        // Apply forced output shape and perm if needed
+        if (perm) {
+            if (forceOutputShape) {
+                const reshaped = reshape(result, forceOutputShape);
+                result.dispose();
+                const permuted = transpose(reshaped, perm);
+                reshaped.dispose();
+                return permuted;
+            } else {
+                const permuted = transpose(result, perm);
+                result.dispose();
+                return permuted;
+            }
+        } else if (forceOutputShape) {
+            const r = reshape(result, forceOutputShape);
+            result.dispose();
+            return r;
+        } else {
+            return result;
         }
-        return matMul(A, B, transposeA, transposeB);
     }
 
     if (wasAUnpacked && !wasBUnpacked) {
@@ -417,11 +530,10 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
     const outShapeOuterDims = broadcast_util.assertAndGetBroadcastShape(A.shape.slice(0, -2), B.shape.slice(0, -2));
 
     const batchSize = Math.max(batchDimA, batchDimB);
-    const O1 = A.shape[aRank - 2]!; // Sequence length
-    const O2 = B.shape[bRank - 2]!; // Sequence length
-    const I1 = A.shape[aRank - 1]! * 2; // Head size, * 2 because of packing
-    const I2 = B.shape[bRank - 1]! * 2; // Head size, * 2 because of packing
-    //assertShapesMatch(B.shape, [batchSize, nh, T2, hs / 2], 'Error in MatMulAttention16: ');
+    const O1 = A.shape[aRank - 2]!;
+    const O2 = B.shape[bRank - 2]!;
+    const I1 = A.shape[aRank - 1]! * 2; // *2 because of packing
+    const I2 = B.shape[bRank - 1]! * 2; // *2 because of packing
 
     const Areshaped = reshape16(A, [batchDimA, A.shape[aRank - 2]!, A.shape[aRank - 1]!]);
     const BReshaped = reshape16(B, [batchDimB, B.shape[bRank - 2]!, B.shape[bRank - 1]!]);
@@ -430,6 +542,7 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
 
     let uniforms: ProgramUniform | undefined;
 
+    // Output scale
     if (scale !== undefined) {
         program.useScale();
         uniforms = [{ type: 'float32', data: [scale] }];
@@ -447,18 +560,21 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
         program.useActivation(activation);
     }
 
+    const resultRank = program.outputShape.length;
+    if (forceOutputShape) {
+        args.attrs!.originalShape = program.outputShape;
+    }
+
+    const outShape =
+        forceOutputShape ??
+        outShapeOuterDims.concat([program.outputShape[resultRank - 2], program.outputShape[resultRank - 1]]);
+    program.setOutputShape(outShape, perm);
+
     const result: PackedTensorInfo = backend.runWebGPUProgram(program, [Areshaped, BReshaped], 'int32', uniforms);
     result.packed = true;
     Areshaped.dispose();
     BReshaped.dispose();
-
-    const resultRank = result.shape.length;
-    const outShape = outShapeOuterDims.concat([result.shape[resultRank - 2], result.shape[resultRank - 1]]);
-
-    const resultTensor = engine().makeTensorFromTensorInfo(result);
-    const resultReshaped = reshape16(resultTensor, outShape);
-    resultTensor.dispose();
-    return resultReshaped;
+    return result;
 }
 
 const kernelConfig: KernelConfig = {

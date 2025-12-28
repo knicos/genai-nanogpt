@@ -4,6 +4,7 @@ import RMSNorm from './RMSNorm';
 import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { keep, Tensor, tidy } from '@tensorflow/tfjs-core';
 import { GPTConfig } from '@base/models/config';
+import { add16 } from '@base/ops/add16';
 
 interface BlockAttributes extends ForwardAttributes {
     pastKV?: KVCache;
@@ -42,7 +43,7 @@ export default class Block extends BaseLayer<BlockAttributes> {
         } else {
             norm.dispose();
         }
-        const residual = x.add(mlpOut);
+        const residual = add16(x, mlpOut);
         x.dispose(); // Safe to dispose in this case
         if (attrs.outputEmbeddings) {
             keep(mlpOut);
@@ -68,7 +69,7 @@ export default class Block extends BaseLayer<BlockAttributes> {
             } else {
                 norm1.dispose();
             }
-            const residual1 = x.add(attnOut);
+            const residual1 = add16(x, attnOut);
             if (attrs.outputEmbeddings) {
                 keep(attnOut);
                 attrs.embeddings!.push({ name: `block_attn_out_${this.index}`, tensor: attnOut });

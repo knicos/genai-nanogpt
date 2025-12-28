@@ -7,6 +7,8 @@ import { keep, Tensor, tidy } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from './model';
 import PositionEmbedding from '@base/layers/PositionEmbedding';
 import { packingSupported } from '@base/utilities/packed';
+import { pack16 } from '@base/ops/pack16';
+import { unpack16 } from '@base/ops/unpack16';
 
 // Main NanoGPT model
 export default class NanoGPT extends Model<ModelForwardAttributes> {
@@ -85,6 +87,13 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
                 );
             }
 
+            const usedMixed = attrs.mixedPrecision === true && packingSupported();
+
+            let pX = usedMixed ? pack16(x) : x;
+            if (usedMixed && x !== pX) {
+                x.dispose();
+            }
+
             // Transformer blocks
             for (let i = 0; i < this.blocks.length; i++) {
                 const block = this.blocks[i];
@@ -93,25 +102,30 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
                     ...attrs,
                     seed,
                     pastKV: attrs.cache ? attrs.cache[i] : undefined,
-                    mixedPrecision: packingSupported() && attrs.mixedPrecision === true,
+                    mixedPrecision: usedMixed,
                 };
 
                 const output =
                     attrs.checkpointing && attrs.training
-                        ? block.callCheckpoint(blockAttrs, x)
-                        : block.call(blockAttrs, x);
+                        ? block.callCheckpoint(blockAttrs, pX)
+                        : block.call(blockAttrs, pX);
 
                 if (attrs.outputEmbeddings) {
-                    keep(x);
-                    attrs.embeddings!.push({ name: `block_output_${i}`, tensor: x });
+                    keep(pX);
+                    attrs.embeddings!.push({ name: `block_output_${i}`, tensor: pX });
                 } else {
-                    x.dispose();
+                    pX.dispose();
                 }
-                x = output as Tensor;
+                pX = output as Tensor;
             }
 
             // Final layer norm
-            x = this.lnF.call(attrs, x) as Tensor;
+            pX = this.lnF.call({ ...attrs, mixedPrecision: usedMixed }, pX) as Tensor;
+
+            x = usedMixed ? unpack16(pX) : pX;
+            if (usedMixed && pX !== x) {
+                pX.dispose();
+            }
 
             if (attrs.skipLogits) {
                 this.endMemory('Forward');
