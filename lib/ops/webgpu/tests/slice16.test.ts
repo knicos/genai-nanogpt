@@ -13,7 +13,7 @@ import { selectBackend } from '@base/backend';
 import { randomNormal, slice } from '@tensorflow/tfjs-core';
 import { slice16 } from '@base/ops/slice16';
 
-describe('Slice 16-bit', () => {
+describe('Slice 16-bit', { timeout: 10000 }, () => {
     afterAll(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any).navigator;

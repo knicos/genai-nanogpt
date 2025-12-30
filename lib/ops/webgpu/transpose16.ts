@@ -1,6 +1,7 @@
 import { isPackedTensor } from '@base/utilities/packed';
-import { WebGPUBackend, WebGPUProgram } from '@tensorflow/tfjs-backend-webgpu';
+import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import {
+    engine,
     KernelConfig,
     NamedAttrMap,
     NamedTensorInfoMap,
@@ -11,73 +12,10 @@ import {
     TransposeAttrs,
 } from '@tensorflow/tfjs-core';
 
-import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
-import { getCoordsDataType, getCoordsXYZ } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
-import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { PackedTensorInfo } from '@base/patches/PackedTensor';
-import { unpack16 } from '../unpack16';
-import { pack16 } from '../pack16';
-
-function getSwitchedCoords(newDim: number[]): string {
-    const rank = newDim.length;
-    if (rank > 6) {
-        throw Error(`Transpose for rank ${rank} is not yet supported`);
-    }
-    const switchedCoords = new Array(rank);
-    for (let i = 0; i < newDim.length; i++) {
-        switchedCoords[newDim[i]] = `coords.${getCoordsXYZ(i)}`;
-    }
-
-    return switchedCoords.join();
-}
-
-class TransposeProgram16 implements WebGPUProgram {
-    variableNames = ['A'];
-    shaderKey: string;
-    outputShape: number[];
-    dispatchLayout: { x: number[] };
-    dispatch: [number, number, number];
-    workPerThread = 1;
-    workgroupSize: [number, number, number] = [64, 1, 1];
-    newDim: number[];
-    size = true;
-
-    constructor(aShape: number[], newDim: number[]) {
-        const outputShape: number[] = new Array(aShape.length);
-        for (let i = 0; i < outputShape.length; i++) {
-            outputShape[i] = aShape[newDim[i]];
-        }
-        this.outputShape = outputShape;
-        this.dispatchLayout = flatDispatchLayout(this.outputShape);
-        this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize, [
-            this.workPerThread,
-            1,
-            1,
-        ]);
-
-        this.newDim = newDim;
-        this.shaderKey = `transpose16_${newDim}`;
-    }
-
-    getUserCode(): string {
-        const dtype = getCoordsDataType(this.outputShape.length);
-        const switched = getSwitchedCoords(this.newDim);
-
-        const userCode = `
-      ${main('index')} {
-        for(var i = 0; i < ${this.workPerThread}; i = i + 1) {
-          let flatIndex = index * ${this.workPerThread} + i;
-          if(flatIndex < uniforms.size) {
-            let coords = getCoordsFromIndex(flatIndex);
-            result[flatIndex] = A[getIndexFromCoords${this.outputShape.length}D(
-              ${dtype}(${switched}), uniforms.aShape)];
-          }
-        }
-      }
-    `;
-        return userCode;
-    }
-}
+import { reshape16 } from '../reshape16';
+import TransposeSharedProgram16 from './transpose16_shared_program';
+import TransposeProgram16 from './transpose16_program';
 
 function transpose16_(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { inputs, attrs } = args;
@@ -89,16 +27,34 @@ function transpose16_(args: { inputs: NamedTensorInfoMap; backend: unknown; attr
     const packed = isPackedTensor(x);
 
     if (packed && perm[perm.length - 1] !== x.shape.length - 1) {
-        // Force unpacking in this case
-        // console.warn('Forcing unpacked transpose16 due to inner dim permutation');
-        const unpacked = unpack16(x);
-        const transposed = transpose(unpacked, perm);
-        unpacked.dispose();
-        const packed = pack16(transposed);
-        transposed.dispose();
-        return packed;
+        const rank = x.shape.length;
+
+        // For rank 4 tensors, we reshape to rank 3, transpose, then reshape back to rank 4
+        const newPerm = rank === 4 ? perm.map((p) => p - 1).filter((p) => p >= 0) : perm;
+        const reshaped = rank === 4 ? reshape16(x, [x.shape[0] * x.shape[1]!, x.shape[2]!, x.shape[3]!]) : x;
+
+        // Accepts rank 2 or 3, where 3 has a batch dimension
+        const program = new TransposeSharedProgram16(reshaped.shape, newPerm);
+        const output: PackedTensorInfo = backend.runWebGPUProgram(program, [reshaped], 'int32');
+        output.packed = true;
+
+        // If rank 4, reshape back to rank 4
+        if (rank === 4) {
+            reshaped.dispose();
+            const outputTensor = engine().makeTensorFromTensorInfo(output);
+            const reshapedOutput = reshape16(outputTensor, [
+                x.shape[0],
+                x.shape[1]!,
+                output.shape[1]!,
+                output.shape[2]!,
+            ]);
+            outputTensor.dispose();
+            return reshapedOutput;
+        }
+        return output;
     }
 
+    // If the last dimension is not moved, we can use the regular transpose program
     if (packed) {
         const program = new TransposeProgram16(x.shape, perm);
         const output: PackedTensorInfo = backend.runWebGPUProgram(program, [x], 'int32');

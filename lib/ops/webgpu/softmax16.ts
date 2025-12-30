@@ -59,60 +59,60 @@ class SoftmaxProgram implements WebGPUProgram {
 
     getUserCode(): string {
         const userCode = `
-    var<workgroup> buf : array<f32, ${this.workgroupSize[0]}>;
-    const blockSize = ${this.workgroupSize[0]};
-    ${main('index')} {
-      let row = index / blockSize;
-      let tid = i32(localId.x);
-      let cols = uniforms.outShape[1];
-      let rowIdx = row * cols;
+        var<workgroup> buf : array<f32, ${this.workgroupSize[0]}>;
+        const blockSize = ${this.workgroupSize[0]};
+        ${main('index')} {
+            let row = index / blockSize;
+            let tid = i32(localId.x);
+            let cols = uniforms.outShape[1];
+            let rowIdx = row * cols;
 
-      var threadMax = -3.402823e+38f;
-      for (var col = tid; col < cols; col += blockSize) {
-        let value = unpack2x16float(u32(logits[rowIdx + col]));
-        threadMax = max(threadMax, max(value.x, value.y));
-      }
-      buf[tid] = threadMax;
-      workgroupBarrier();
+            var threadMax = -3.402823e+38f;
+            for (var col = tid; col < cols; col += blockSize) {
+                let value = unpack2x16float(u32(logits[rowIdx + col]));
+                threadMax = max(threadMax, max(value.x, value.y));
+            }
+            buf[tid] = threadMax;
+            workgroupBarrier();
 
-      for (var currSize = blockSize >> 1;  currSize > 0; currSize = currSize >> 1) {
-        if (tid < currSize) {
-          buf[tid] = max(buf[tid], buf[tid + currSize]);
+            for (var currSize = blockSize >> 1;  currSize > 0; currSize = currSize >> 1) {
+                if (tid < currSize) {
+                    buf[tid] = max(buf[tid], buf[tid + currSize]);
+                }
+                workgroupBarrier();
+            }
+
+            let rowMaxShared: f32 = buf[0];
+            workgroupBarrier();
+
+            var threadSum = 0.0f;
+            for (var col = tid; col < cols; col += blockSize) {
+                let value = unpack2x16float(u32(logits[rowIdx + col]));
+                let subExp = exp(value.x - rowMaxShared);
+                threadSum += subExp;
+                let subExpY = exp(value.y - rowMaxShared);
+                threadSum += subExpY;
+            }
+            buf[tid] = threadSum;
+            workgroupBarrier();
+
+            for (var currSize = blockSize >> 1;  currSize > 0; currSize = currSize >> 1) {
+                if (tid < currSize) {
+                    buf[tid] = buf[tid] + buf[tid + currSize];
+                }
+                workgroupBarrier();
+            }
+
+            let rowSumShared: f32 = buf[0];
+
+            for (var col = tid; col < cols; col += blockSize) {
+                let value = unpack2x16float(u32(logits[rowIdx + col]));
+                let value1: f32 = exp(value.x - rowMaxShared) / rowSumShared;
+                let value2: f32 = exp(value.y - rowMaxShared) / rowSumShared;
+                result[rowIdx + col] = i32(pack2x16float(vec2<f32>(value1, value2)));
+            }
         }
-        workgroupBarrier();
-      }
-
-      let rowMaxShared: f32 = buf[0];
-      workgroupBarrier();
-
-      var threadSum = 0.0f;
-      for (var col = tid; col < cols; col += blockSize) {
-        let value = unpack2x16float(u32(logits[rowIdx + col]));
-        let subExp = exp(value.x - rowMaxShared);
-        threadSum += subExp;
-        let subExpY = exp(value.y - rowMaxShared);
-        threadSum += subExpY;
-      }
-      buf[tid] = threadSum;
-      workgroupBarrier();
-
-      for (var currSize = blockSize >> 1;  currSize > 0; currSize = currSize >> 1) {
-        if (tid < currSize) {
-          buf[tid] = buf[tid] + buf[tid + currSize];
-        }
-        workgroupBarrier();
-      }
-
-      let rowSumShared: f32 = buf[0];
-
-      for (var col = tid; col < cols; col += blockSize) {
-        let value = unpack2x16float(u32(logits[rowIdx + col]));
-        let value1: f32 = exp(value.x - rowMaxShared) / rowSumShared;
-        let value2: f32 = exp(value.y - rowMaxShared) / rowSumShared;
-        result[rowIdx + col] = i32(pack2x16float(vec2<f32>(value1, value2)));
-      }
-  }
-    `;
+      `;
         return userCode;
     }
 }

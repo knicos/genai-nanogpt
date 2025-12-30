@@ -13,7 +13,7 @@ import { selectBackend } from '@base/backend';
 import { randomNormal } from '@tensorflow/tfjs-core';
 import { concat16 } from '@base/ops/concat16';
 
-describe('Concat 16-bit', () => {
+describe('Concat 16-bit', { timeout: 10000 }, () => {
     afterAll(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any).navigator;

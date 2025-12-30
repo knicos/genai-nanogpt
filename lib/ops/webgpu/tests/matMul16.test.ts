@@ -608,5 +608,42 @@ describe('MatMul 16-bit', { timeout: 30000 }, () => {
             const error = arraysClose(rawMatMulData, unpackedMatMulData);
             expect(error).toBeLessThan(1e-3);
         });
+
+        it('supports causal mask', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const A = randomNormal([100, 3, 128, 64], 0, 1, 'float32');
+            const B = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
+
+            const packedA = pack16(A);
+            const packedB = pack16(B);
+
+            const packedMatMul = matMul16(packedA, packedB, false, false, { causalMask: true, pastLen: 0 });
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            expect(unpackedMatMul.shape).toEqual([100, 3, 128, 32]);
+
+            let wasAllMasked = true;
+
+            // Check that the upper triangular part is -infinity (masked out)
+            for (let batch = 0; batch < 100; batch++) {
+                for (let head = 0; head < 3; head++) {
+                    for (let i = 0; i < 128; i++) {
+                        for (let j = 0; j < 32; j++) {
+                            const index = batch * 3 * 128 * 32 + head * 128 * 32 + i * 32 + j;
+                            if (j > i) {
+                                // Should be masked
+                                if (unpackedMatMulData[index] !== -Infinity) {
+                                    wasAllMasked = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            expect(wasAllMasked).toBe(true);
+        });
     });
 });

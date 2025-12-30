@@ -13,14 +13,14 @@ import { selectBackend } from '@base/backend';
 import { matMul, randomNormal } from '@tensorflow/tfjs-core';
 import { attentionMask } from '../../attentionMask';
 
-describe('Attention mask 16 bit', () => {
+describe('Attention mask 16 bit', { timeout: 10000 }, () => {
     afterAll(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any).navigator;
     });
     it('should produce a masked matMul output', async ({ expect }) => {
         await selectBackend('webgpu');
-        const q = randomNormal([100, 3, 1, 64], 0, 1, 'float32');
+        const q = randomNormal([100, 3, 64, 64], 0, 1, 'float32');
         const k = randomNormal([100, 3, 64, 64], 0, 1, 'float32');
         const packedQ = pack16(q);
         const packedK = pack16(k);

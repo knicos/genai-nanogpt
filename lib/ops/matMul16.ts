@@ -18,6 +18,8 @@ export function matMul16(
         activation?: 'gelu';
         forceOutputShape?: number[];
         perm?: number[];
+        causalMask?: boolean;
+        pastLen?: number;
     } = {}
 ): Tensor {
     const isPackedA = isPackedTensor(A);

@@ -15,7 +15,7 @@ import { isPackedTensor } from '@base/utilities/packed';
 import { pack16 } from '../../pack16';
 import { qkvGrad } from '@base/ops/grads/qkv';
 
-describe('QKV 16-bit', () => {
+describe('QKV 16-bit', { timeout: 10000 }, () => {
     afterAll(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any).navigator;

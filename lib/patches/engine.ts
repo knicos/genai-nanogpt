@@ -942,9 +942,6 @@ export class Engine implements TensorTracker, DataMover {
     }
 
     removeDataId(dataId: DataId, backend: KernelBackend) {
-        if ((dataId as { id: number }).id === 3) {
-            console.warn('Debugging dataId 3 removal', backend);
-        }
         if (this.state.tensorInfo.has(dataId) && this.state.tensorInfo.get(dataId)!.backend === backend) {
             this.state.tensorInfo.delete(dataId);
             this.state.numDataBuffers--;

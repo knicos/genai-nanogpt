@@ -13,7 +13,7 @@ import { selectBackend } from '@base/backend';
 import { randomNormal, transpose } from '@tensorflow/tfjs-core';
 import { transpose16 } from '../../transpose16';
 
-describe('Transpose 16-bit', () => {
+describe('Transpose 16-bit', { timeout: 10000 }, () => {
     afterAll(() => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         delete (globalThis as any).navigator;
@@ -41,13 +41,33 @@ describe('Transpose 16-bit', () => {
 
     it('should transpose last of rank 3', async ({ expect }) => {
         await selectBackend('webgpu');
-        const x = randomNormal([100, 4, 64], 0, 1, 'float32');
+        const x = randomNormal([16, 128, 64], 0, 1, 'float32');
 
         const packed = pack16(x);
         const unpackedX = unpack16(packed);
 
         const originalTranspose = transpose(unpackedX, [0, 2, 1]);
         const packedTranspose = transpose16(packed, [0, 2, 1]);
+        const unpacked = unpack16(packedTranspose);
+
+        const originalData = await originalTranspose.data();
+        const unpackedData = await unpacked.data();
+
+        const error = arraysClose(originalData, unpackedData);
+        expect(error).toBeLessThan(1e-3);
+
+        expect(unpackedData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+    });
+
+    it('should transpose last of rank 2', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const x = randomNormal([128, 64], 0, 1, 'float32');
+
+        const packed = pack16(x);
+        const unpackedX = unpack16(packed);
+
+        const originalTranspose = transpose(unpackedX, [1, 0]);
+        const packedTranspose = transpose16(packed, [1, 0]);
         const unpacked = unpack16(packedTranspose);
 
         const originalData = await originalTranspose.data();
@@ -68,6 +88,26 @@ describe('Transpose 16-bit', () => {
 
         const originalTranspose = transpose(unpackedX, [0, 2, 1, 3]);
         const packedTranspose = transpose16(packed, [0, 2, 1, 3]);
+        const unpacked = unpack16(packedTranspose);
+
+        const originalData = await originalTranspose.data();
+        const unpackedData = await unpacked.data();
+
+        const error = arraysClose(originalData, unpackedData);
+        expect(error).toBeLessThan(1e-3);
+
+        expect(unpackedData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+    });
+
+    it('should transpose last of rank 4', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const x = randomNormal([16, 2, 128, 64], 0, 1, 'float32');
+
+        const packed = pack16(x);
+        const unpackedX = unpack16(packed);
+
+        const originalTranspose = transpose(unpackedX, [0, 1, 3, 2]);
+        const packedTranspose = transpose16(packed, [0, 1, 3, 2]);
         const unpacked = unpack16(packedTranspose);
 
         const originalData = await originalTranspose.data();

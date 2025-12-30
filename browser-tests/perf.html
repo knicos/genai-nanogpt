@@ -23,6 +23,7 @@
             <option value="matMulGelu">MatMulGelu</option>
             <option value="matMul16">MatMul16</option>
             <option value="matMul16Packed">MatMul16 Packed</option>
+            <option value="matMul16Causal">MatMul16 Causal</option>
             <option value="pack16">Pack16</option>
             <option value="causalSelfAttention">CausalSelfAttention</option>
             <option value="transformer">TransformerBlock</option>
@@ -50,10 +51,10 @@
             }
 
             async function attentionMask(backend) {
-                await tf.setBackend(backend);
-                const q = tf.randomNormal([1, 6, 128, 64]);
-                const k = tf.randomNormal([1, 6, 128, 64]);
-                const mask = tf.randomNormal([1, 128]);
+                await selectBackend(backend);
+                const q = tf.randomNormal([32, 6, 128, 64]);
+                const k = tf.randomNormal([32, 6, 128, 64]);
+                const mask = tf.randomNormal([32, 128]);
                 const divisor = 0.5;
 
                 const time = await performanceTest(() => {
@@ -180,6 +181,18 @@
 
                 return performanceTest(() => {
                     return tf.engine().runKernel('MatMul16', { A, B }, {});
+                }, 1000);
+            }
+
+            async function matMul16Causal(backend) {
+                await selectBackend(backend);
+                //const B = ops.pack16(tf.randomNormal([32, 1024, 256]));
+                //const A = ops.pack16(tf.randomNormal([32, 256, 1024]));
+                const A = tf.randomNormal([32, 6, 64, 128]);
+                const B = tf.randomNormal([32, 6, 128, 64]);
+
+                return performanceTest(() => {
+                    return tf.engine().runKernel('MatMul16', { A, B }, { causalMask: true, pastLen: 0 });
                 }, 1000);
             }
 
@@ -390,6 +403,7 @@
                 matMulGelu,
                 matMul16,
                 matMul16Packed,
+                matMul16Causal,
                 normRMSGrad,
                 causalSelfAttention,
                 transformer,
