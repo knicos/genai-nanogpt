@@ -2,6 +2,8 @@
 
 A browser-native implementation of GPT language models built on TensorFlow.js, developed as part of the Finnish Generation AI research project. This library enables training, fine-tuning, and inference of transformer-based language models entirely in the browser with support for explainable AI (XAI) features. It is intended to be used as an educational tool for learning about the model training process since it targets mostly tiny models. In principle it could be adapted to load other pre-trained models from Hugging Face.
 
+Live version available here: https://lm.gen-ai.fi
+
 ## Overview
 
 GenAI NanoGPT is inspired by [Andrej Karpathy's NanoGPT](https://github.com/karpathy/nanoGPT) but reimagined for the browser using TensorFlow.js. It provides a complete pipeline for:
