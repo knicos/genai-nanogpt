@@ -8,7 +8,7 @@ import {
     Tensor,
     TensorInfo,
 } from '@tensorflow/tfjs-core';
-import { createReduceInfo, ReduceWebGPUProgram } from './utils/reductions';
+import { createReduceInfo } from './utils/reductions';
 import { flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
@@ -20,8 +20,9 @@ import { reshape16 } from '../reshape16';
 import { sum16 } from '../sum16';
 import { slice16 } from '../slice16';
 import { unpack16 } from '../unpack16';
+import { WebGPUProgram } from '@base/patches/webgpu_program';
 
-class RMSGradProgram implements ReduceWebGPUProgram {
+class RMSGradProgram implements WebGPUProgram {
     outputShape: number[];
     shaderKey = 'RMSNormGrad';
     dispatchLayout: { x: number[] };

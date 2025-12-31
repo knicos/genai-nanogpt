@@ -1,46 +1,31 @@
-import { flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import { backend_util } from '@tensorflow/tfjs-core';
 
-import { createReductionShader32, ReduceWebGPUProgram } from './utils/reductions';
+import { ReduceProgram } from './utils/reductions';
+import { DeviceInformation } from './utils/deviceInfo';
 
-export default class RMSProgram32 implements ReduceWebGPUProgram {
-    outputShape: number[];
-    shaderKey = 'RMSNorm';
-    dispatchLayout: { x: number[] };
-    dispatch: [number, number, number];
-    workgroupSize: [number, number, number] = [64, 1, 1];
-    variableNames = ['x', 'gamma'];
-    uniforms = 'reduceSize : i32,';
-    inputShape: number[];
-    size = true;
-    packed = false;
-
-    constructor(reduceInfo: backend_util.ReduceInfo) {
-        this.inputShape = [reduceInfo.batchSize, reduceInfo.inSize];
-        this.outputShape = this.inputShape;
-        this.dispatchLayout = flatDispatchLayout(this.outputShape);
-        this.dispatch = [reduceInfo.batchSize, 1, 1];
+export default class RMSProgram32 extends ReduceProgram {
+    constructor(deviceInfo: DeviceInformation, reduceInfo: backend_util.ReduceInfo) {
+        super(deviceInfo, reduceInfo, { reductionOp: 'mean', elementwise: true }, false);
+        this.shaderKey = 'RMSNorm32';
+        this.variableNames.push('gamma');
+        this.variableComponents = [1, 1];
     }
 
-    getUserCode(): string {
-        const workgroupSizeX = this.workgroupSize[0];
+    protected override getPreprocessSnippet(): string {
+        return 'candidate = candidate * candidate;';
+    }
 
-        const inputSnippet = `
-            candidate = candidate * candidate;
-        `;
+    protected override getPostprocessSnippet(): string {
+        return 'bestValue = inverseSqrt(bestValue + 1e-8);';
+    }
 
-        const reducedSnippet = `
-            bestValue = inverseSqrt(bestValue + 1e-8);
-        `;
-
-        const outputSnippet = `
+    protected override getWriteSnippet(): string {
+        return `
             let X = f32(x[offset + k]);
             let gamma = gamma[k];
             let normalized = X * bestValue;
             let outVal = normalized * gamma;
             result[offset + k] = f32(outVal);
         `;
-
-        return createReductionShader32(workgroupSizeX, 'mean', inputSnippet, reducedSnippet, outputSnippet);
     }
 }

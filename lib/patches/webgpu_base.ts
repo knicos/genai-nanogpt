@@ -18,14 +18,19 @@
 // Nick: Modified to control GPU selection and enable optional features.
 
 import { registerBackend } from '@tensorflow/tfjs-core';
-import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu';
+import WebGPUBackend from './webgpu_backend';
 
-export function registerWebGPUBackend(gpu?: 'low-power' | 'high-performance'): void {
+export interface GPUOptions {
+    powerPreference?: 'low-power' | 'high-performance';
+    disableSubgroups?: boolean;
+}
+
+export function registerWebGPUBackend(options?: GPUOptions): void {
     registerBackend(
         'webgpu',
         async () => {
             const gpuDescriptor: GPURequestAdapterOptions = {
-                powerPreference: gpu ?? 'high-performance',
+                powerPreference: options?.powerPreference ?? 'high-performance',
             };
 
             console.log('Using custom WebGPU backend with power preference:', gpuDescriptor.powerPreference);
@@ -40,7 +45,7 @@ export function registerWebGPUBackend(gpu?: 'low-power' | 'high-performance'): v
             if (adapter.features.has('bgra8unorm-storage')) {
                 requiredFeatures.push(['bgra8unorm-storage']);
             }
-            if (adapter.features.has('subgroups')) {
+            if (!options?.disableSubgroups && adapter.features.has('subgroups')) {
                 requiredFeatures.push('subgroups');
             }
             deviceDescriptor.requiredFeatures = requiredFeatures as Iterable<GPUFeatureName>;

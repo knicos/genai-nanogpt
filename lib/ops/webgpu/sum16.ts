@@ -1,5 +1,4 @@
-import { flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
-import { createReduceInfo, createReductionShader16, reduce, ReduceWebGPUProgram } from './utils/reductions';
+import { createReduceInfo, reduce, ReduceProgram } from './utils/reductions';
 import {
     backend_util,
     KernelConfig,
@@ -11,50 +10,34 @@ import {
     TensorInfo,
     util,
 } from '@tensorflow/tfjs-core';
-import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { isPackedTensor } from '@base/utilities/packed';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import { transpose16 } from '../transpose16';
+import WebGPUBackendPatch from '@base/patches/webgpu_backend';
+import createDeviceInformation, { DeviceInformation } from './utils/deviceInfo';
 
-class SumProgram16 implements ReduceWebGPUProgram {
-    outputShape: number[];
+class SumProgram16 extends ReduceProgram {
     shaderKey = 'sum16';
-    dispatchLayout: { x: number[] };
-    dispatch: [number, number, number];
-    workgroupSize: [number, number, number] = [64, 1, 1];
-    variableNames = ['x'];
-    uniforms = 'reduceSize : i32,';
-    inputShape: number[];
-    size = true;
-    packed = true;
-    outputComponent: number;
-    variableComponents?: number[];
-    keepDims: boolean;
 
-    constructor(reduceInfo: backend_util.ReduceInfo, keepDims = true) {
-        this.inputShape = [reduceInfo.batchSize, reduceInfo.inSize];
-        this.outputShape = [reduceInfo.batchSize / 2];
-        this.dispatchLayout = flatDispatchLayout(this.outputShape);
-        this.dispatch = [reduceInfo.batchSize / 2, 1, 1];
-        this.outputComponent = 1;
-        this.variableComponents = [1];
-        this.keepDims = keepDims;
-    }
-
-    getUserCode(): string {
-        const workgroupSizeX = this.workgroupSize[0];
-
-        const outputSnippet = `result[outputIndex] = i32(pack2x16float(bestValue));`;
-
-        return createReductionShader16(workgroupSizeX, 'sum', '', '', outputSnippet, undefined, false);
+    constructor(deviceInfo: DeviceInformation, reduceInfo: backend_util.ReduceInfo, packed: boolean) {
+        super(
+            deviceInfo,
+            reduceInfo,
+            {
+                reductionOp: 'sum',
+                elementwise: false,
+            },
+            packed
+        );
     }
 }
 
 function sum16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { x } = args.inputs as { x: Tensor };
     const { axis, keepDims } = args.attrs as { axis?: number | number[]; keepDims?: boolean };
-    const backend = args.backend as WebGPUBackend;
+    const backend = args.backend as WebGPUBackendPatch;
     const toDispose: Tensor[] = [];
+
+    const deviceInfo = createDeviceInformation(backend);
 
     const packed = isPackedTensor(x);
 
@@ -74,10 +57,9 @@ function sum16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: 
     }
 
     const reduceInfo = createReduceInfo([input], -1);
-    const program = new SumProgram16(reduceInfo, keepDims);
+    const program = new SumProgram16(deviceInfo, reduceInfo, packed);
 
-    const result: PackedTensorInfo = reduce(program, [input], false, backend);
-    result.packed = true;
+    const result = reduce(program, [input], backend);
     toDispose.forEach((t) => t.dispose());
     return result;
 }

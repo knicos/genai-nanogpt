@@ -1,4 +1,3 @@
-import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import {
     registerKernel,
     KernelConfig,
@@ -14,10 +13,14 @@ import { pack16 } from '../pack16';
 import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import RMSProgram16 from './normRMS16_program';
 import RMSProgram32 from './normRMS32_program';
+import WebGPUBackendPatch from '@base/patches/webgpu_backend';
+import createDeviceInformation from './utils/deviceInfo';
 
 function rmsNormGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { x, gamma } = args.inputs as { x: Tensor; gamma: Tensor };
-    const backend = args.backend as WebGPUBackend;
+    const backend = args.backend as WebGPUBackendPatch;
+
+    const deviceInfo = createDeviceInformation(backend);
 
     const packedX = isPackedTensor(x);
     const packedGamma = isPackedTensor(gamma);
@@ -28,7 +31,7 @@ function rmsNormGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?
 
     const inputs = [pX, pGamma];
     const reduceInfo = createReduceInfo(inputs, -1);
-    const program = packed ? new RMSProgram16(reduceInfo) : new RMSProgram32(reduceInfo);
+    const program = packed ? new RMSProgram16(deviceInfo, reduceInfo) : new RMSProgram32(deviceInfo, reduceInfo);
 
     assertShapesMatch(pGamma.shape, [pX.shape[pX.shape.length - 1]], 'Error in RMSNorm: ');
     if (x.shape.length !== 3) {
@@ -47,7 +50,7 @@ function rmsNormGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?
         );
     }
 
-    const result: PackedTensorInfo = reduce(program, inputs, true, backend);
+    const result: PackedTensorInfo = reduce(program, inputs, backend);
     result.packed = packed;
 
     if (packed && !packedX) {

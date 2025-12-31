@@ -7,65 +7,42 @@ import {
     Tensor,
     TensorInfo,
 } from '@tensorflow/tfjs-core';
-import { createReduceInfo, createReductionShader16, reduce, ReduceWebGPUProgram } from './utils/reductions';
-import { flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
-import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
+import { createReduceInfo, reduce, ReduceProgram } from './utils/reductions';
 import { isPackedTensor } from '@base/utilities/packed';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
+import WebGPUBackendPatch from '@base/patches/webgpu_backend';
+import createDeviceInformation, { DeviceInformation } from './utils/deviceInfo';
 
-class SoftmaxGradProgram16 implements ReduceWebGPUProgram {
-    outputShape: number[];
-    shaderKey = 'Softmax16Grad';
-    dispatchLayout: { x: number[] };
-    dispatch: [number, number, number];
-    workgroupSize: [number, number, number] = [64, 1, 1];
-    variableNames = ['dy', 'softmaxOutput'];
-    uniforms = 'reduceSize : i32,';
-    inputShape: number[];
-    size = true;
-    packed = true;
-
-    constructor(reduceInfo: backend_util.ReduceInfo) {
-        this.inputShape = [reduceInfo.batchSize, reduceInfo.inSize];
-        this.outputShape = this.inputShape;
-        this.dispatchLayout = flatDispatchLayout(this.outputShape);
-        this.dispatch = [reduceInfo.batchSize, 1, 1];
+class SoftmaxGradProgram16 extends ReduceProgram {
+    constructor(deviceInfo: DeviceInformation, reduceInfo: backend_util.ReduceInfo) {
+        super(deviceInfo, reduceInfo, { reductionOp: 'sum', elementwise: true }, true);
+        this.shaderKey = 'SoftmaxGrad16';
+        this.variableNames = ['dy', 'softmaxOutput'];
+        this.variableComponents = [1, 1];
     }
 
-    getUserCode(): string {
-        const workgroupSizeX = this.workgroupSize[0];
-
-        const inputReadSnippet = `
+    protected override getReadSnippet(): string {
+        return `
             let d: vec2<f32> = unpack2x16float(u32(dy[index]));
             let l: vec2<f32> = unpack2x16float(u32(softmaxOutput[index]));
             return d * l;
         `;
+    }
 
-        const inputSnippet = '';
-
-        const reducedSnippet = '';
-
-        const outputSnippet = `
+    protected override getWriteSnippet(): string {
+        return `
             let d: vec2<f32> = unpack2x16float(u32(dy[offset + k]));
             let l: vec2<f32> = unpack2x16float(u32(softmaxOutput[offset + k]));
             let outVal = l * (d - bestValue);
             result[offset + k] = i32(pack2x16float(outVal));
         `;
-
-        return createReductionShader16(
-            workgroupSizeX,
-            'sum',
-            inputSnippet,
-            reducedSnippet,
-            outputSnippet,
-            inputReadSnippet
-        );
     }
 }
 
 function softmaxGradGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { dy, softmaxOutput } = args.inputs as { dy: Tensor; softmaxOutput: Tensor };
-    const backend = args.backend as WebGPUBackend;
+    const backend = args.backend as WebGPUBackendPatch;
+
+    const deviceInfo = createDeviceInformation(backend);
 
     const packedDY = isPackedTensor(dy);
     const packedSoftmaxOutput = isPackedTensor(softmaxOutput);
@@ -77,10 +54,9 @@ function softmaxGradGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
 
     const inputs = [dy, softmaxOutput];
     const reduceInfo = createReduceInfo(inputs, -1);
-    const program = new SoftmaxGradProgram16(reduceInfo);
+    const program = new SoftmaxGradProgram16(deviceInfo, reduceInfo);
 
-    const result: PackedTensorInfo = reduce(program, inputs, true, backend);
-    result.packed = packed;
+    const result = reduce(program, inputs, backend);
     return result;
 }
 
