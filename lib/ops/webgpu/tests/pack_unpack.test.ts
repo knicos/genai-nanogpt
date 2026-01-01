@@ -10,7 +10,7 @@ const navigator = { gpu: create([]) };
 Object.assign(globalThis.navigator, navigator);
 
 import { selectBackend } from '@base/backend';
-import { randomNormal } from '@tensorflow/tfjs-core';
+import { pad, randomNormal } from '@tensorflow/tfjs-core';
 import { packGradConfig } from '../../grads/pack16';
 import { unpackGradConfig } from '../../grads/unpack16';
 import { isPackedTensor } from '@base/utilities/packed';
@@ -32,6 +32,46 @@ describe('Pack and Unpack 16-bit floats', { timeout: 30000 }, () => {
 
         const error = arraysClose(xData, unpackedData);
         expect(error).toBeLessThan(2e-3);
+    });
+
+    it('should pack and unpack with padding', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const x = randomNormal([128, 68], 0, 1, 'float32');
+
+        const packed = pack16(x, undefined, 32);
+        const unpacked = unpack16(packed);
+
+        const paddedX = pad(x, [
+            [0, 0],
+            [0, 28],
+        ]);
+        const xData = await paddedX.data();
+        const unpackedData = await unpacked.data();
+
+        const error = arraysClose(xData, unpackedData);
+        expect(error).toBeLessThan(2e-3);
+
+        expect(unpacked.shape).toEqual([128, 64 + 32]);
+    });
+
+    it('should pack and unpack with padding on outer', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const x = randomNormal([120, 64], 0, 1, 'float32');
+
+        const packed = pack16(x, undefined, 32);
+        const unpacked = unpack16(packed);
+
+        const paddedX = pad(x, [
+            [0, 8],
+            [0, 0],
+        ]);
+        const xData = await paddedX.data();
+        const unpackedData = await unpacked.data();
+
+        const error = arraysClose(xData, unpackedData);
+        expect(error).toBeLessThan(2e-3);
+
+        expect(unpacked.shape).toEqual([128, 64]);
     });
 
     it('has valid gradients for pack16', async ({ expect }) => {

@@ -120,12 +120,8 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
             }
 
             // Final layer norm
-            pX = this.lnF.call({ ...attrs, mixedPrecision: usedMixed }, pX) as Tensor;
-
-            x = usedMixed ? unpack16(pX) : pX;
-            if (usedMixed && pX !== x) {
-                pX.dispose();
-            }
+            x = this.lnF.call({ ...attrs, mixedPrecision: usedMixed }, pX) as Tensor;
+            pX.dispose();
 
             if (attrs.skipLogits) {
                 this.endMemory('Forward');
@@ -133,12 +129,18 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
             }
 
             // Embedding to logits
-            const logits = this.wte.project(x) as Tensor;
+            const packedLogits = this.wte.project(x) as Tensor;
+
             if (attrs.outputEmbeddings) {
                 keep(x);
                 attrs.embeddings!.push({ name: `final_norm_output`, tensor: x });
             } else {
                 x.dispose();
+            }
+
+            const logits = usedMixed ? unpack16(packedLogits) : packedLogits;
+            if (usedMixed && packedLogits !== logits) {
+                packedLogits.dispose();
             }
 
             let loss: Tensor | undefined;

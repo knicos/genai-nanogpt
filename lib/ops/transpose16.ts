@@ -63,12 +63,13 @@ const cpuConfig: KernelConfig = {
 registerKernel(cpuConfig);
 
 export function transpose16(x: Tensor, perm?: number[]): Tensor {
-    if (perm && perm[perm.length - 1] !== x.shape.length - 1) {
-        //throw new Error('Transpose16 currently only supports the last axis being unchanged.');
-    }
     if (perm == null) {
         perm = x.shape.map((_, i) => i).reverse();
     }
+    // Ideally check this but might result in incorrect dispose.
+    /*if (perm.every((p, i) => p === i)) {
+        return x;
+    }*/
     const r = engine().runKernel('Transpose16', { x }, { perm }) as Tensor;
     // packTensor(r);
     return r;

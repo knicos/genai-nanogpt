@@ -5,7 +5,7 @@ import { reshape16 } from './reshape16';
 import { isPackedTensor } from '@base/utilities/packed';
 import { dot } from '@tensorflow/tfjs-layers/dist/backend/tfjs_backend';
 
-export function dot16(a: Tensor, b: Tensor): Tensor {
+export function dot16(a: Tensor, b: Tensor, transposeA = false, transposeB = false): Tensor {
     if (!isPackedTensor(a) && !isPackedTensor(b)) {
         return dot(a, b);
     }
@@ -29,10 +29,9 @@ export function dot16(a: Tensor, b: Tensor): Tensor {
     if (!isPackedTensor(a) || !isPackedTensor(b)) {
         throw new Error('dot16 requires both inputs to be packed Tensors.');
     }
+
     // Handle basic 2D x 2D case.
     if (a.rank === 2 && b.rank === 2) {
-        const transposeA = false;
-        const transposeB = false;
         // tfc.fused.matMul only fuses certain activation functions. Unsupported
         // activation functions are treated as 'linear' activations, which is
         // equivalent to a no-op.
@@ -59,14 +58,18 @@ export function dot16(a: Tensor, b: Tensor): Tensor {
             }
             return i;
         });
-        const bt = transpose16(b, perm);
-        b = reshape16(bt, [ySecondLastDim, -1]);
-        bt.dispose();
+
+        const nopTransposeB = perm.every((p, i) => p === i);
+        if (nopTransposeB) {
+            b = reshape16(b, [ySecondLastDim, -1]);
+        } else {
+            const bt = transpose16(b, perm);
+            b = reshape16(bt, [ySecondLastDim, -1]);
+            bt.dispose();
+        }
 
         // Multiply x and y as 2D Tensors, and then reshape back to original.
         const outputShape = [...aFirstDims, ...yOtherDims];
-        const transposeA = false;
-        const transposeB = false;
         const m = matMul16(a, b, transposeA, transposeB);
         a.dispose();
         b.dispose();
