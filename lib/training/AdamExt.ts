@@ -18,7 +18,7 @@ export default class AdamExt extends AdamOptimizer {
     private startLearningRate: number;
 
     constructor(learningRate: number, beta1: number, beta2: number, epsilon: number, private config: AdamExtConfig) {
-        super(learningRate, beta1, beta2, epsilon, config.lossScaling);
+        super(learningRate, beta1, beta2, config.lossScaling, epsilon);
         this.startLearningRate = learningRate;
     }
 

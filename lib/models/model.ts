@@ -21,7 +21,7 @@ interface TrainingState {
 
 // Abstract base class for models
 export default abstract class Model<T extends ModelForwardAttributes> extends BaseLayer<T> {
-    public lossScaling = 1;
+    public lossScaling = 128;
     public trainingState: TrainingState | null = null;
 
     abstract getClassName(): string;
