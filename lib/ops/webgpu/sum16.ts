@@ -28,6 +28,9 @@ class SumProgram16 extends ReduceProgram {
             },
             packed
         );
+        if (packed) {
+            this.shaderKey += '_packed';
+        }
     }
 }
 

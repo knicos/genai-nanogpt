@@ -29,7 +29,7 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
     constructor(batch: number, O1: number, O2: number, I1: number, I2: number, transposeA = false, transposeB = false) {
         this.transposeA = transposeA;
         this.transposeB = transposeB;
-        this.variableComponents = [4, 4];
+        this.variableComponents = [2, 2];
         this.outputComponent = 2;
 
         this.shaderKey = `MatMul16TB_${O1}_${O2}_${I1}_${I2}_${transposeA ? 'TA' : ''}${transposeB ? 'TB' : ''}`;
@@ -227,108 +227,127 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
 
     /* Transpose when writing to shared memory */
     private readASnippet(): string {
-        const loadIndex = `let indexA = offsetA + row * strideA + col;`;
-
         const unpackSnippet = `
-            let packedA: vec4<i32> = A[indexA];
-            var unpackedA1 = vec4<f32>(
+            var col = i32(localId.x);
+            var row = i32(localId.y) * 4;
+            var packedA: vec2<i32> = A[offsetA + row * strideA + col];
+            var Arow1 = vec4<f32>(
                 unpack2x16float(u32(packedA.x)),
                 unpack2x16float(u32(packedA.y))
             );
-            var unpackedA2 = vec4<f32>(
-                unpack2x16float(u32(packedA.z)),
-                unpack2x16float(u32(packedA.w))
+            packedA = A[offsetA + (row + 1) * strideA + col];
+            var Arow2 = vec4<f32>(
+                unpack2x16float(u32(packedA.x)),
+                unpack2x16float(u32(packedA.y))
             );
-            ${this.scaleA ? 'unpackedA1 = unpackedA1 * uniforms.scaleA;' : ''}
-            ${this.scaleA ? 'unpackedA2 = unpackedA2 * uniforms.scaleA;' : ''}
+            packedA = A[offsetA + (row + 2) * strideA + col];
+            var Arow3 = vec4<f32>(
+                unpack2x16float(u32(packedA.x)),
+                unpack2x16float(u32(packedA.y))
+            );
+            packedA = A[offsetA + (row + 3) * strideA + col];
+            var Arow4 = vec4<f32>(
+                unpack2x16float(u32(packedA.x)),
+                unpack2x16float(u32(packedA.y))
+            );
+            
+            ${this.scaleA ? 'Arow1 = Arow1 * uniforms.scaleA;' : ''}
+            ${this.scaleA ? 'Arow2 = Arow2 * uniforms.scaleA;' : ''}
+            ${this.scaleA ? 'Arow3 = Arow3 * uniforms.scaleA;' : ''}
+            ${this.scaleA ? 'Arow4 = Arow4 * uniforms.scaleA;' : ''}
         `;
 
-        if (this.transposeA) {
-            return `{
-                ${loadIndex}
+        return this.transposeA
+            ? `{
                 ${unpackSnippet}
-                mm_Asub[row][col * 2] = unpackedA1;
-                mm_Asub[row][col * 2 + 1] = unpackedA2;
-        }`;
-        } else {
-            return `{
-                ${loadIndex}
+                mm_Asub[row][col] = Arow1;
+                mm_Asub[row + 1][col] = Arow2;
+                mm_Asub[row + 2][col] = Arow3;
+                mm_Asub[row + 3][col] = Arow4;
+        }`
+            : `{
                 ${unpackSnippet}
-                let cx = row / 4;
-                let cy = row % 4;
-                let colBase = col * 8;
-                mm_Asub[colBase][cx][cy] = unpackedA1.x;
-                mm_Asub[colBase + 1][cx][cy] = unpackedA1.y;
-                mm_Asub[colBase + 2][cx][cy] = unpackedA1.z;
-                mm_Asub[colBase + 3][cx][cy] = unpackedA1.w;
-                mm_Asub[colBase + 4][cx][cy] = unpackedA2.x;
-                mm_Asub[colBase + 5][cx][cy] = unpackedA2.y;
-                mm_Asub[colBase + 6][cx][cy] = unpackedA2.z;
-                mm_Asub[colBase + 7][cx][cy] = unpackedA2.w;
+                
+                col = i32(localId.x) * 4;
+                row = i32(localId.y);
+                
+                mm_Asub[col][row] = vec4<f32>(Arow1.x, Arow2.x, Arow3.x, Arow4.x);
+                mm_Asub[col + 1][row] = vec4<f32>(Arow1.y, Arow2.y, Arow3.y, Arow4.y);
+                mm_Asub[col + 2][row] = vec4<f32>(Arow1.z, Arow2.z, Arow3.z, Arow4.z);
+                mm_Asub[col + 3][row] = vec4<f32>(Arow1.w, Arow2.w, Arow3.w, Arow4.w);
         }`;
-        }
     }
 
     /* Transpose when writing to shared memory */
     private readBSnippet(): string {
-        const loadIndex = `let indexB = offsetB + row * strideB + col;`;
-
         const unpackSnippet = `
-            let packedB: vec4<i32> = B[indexB];
-            var unpackedB1 = vec4<f32>(
+            var col = i32(localId.x);
+            var row = i32(localId.y) * 4;
+            var packedB: vec2<i32> = B[offsetB + row * strideB + col];
+            var Brow1 = vec4<f32>(
                 unpack2x16float(u32(packedB.x)),
                 unpack2x16float(u32(packedB.y))
             );
-            var unpackedB2 = vec4<f32>(
-                unpack2x16float(u32(packedB.z)),
-                unpack2x16float(u32(packedB.w))
+            packedB = B[offsetB + (row + 1) * strideB + col];
+            var Brow2 = vec4<f32>(
+                unpack2x16float(u32(packedB.x)),
+                unpack2x16float(u32(packedB.y))
             );
-            ${this.scaleB ? 'unpackedB1 = unpackedB1 * uniforms.scaleB;' : ''}
-            ${this.scaleB ? 'unpackedB2 = unpackedB2 * uniforms.scaleB;' : ''}
+            packedB = B[offsetB + (row + 2) * strideB + col];
+            var Brow3 = vec4<f32>(
+                unpack2x16float(u32(packedB.x)),
+                unpack2x16float(u32(packedB.y))
+            );
+            packedB = B[offsetB + (row + 3) * strideB + col];
+            var Brow4 = vec4<f32>(
+                unpack2x16float(u32(packedB.x)),
+                unpack2x16float(u32(packedB.y))
+            );
+            
+            ${this.scaleB ? 'Brow1 = Brow1 * uniforms.scaleB;' : ''}
+            ${this.scaleB ? 'Brow2 = Brow2 * uniforms.scaleB;' : ''}
+            ${this.scaleB ? 'Brow3 = Brow3 * uniforms.scaleB;' : ''}
+            ${this.scaleB ? 'Brow4 = Brow4 * uniforms.scaleB;' : ''}
         `;
 
         if (this.transposeB) {
             return `{
-                ${loadIndex}
                 ${unpackSnippet}
-                // Transpose into shared memory, reorganise the vec4s
-                let rx = row / 4;
-                let ry = row % 4;
-                let colBase = col * 8;
-                mm_Bsub[colBase][rx][ry] = unpackedB1.x;
-                mm_Bsub[colBase + 1][rx][ry] = unpackedB1.y;
-                mm_Bsub[colBase + 2][rx][ry] = unpackedB1.z;
-                mm_Bsub[colBase + 3][rx][ry] = unpackedB1.w;
-                mm_Bsub[colBase + 4][rx][ry] = unpackedB2.x;
-                mm_Bsub[colBase + 5][rx][ry] = unpackedB2.y;
-                mm_Bsub[colBase + 6][rx][ry] = unpackedB2.z;
-                mm_Bsub[colBase + 7][rx][ry] = unpackedB2.w;
+                
+                col = i32(localId.x) * 4;
+                row = i32(localId.y);
+                
+                mm_Bsub[col][row] = vec4<f32>(Brow1.x, Brow2.x, Brow3.x, Brow4.x);
+                mm_Bsub[col + 1][row] = vec4<f32>(Brow1.y, Brow2.y, Brow3.y, Brow4.y);
+                mm_Bsub[col + 2][row] = vec4<f32>(Brow1.z, Brow2.z, Brow3.z, Brow4.z);
+                mm_Bsub[col + 3][row] = vec4<f32>(Brow1.w, Brow2.w, Brow3.w, Brow4.w);
             }`;
         } else {
             return `{
-                ${loadIndex}
                 ${unpackSnippet}
-                mm_Bsub[row][col * 2] = unpackedB1;
-                mm_Bsub[row][col * 2 + 1] = unpackedB2;
+                mm_Bsub[row][col] = Brow1;
+                mm_Bsub[row + 1][col] = Brow2;
+                mm_Bsub[row + 2][col] = Brow3;
+                mm_Bsub[row + 3][col] = Brow4;
             }`;
         }
     }
 
     private baseIndexSnippets(): string {
         const strides = `
-            let strideA = uniforms.aShape.z / 4;
-            let strideB = uniforms.bShape.z / 4;
+            let strideA = uniforms.aShape.z / 2;
+            let strideB = uniforms.bShape.z / 2;
         `;
         let baseB = '';
         if (this.transposeB) {
             baseB = `let baseB = getIndexFromCoords3D(vec3<i32>(batchB, globalColStart, 0), vec3<i32>(uniforms.bShape.x, uniforms.bShape.y, strideB));`;
         } else {
-            baseB = `let baseB = getIndexFromCoords3D(vec3<i32>(batchB, 0, globalColStart / 8), vec3<i32>(uniforms.bShape.x, uniforms.bShape.y, strideB));`;
+            baseB = `let baseB = getIndexFromCoords3D(vec3<i32>(batchB, 0, globalColStart / 4), vec3<i32>(uniforms.bShape.x, uniforms.bShape.y, strideB));`;
         }
 
         let baseA = '';
         if (this.transposeA) {
-            baseA = `let baseA = getIndexFromCoords3D(vec3<i32>(batchA, 0, globalRowStart / 8), vec3<i32>(uniforms.aShape.x, uniforms.aShape.y, strideA));`;
+            baseA = `let baseA = getIndexFromCoords3D(vec3<i32>(batchA, 0, globalRowStart / 4), vec3<i32>(uniforms.aShape.x, uniforms.aShape.y, strideA));`;
         } else {
             baseA = `let baseA = getIndexFromCoords3D(vec3<i32>(batchA, globalRowStart, 0), vec3<i32>(uniforms.aShape.x, uniforms.aShape.y, strideA));`;
         }
@@ -345,12 +364,12 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
         if (this.transposeA) {
             offsetA = `let offsetA = baseA + kStart * strideA;`;
         } else {
-            offsetA = `let offsetA = baseA + kStart / 8;`;
+            offsetA = `let offsetA = baseA + kStart / 4;`;
         }
 
         let offsetB = '';
         if (this.transposeB) {
-            offsetB = `let offsetB = baseB + kStart / 8;`;
+            offsetB = `let offsetB = baseB + kStart / 4;`;
         } else {
             offsetB = `let offsetB = baseB + kStart * strideB;`;
         }
@@ -373,8 +392,12 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
         const numTiles = Math.ceil(dimInner / tileInner);
 
         const userCode = `
-            var<workgroup> mm_Asub : array<array<vec4<f32>, ${tileAWidth / 4}>, ${tileAHeight}>;
-            var<workgroup> mm_Bsub : array<array<vec4<f32>, ${tileBOuter / 4}>, ${tileInner}>;
+            var<workgroup> mm_Asub : array<array<vec4<f32>, ${
+                tileAWidth / 4 + (this.transposeA ? 0 : 1)
+            }>, ${tileAHeight}>;
+            var<workgroup> mm_Bsub : array<array<vec4<f32>, ${
+                tileBOuter / 4 + (this.transposeB ? 1 : 0)
+            }>, ${tileInner}>;
 
             ${this.activation ? this.activationSnippet() : ''}
 
@@ -394,20 +417,14 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
                     vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0)
                 );
 
-                let offset = i32(localId.y) * ${this.workgroupSize[0]} + i32(localId.x);
-
                 ${this.baseIndexSnippets()}
 
                 for (var t = 0; t < ${numTiles}; t++) {
                     ${this.offsetSnippets()}
 
-                    for (var i = 0; i < ${2 * 64}; i = i + 64) {
-                        let localIndex = i + offset;
-                        let row = localIndex / 4;
-                        let col = localIndex % 4;
-                        ${this.readASnippet()}
-                        ${this.readBSnippet()}
-                    }
+                    ${this.readASnippet()}
+                    ${this.readBSnippet()}
+
                     kStart = kStart + ${tileInner};
                     workgroupBarrier();
 
@@ -438,11 +455,8 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
                     // Causal Masking: mask if col > row + pastLen
                     let r = gRow + i;
                     let cBase = gColPacked * 2;
-                    // Create vector of column indices [c, c+1, c+2, c+3]
                     let cVec = vec4<i32>(cBase, cBase + 1, cBase + 2, cBase + 3);
-                    // Compare against row + pastLen
                     let mask = cVec > vec4<i32>(r + uniforms.pastLen);
-                    // Set masked elements to -Infinity
                     acc[i] = select(acc[i], vec4<f32>(-uniforms.INFINITY), mask);
                     `
                             : ''

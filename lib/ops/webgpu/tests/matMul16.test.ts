@@ -611,31 +611,41 @@ describe('MatMul 16-bit', { timeout: 30000 }, () => {
 
         it('supports causal mask', async ({ expect }) => {
             await selectBackend('webgpu');
-            const A = randomNormal([100, 3, 128, 64], 0, 1, 'float32');
-            const B = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
+            const A = randomNormal([100, 3, 128, 256], 0, 1, 'float32');
+            const B = randomNormal([100, 3, 256, 128], 0, 1, 'float32');
 
             const packedA = pack16(A);
             const packedB = pack16(B);
 
             const packedMatMul = matMul16(packedA, packedB, false, false, { causalMask: true, pastLen: 0 });
             const unpackedMatMul = unpack16(packedMatMul);
+            const realMatMul = matMul(unpack16(packedA), unpack16(packedB));
 
+            const repackedReal = unpack16(pack16(realMatMul));
+
+            const repackedRealData = await repackedReal.data();
             const unpackedMatMulData = await unpackedMatMul.data();
 
-            expect(unpackedMatMul.shape).toEqual([100, 3, 128, 32]);
+            expect(unpackedMatMul.shape).toEqual([100, 3, 128, 128]);
 
             let wasAllMasked = true;
+            let wasCorrect = true;
 
             // Check that the upper triangular part is -infinity (masked out)
             for (let batch = 0; batch < 100; batch++) {
                 for (let head = 0; head < 3; head++) {
                     for (let i = 0; i < 128; i++) {
-                        for (let j = 0; j < 32; j++) {
-                            const index = batch * 3 * 128 * 32 + head * 128 * 32 + i * 32 + j;
+                        for (let j = 0; j < 128; j++) {
+                            const index = batch * 3 * 128 * 128 + head * 128 * 128 + i * 128 + j;
                             if (j > i) {
                                 // Should be masked
                                 if (unpackedMatMulData[index] !== -Infinity) {
                                     wasAllMasked = false;
+                                }
+                            } else {
+                                // Should match the real matmul
+                                if (Math.abs(unpackedMatMulData[index] - repackedRealData[index]) > 1e-3) {
+                                    wasCorrect = false;
                                 }
                             }
                         }
@@ -644,6 +654,56 @@ describe('MatMul 16-bit', { timeout: 30000 }, () => {
             }
 
             expect(wasAllMasked).toBe(true);
+            expect(wasCorrect).toBe(true);
+        });
+
+        it('supports causal mask with non-zero past length', async ({ expect }) => {
+            const PASTLEN = 90;
+            await selectBackend('webgpu');
+            const A = randomNormal([100, 3, 128, 256], 0, 1, 'float32');
+            const B = randomNormal([100, 3, 256, 128], 0, 1, 'float32');
+
+            const packedA = pack16(A);
+            const packedB = pack16(B);
+
+            const packedMatMul = matMul16(packedA, packedB, false, false, { causalMask: true, pastLen: PASTLEN });
+            const unpackedMatMul = unpack16(packedMatMul);
+            const realMatMul = matMul(unpack16(packedA), unpack16(packedB));
+
+            const repackedReal = unpack16(pack16(realMatMul));
+
+            const repackedRealData = await repackedReal.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            expect(unpackedMatMul.shape).toEqual([100, 3, 128, 128]);
+
+            let wasAllMasked = true;
+            let wasCorrect = true;
+
+            // Check that the upper triangular part is -infinity (masked out)
+            for (let batch = 0; batch < 100; batch++) {
+                for (let head = 0; head < 3; head++) {
+                    for (let i = 0; i < 128; i++) {
+                        for (let j = 0; j < 128; j++) {
+                            const index = batch * 3 * 128 * 128 + head * 128 * 128 + i * 128 + j;
+                            if (j > i + PASTLEN) {
+                                // Should be masked
+                                if (unpackedMatMulData[index] !== -Infinity) {
+                                    wasAllMasked = false;
+                                }
+                            } else {
+                                // Should match the real matmul
+                                if (Math.abs(unpackedMatMulData[index] - repackedRealData[index]) > 1e-3) {
+                                    wasCorrect = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            expect(wasAllMasked).toBe(true);
+            expect(wasCorrect).toBe(true);
         });
     });
 });

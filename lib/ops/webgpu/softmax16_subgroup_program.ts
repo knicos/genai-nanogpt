@@ -34,29 +34,49 @@ export default class SoftmaxSubgroupProgram implements WebGPUProgram {
         const useSubgroupSize = this.maxSubgroupSize !== this.minSubgroupSize;
 
         const userCode = `
+        ${useSubgroupSize ? `var<workgroup> bestValues : array<f32, ${this.workgroupSize[0]}>;` : ''}
         const blockSize = ${this.workgroupSize[0]};
         ${main('index')} {
-            let row = index / ${useSubgroupSize ? 'i32(subgroupSize)' : 'blockSize'};
-            let tid = i32(${useSubgroupSize ? 'subgroupInvocationId' : 'localId.x'});
+            let row = index / blockSize;
+            let tid = i32(localId.x);
             let cols = uniforms.outShape[1];
             let rowIdx = row * cols;
 
             var threadMax = -3.402823e+38f;
-            for (var col = tid; col < cols; col += ${useSubgroupSize ? 'i32(subgroupSize)' : 'blockSize'}) {
+            for (var col = tid; col < cols; col += blockSize) {
                 let value = unpack2x16float(u32(logits[rowIdx + col]));
                 threadMax = max(threadMax, max(value.x, value.y));
             }
 
             threadMax = subgroupMax(threadMax);
+            ${useSubgroupSize ? `
+                let lane = localId.x % subgroupSize;
+                if (lane == 0) {
+                    bestValues[localId.x / subgroupSize] = threadMax;
+                }
+                workgroupBarrier();
+                let numSubgroups = blockSize / subgroupSize;
+                threadMax = select(-3.402823e+38f, bestValues[lane], lane < numSubgroups);
+                threadMax = subgroupMax(threadMax);
+                workgroupBarrier();    
+            `: ''}
 
             var threadSum = 0.0f;
-            for (var col = tid; col < cols; col += ${useSubgroupSize ? 'i32(subgroupSize)' : 'blockSize'}) {
+            for (var col = tid; col < cols; col += blockSize) {
                 let value = unpack2x16float(u32(logits[rowIdx + col]));
                 let subExp = exp(value - threadMax);
                 threadSum += subExp.x + subExp.y;
             }
 
             threadSum = subgroupAdd(threadSum);
+            ${useSubgroupSize ? `
+                if (lane == 0) {
+                    bestValues[localId.x / subgroupSize] = threadSum;
+                }
+                workgroupBarrier();
+                threadSum = select(0.0f, bestValues[lane], lane < numSubgroups);
+                threadSum = subgroupAdd(threadSum);    
+            `: ''}
 
             for (var col = tid; col < cols; col += ${useSubgroupSize ? 'i32(subgroupSize)' : 'blockSize'}) {
                 let value = unpack2x16float(u32(logits[rowIdx + col]));

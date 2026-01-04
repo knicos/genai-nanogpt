@@ -21,9 +21,21 @@ interface ReduceShaderParams extends ReduceParams {
     inputReadSnippet?: string;
 }
 
-function createReduceSnippet(subgroups: boolean, workgroupSizeX: number): string {
-    if (subgroups) {
+function createReduceSnippet(subgroups: boolean, variable: boolean, workgroupSizeX: number, pair: boolean): string {
+    if (subgroups && !variable) {
         return `
+            bestValue = subgroupAdd(bestValue);
+        `;
+    } else if (subgroups) {
+        return `
+            bestValue = subgroupAdd(bestValue);
+            let lane = localId.x % subgroupSize;
+            if (lane == 0) {
+                bestValues[localId.x / subgroupSize] = bestValue;
+            }
+            workgroupBarrier();
+            let numSubgroups = ${workgroupSizeX} / subgroupSize;
+            bestValue = select(${pair ? 'vec2<f32>(0.0f)' : '0.0f'}, bestValues[lane], lane < numSubgroups);
             bestValue = subgroupAdd(bestValue);
         `;
     } else {
@@ -50,14 +62,14 @@ function createReduceSnippet(subgroups: boolean, workgroupSizeX: number): string
 }
 
 function createReductionShader16_elementwise(params: ReduceShaderParams): string {
-    const reduceSize = params.variableSubgroups ? 'i32(subgroupSize)' : `${params.workgroupSizeX}`;
-    const sharedMemorySnippet = params.subgroups
+    const reduceSize = `${params.workgroupSizeX}`;
+    const sharedMemorySnippet = params.subgroups && !params.variableSubgroups
         ? ''
         : `
              var<workgroup> bestValues : array<f32, ${params.workgroupSizeX}>;
            `;
 
-    const reduction = createReduceSnippet(params.subgroups, params.workgroupSizeX!);
+    const reduction = createReduceSnippet(params.subgroups, params.variableSubgroups, params.workgroupSizeX!, false);
 
     const userCode = `
            fn DIV_CEIL(a : u32, b : u32) -> u32 {
@@ -82,7 +94,7 @@ function createReductionShader16_elementwise(params: ReduceShaderParams): string
                 let offset = outputIndex * uniforms.reduceSize;
                 var bestValue = 0.0f;
                 let Length = uniforms.reduceSize;
-                let tid = i32(${params.variableSubgroups ? 'subgroupInvocationId' : 'localId.x'});
+                let tid = i32(localId.x);
     
                 for (var k = tid; k < Length;
                     k = k + ${reduceSize}) {
@@ -106,14 +118,14 @@ function createReductionShader16_elementwise(params: ReduceShaderParams): string
 }
 
 function createReductionShader16_flatten(params: ReduceShaderParams): string {
-    const reduceSize = params.variableSubgroups ? 'i32(subgroupSize)' : `${params.workgroupSizeX}`;
-    const sharedMemorySnippet = params.subgroups
+    const reduceSize = `${params.workgroupSizeX}`;
+    const sharedMemorySnippet = params.subgroups && !params.variableSubgroups
         ? ''
         : `
              var<workgroup> bestValues : array<vec2<f32>, ${params.workgroupSizeX}>;
            `;
 
-    const reduction = createReduceSnippet(params.subgroups, params.workgroupSizeX!);
+    const reduction = createReduceSnippet(params.subgroups, params.variableSubgroups, params.workgroupSizeX!, true);
 
     const userCode = `
            fn DIV_CEIL(a : u32, b : u32) -> u32 {
@@ -139,7 +151,7 @@ function createReductionShader16_flatten(params: ReduceShaderParams): string {
                 let offset2 = offset1 + uniforms.reduceSize;
                 var bestValue = vec2<f32>(0.0f, 0.0f);
                 let Length = uniforms.reduceSize;
-                let tid = i32(${params.variableSubgroups ? 'subgroupInvocationId' : 'localId.x'});
+                let tid = i32(localId.x);
     
                 for (var k = tid; k < Length;
                     k = k + ${reduceSize}) {
@@ -168,12 +180,12 @@ function createReductionShader16(params: ReduceShaderParams): string {
 }
 
 function createReductionShader32(params: ReduceShaderParams): string {
-    const reduceSize = params.variableSubgroups ? 'i32(subgroupSize)' : `${params.workgroupSizeX}`;
-    const sharedMemorySnippet = `
+    const reduceSize = `${params.workgroupSizeX}`;
+    const sharedMemorySnippet = params.subgroups && !params.variableSubgroups ? '' : `
              var<workgroup> bestValues : array<f32, ${params.workgroupSizeX}>;
            `;
 
-    const reduction = createReduceSnippet(params.subgroups, params.workgroupSizeX!);
+    const reduction = createReduceSnippet(params.subgroups, params.variableSubgroups, params.workgroupSizeX!, false);
 
     const userCode = `
            fn DIV_CEIL(a : u32, b : u32) -> u32 {
@@ -193,14 +205,14 @@ function createReductionShader32(params: ReduceShaderParams): string {
            ${sharedMemorySnippet}
     
            ${main('index')} {
-                let outputIndex = index / ${reduceSize};
+                let outputIndex = index / ${params.workgroupSizeX};
                 let offset = outputIndex * uniforms.reduceSize;
                 var bestValue = 0.0f;
                 let Length = uniforms.reduceSize;
-                let tid = i32(${params.variableSubgroups ? 'subgroupInvocationId' : 'localId.x'});
+                let tid = i32(localId.x);
     
                 for (var k = tid; k < Length;
-                    k = k + ${reduceSize}) {
+                    k = k + ${params.workgroupSizeX}) {
                     var candidate = readInput(offset + k);
                     ${params.inputSnippet}
                     bestValue = bestValue + candidate;
@@ -263,13 +275,19 @@ export class ReduceProgram implements WebGPUProgram {
         this.inputShape = [reduceInfo.batchSize, reduceInfo.inSize];
         this.deviceInfo = deviceInfo;
         this.packed = packed;
+
+        const maxThreads = reduceInfo.inSize % 64 === 0 ? 64 : 32;
+
         if (deviceInfo.subgroupsSupported) {
-            this.workgroupSize = [Math.min(64, deviceInfo.subgroupMaxSize), 1, 1];
+            this.workgroupSize = [Math.min(maxThreads, deviceInfo.subgroupMaxSize), 1, 1];
             this.subgroups = true;
             if (deviceInfo.variableSubgroups) {
                 this.subgroupBuiltins = true;
             }
+        } else {
+            this.workgroupSize[0] = maxThreads;
         }
+
         this.outputShape = params.elementwise ? [reduceInfo.batchSize, reduceInfo.inSize] : [reduceInfo.batchSize / 2];
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
         this.dispatch = [params.elementwise ? reduceInfo.batchSize : reduceInfo.batchSize / 2, 1, 1];
