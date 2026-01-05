@@ -15,9 +15,52 @@
  * =============================================================================
  */
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let globalNameSpace: { _tfGlobals: Map<string, any> };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getGlobalNamespace(): { _tfGlobals: Map<string, any>; _tfengine?: any } {
+    if (globalNameSpace == null) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let ns: any;
+        if (typeof window !== 'undefined') {
+            ns = window;
+        } else if (typeof global !== 'undefined') {
+            ns = global;
+        } else if (typeof process !== 'undefined') {
+            ns = process;
+        } else if (typeof self !== 'undefined') {
+            ns = self;
+        } else {
+            throw new Error('Could not find a global object');
+        }
+        globalNameSpace = ns;
+    }
+    return globalNameSpace;
+}
+
+const localEngine: { engine: Engine | null } = {
+    engine: null,
+};
+
+// Nick: Do this before imports to ensure the correct engine is created.
+
+const ns = getGlobalNamespace();
+if (ns._tfengine) {
+    throw new Error('TensorFlow engine already initialized before patching.');
+}
+
+Object.defineProperty(ns, '_tfengine', {
+    get: () => {
+        if (localEngine.engine == null) {
+            const environment = new Environment(ns);
+            localEngine.engine = new Engine(environment);
+        }
+        return localEngine.engine;
+    },
+});
+
 import { BackendTimingInfo, DataMover, KernelBackend } from '@tensorflow/tfjs-core/dist/backends/backend';
 import { Environment, setEnvironmentGlobal } from '@tensorflow/tfjs-core/dist/environment';
-import { getGlobalNamespace } from '@tensorflow/tfjs-core/dist/global_util';
 import { Add, Cast, Identity } from '@tensorflow/tfjs-core/dist/kernel_names';
 import {
     getGradient,
@@ -26,7 +69,7 @@ import {
     GradFunc,
     NamedAttrMap,
 } from '@tensorflow/tfjs-core/dist/kernel_registry';
-import { TensorInfo } from '@tensorflow/tfjs-core/dist/tensor_info';
+import type { TensorInfo } from '@tensorflow/tfjs-core/dist/tensor_info';
 import * as log from '@tensorflow/tfjs-core/dist/log';
 import { KernelProfile, Profiler } from '@tensorflow/tfjs-core/dist/profiler';
 import { getFilteredNodesXToY, TapeNode } from '@tensorflow/tfjs-core/dist/tape';
@@ -38,15 +81,15 @@ import {
     TensorTracker,
     Variable,
 } from '@tensorflow/tfjs-core/dist/tensor';
-import { DataId } from '@tensorflow/tfjs-core/dist/tensor_info';
-import {
+import type { DataId } from '@tensorflow/tfjs-core/dist/tensor_info';
+import type {
     GradSaveFunc,
     NamedTensorMap,
     NamedVariableMap,
     TensorContainer,
 } from '@tensorflow/tfjs-core/dist/tensor_types';
 import { getTensorsInContainer } from '@tensorflow/tfjs-core/dist/tensor_util';
-import { BackendValues, DataType, DataValues } from '@tensorflow/tfjs-core/dist/types';
+import type { BackendValues, DataType, DataValues } from '@tensorflow/tfjs-core/dist/types';
 import * as util from '@tensorflow/tfjs-core/dist/util';
 import { bytesFromStringArray, makeOnesTypedArray, now, sizeFromShape } from '@tensorflow/tfjs-core/dist/util';
 import { PackableTensor, PackableVariable, PackedTensorInfo } from './PackedTensor';

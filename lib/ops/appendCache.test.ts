@@ -1,3 +1,4 @@
+import '@base/patches/engine';
 import { describe, it } from 'vitest';
 import * as tf from '@tensorflow/tfjs';
 import { appendCache } from './appendCache';

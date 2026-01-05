@@ -1,3 +1,4 @@
+import '@base/patches/engine';
 import { describe, it, vi } from 'vitest';
 import TeachableLLM from './TeachableLLM';
 import * as tf from '@tensorflow/tfjs';

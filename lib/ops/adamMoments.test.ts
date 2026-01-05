@@ -1,3 +1,4 @@
+import '@base/patches/engine';
 import { AdamOptimizer, randomNormal, zeros } from '@tensorflow/tfjs';
 import { describe, it } from 'vitest';
 import { adamMoments } from './adamMoments';

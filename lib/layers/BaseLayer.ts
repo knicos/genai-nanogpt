@@ -1,7 +1,7 @@
 import { GPTConfig } from '@base/models/config';
 import MemoryProfiler from '@base/utilities/profile';
 import RoPECache from './RoPECache';
-import { customGrad, engine, grads, GradSaveFunc, Tensor, variable, Variable } from '@tensorflow/tfjs-core';
+import { customGrad, engine, grads, GradSaveFunc, Tensor, variable, Variable, clone } from '@tensorflow/tfjs-core';
 
 export interface ForwardAttributes {
     training: boolean;
@@ -111,7 +111,7 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
     saveWeights(map: Map<string, Tensor[]>) {
         this._variables.forEach((variable, name) => {
             if (variable) {
-                map.set(name, [variable.clone()]);
+                map.set(name, [clone(variable)]);
             }
         });
         this.children.forEach((child) => {
