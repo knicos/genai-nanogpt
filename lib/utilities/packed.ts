@@ -1,6 +1,6 @@
 import { ENGINE } from '@base/patches/engine';
 import type { PackableTensor } from '@base/patches/PackedTensor';
-import { Tensor } from '@tensorflow/tfjs-core';
+import type { Tensor } from '@tensorflow/tfjs-core';
 
 export function packingSupported(): boolean {
     return ENGINE.backendName === 'webgpu';
