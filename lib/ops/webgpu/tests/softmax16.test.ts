@@ -1,4 +1,3 @@
-import '@base/patches/engine';
 import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
 import { pack16 } from '../../pack16';
@@ -58,7 +57,7 @@ describe('Softmax 16-bit', { timeout: 10000 }, () => {
         expect(gradXData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
         expect(gradXData.some((v) => isNaN(v))).toBe(false);
         expect(gradXData.some((v) => !isFinite(v))).toBe(false);
-        expect(gradX.dtype).toBe('int32');
+        expect(gradX.dtype).toBe('packedF16');
         expect(isPackedTensor(gradX)).toBe(true);
     });
 

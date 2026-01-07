@@ -1,4 +1,3 @@
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import { isPackedTensor } from '@base/utilities/packed';
 import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
@@ -135,9 +134,8 @@ function appendCacheGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
         ? new AppendCacheProgram16(batchSize, nh, T, item.shape[3]!, maxSize)
         : new AppendCacheProgram32(batchSize, nh, T, item.shape[3]!, maxSize);
     const uniformData = [{ type: 'int32', data: [pastLen] }];
-    const dtype = packed ? 'int32' : cache.dtype;
-    const result: PackedTensorInfo = backend.runWebGPUProgram(program, [cache, item], dtype, uniformData);
-    result.packed = packed;
+    const dtype = packed ? 'packedF16' : cache.dtype;
+    const result = backend.runWebGPUProgram(program, [cache, item], dtype, uniformData);
     return result;
 }
 

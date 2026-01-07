@@ -11,3 +11,9 @@ export function forceInt<T extends TensorInfo>(x: T): T {
     (x.dtype as any) = 'int32';
     return x;
 }
+
+export function forcePacked<T extends TensorInfo>(x: T): T {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (x.dtype as any) = 'packedF16';
+    return x;
+}

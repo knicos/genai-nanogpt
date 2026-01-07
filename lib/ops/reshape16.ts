@@ -10,7 +10,6 @@ import {
     Tensor,
     TensorInfo,
 } from '@tensorflow/tfjs-core';
-import { isPackedTensor, packTensor } from '@base/utilities/packed';
 
 const reshapeGradConfig: GradConfig = {
     kernelName: 'Reshape16',
@@ -31,14 +30,7 @@ function reshape16_(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?
     const { x } = inputs as { x: Tensor };
     const { shape } = attrs as unknown as { shape: number[] };
 
-    const packed = isPackedTensor(x);
-
-    if (!packed) {
-        const result = reshape(x as Tensor, shape);
-        return result;
-    }
-
-    const result = packTensor(reshape(x as Tensor, shape));
+    const result = reshape(x as Tensor, shape);
     return result;
 }
 

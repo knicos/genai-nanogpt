@@ -30,7 +30,6 @@ import {
     util,
 } from '@tensorflow/tfjs-core';
 import { reshape16 } from '../reshape16';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import SoftmaxProgram from './softmax16_program';
 import WebGPUBackendPatch from '@base/patches/webgpu_backend';
 import SoftmaxSubgroupProgram from './softmax16_subgroup_program';
@@ -53,8 +52,7 @@ function softmax(args: { inputs: SoftmaxInputs; backend: WebGPUBackendPatch; att
     const program = hasSubgroups
         ? new SoftmaxSubgroupProgram(logitsReshaped.shape, minSubgroupSize, maxSubgroupSize)
         : new SoftmaxProgram(logitsReshaped.shape);
-    const res: PackedTensorInfo = backend.runWebGPUProgram(program, [logitsReshaped], 'int32');
-    res.packed = true;
+    const res = backend.runWebGPUProgram(program, [logitsReshaped], 'packedF16');
     logitsReshaped.dispose();
     const resTensor = engine().makeTensorFromTensorInfo(res);
     const resReshaped = reshape16(resTensor, logits!.shape);

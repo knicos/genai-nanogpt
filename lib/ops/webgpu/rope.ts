@@ -1,5 +1,4 @@
 import RoPECache from '@base/layers/RoPECache';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import { isPackedTensor } from '@base/utilities/packed';
 import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
@@ -178,9 +177,8 @@ function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: N
         : new RopeProgram32(batchSize, heads, seqLength, C);
 
     const uniformData = [{ type: 'int32', data: [pastLen] }];
-    const dtype = packed ? 'int32' : x.dtype;
-    const result: PackedTensorInfo = backend.runWebGPUProgram(program, [x, sin, cos], dtype, uniformData);
-    result.packed = packed;
+    const dtype = packed ? 'packedF16' : x.dtype;
+    const result = backend.runWebGPUProgram(program, [x, sin, cos], dtype, uniformData);
     return result;
 }
 

@@ -15,7 +15,6 @@ import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 import { pack16 } from '../pack16';
 import { isPackedTensor } from '@base/utilities/packed';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import { reshape16 } from '../reshape16';
 import { sum16 } from '../sum16';
 import { slice16 } from '../slice16';
@@ -222,13 +221,7 @@ function rmsNormGradGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
         throw new Error(`rmsNormGradGPU: inSize ${reduceInfo.inSize} exceeds max of 1024`);
     }
 
-    const result: PackedTensorInfo = backend.runWebGPUProgram(
-        program,
-        [pX, pGamma, pDy],
-        packed ? 'int32' : 'float32',
-        uniformData
-    );
-    result.packed = packed;
+    const result = backend.runWebGPUProgram(program, [pX, pGamma, pDy], packed ? 'packedF16' : 'float32', uniformData);
 
     if (packed && !packedX) {
         pX.dispose();

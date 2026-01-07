@@ -12,7 +12,6 @@ import {
     util,
 } from '@tensorflow/tfjs-core';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 
 function dSnippet(rank: number): string {
     switch (rank) {
@@ -100,8 +99,7 @@ export function slice(args: { inputs: SliceInputs; backend: WebGPUBackend; attrs
     // TODO(xing.xu): Add shadow slice support.
     const program = new SliceProgram16($begin, $size);
     const uniformData = [{ type: 'int32', data: $begin }];
-    const result: PackedTensorInfo = backend.runWebGPUProgram(program, [x!], x!.dtype, uniformData);
-    result.packed = true;
+    const result = backend.runWebGPUProgram(program, [x!], x!.dtype, uniformData);
     return result;
 }
 

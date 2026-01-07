@@ -1,4 +1,4 @@
-import { engine, setBackend, Tensor, tensor2d } from '@tensorflow/tfjs';
+import { engine, setBackend, Tensor, tensor2d } from '@tensorflow/tfjs-core';
 
 export async function execute(backend: string) {
     await setBackend(backend);

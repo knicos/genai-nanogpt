@@ -1,4 +1,3 @@
-import '@base/patches/engine';
 import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
 

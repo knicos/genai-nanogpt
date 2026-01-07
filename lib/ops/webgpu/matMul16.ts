@@ -18,7 +18,6 @@ import { isPackedTensor } from '@base/utilities/packed';
 import { reshape16 } from '../reshape16';
 import { matMulMul } from '../matMulMul';
 import { matMulGelu } from '../matMulGelu';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import MatMul16ProgramGeneric from './matMul16_program';
 
 type ProgramUniform = Array<{
@@ -155,13 +154,12 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
         outShapeOuterDims.concat([program.outputShape[resultRank - 2], program.outputShape[resultRank - 1]]);
     program.setOutputShape(outShape, perm);
 
-    const result: PackedTensorInfo = backend.runWebGPUProgram(
+    const result = backend.runWebGPUProgram(
         program,
         [Areshaped, BReshaped],
-        'int32',
+        'packedF16',
         uniforms.length > 0 ? uniforms : undefined
-    ) as PackedTensorInfo;
-    result.packed = true;
+    );
     Areshaped.dispose();
     BReshaped.dispose();
     return result;

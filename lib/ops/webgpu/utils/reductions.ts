@@ -1,7 +1,6 @@
 import { backend_util, engine, TensorInfo, util } from '@tensorflow/tfjs-core';
 import { getMainHeaderString as main, WebGPUProgram } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import { reshape16 } from '@base/ops/reshape16';
 import { DeviceInformation } from './deviceInfo';
 import { flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
@@ -63,9 +62,10 @@ function createReduceSnippet(subgroups: boolean, variable: boolean, workgroupSiz
 
 function createReductionShader16_elementwise(params: ReduceShaderParams): string {
     const reduceSize = `${params.workgroupSizeX}`;
-    const sharedMemorySnippet = params.subgroups && !params.variableSubgroups
-        ? ''
-        : `
+    const sharedMemorySnippet =
+        params.subgroups && !params.variableSubgroups
+            ? ''
+            : `
              var<workgroup> bestValues : array<f32, ${params.workgroupSizeX}>;
            `;
 
@@ -119,9 +119,10 @@ function createReductionShader16_elementwise(params: ReduceShaderParams): string
 
 function createReductionShader16_flatten(params: ReduceShaderParams): string {
     const reduceSize = `${params.workgroupSizeX}`;
-    const sharedMemorySnippet = params.subgroups && !params.variableSubgroups
-        ? ''
-        : `
+    const sharedMemorySnippet =
+        params.subgroups && !params.variableSubgroups
+            ? ''
+            : `
              var<workgroup> bestValues : array<vec2<f32>, ${params.workgroupSizeX}>;
            `;
 
@@ -181,7 +182,10 @@ function createReductionShader16(params: ReduceShaderParams): string {
 
 function createReductionShader32(params: ReduceShaderParams): string {
     const reduceSize = `${params.workgroupSizeX}`;
-    const sharedMemorySnippet = params.subgroups && !params.variableSubgroups ? '' : `
+    const sharedMemorySnippet =
+        params.subgroups && !params.variableSubgroups
+            ? ''
+            : `
              var<workgroup> bestValues : array<f32, ${params.workgroupSizeX}>;
            `;
 
@@ -353,13 +357,7 @@ export function reduce(program: ReduceProgram, inputs: TensorInfo[], backend: We
     const inSize = program.inputShape[program.inputShape.length - 1];
     const uniformData = [{ type: 'int32', data: [inSize] }];
 
-    const reduced: PackedTensorInfo = backend.runWebGPUProgram(
-        program,
-        inputs,
-        program.packed ? 'int32' : 'float32',
-        uniformData
-    );
-    reduced.packed = program.packed ?? false;
+    const reduced = backend.runWebGPUProgram(program, inputs, program.packed ? 'packedF16' : 'float32', uniformData);
     const reducedTensor = engine().makeTensorFromTensorInfo(reduced);
 
     const res = reshape16(

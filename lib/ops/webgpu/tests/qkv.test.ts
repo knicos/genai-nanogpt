@@ -1,4 +1,3 @@
-import '@base/patches/engine';
 import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
 import { unpack16 } from '../../unpack16';
@@ -53,9 +52,9 @@ describe('QKV 16-bit', { timeout: 10000 }, () => {
         const errorV = arraysClose(originalVData, unpackedVData);
         expect(errorV).toBeLessThan(1e-3);
 
-        expect(packedQ.dtype).toBe('int32');
-        expect(packedK.dtype).toBe('int32');
-        expect(packedV.dtype).toBe('int32');
+        expect(packedQ.dtype).toBe('packedF16');
+        expect(packedK.dtype).toBe('packedF16');
+        expect(packedV.dtype).toBe('packedF16');
         expect(isPackedTensor(packedQ)).toBe(true);
         expect(isPackedTensor(packedK)).toBe(true);
         expect(isPackedTensor(packedV)).toBe(true);
@@ -97,9 +96,9 @@ describe('QKV 16-bit', { timeout: 10000 }, () => {
         const errorV = arraysClose(originalVData, unpackedVData);
         expect(errorV).toBeLessThan(1e-3);
 
-        expect(packedQ.dtype).toBe('int32');
-        expect(packedK.dtype).toBe('int32');
-        expect(packedV.dtype).toBe('int32');
+        expect(packedQ.dtype).toBe('packedF16');
+        expect(packedK.dtype).toBe('packedF16');
+        expect(packedV.dtype).toBe('packedF16');
         expect(isPackedTensor(packedQ)).toBe(true);
         expect(isPackedTensor(packedK)).toBe(true);
         expect(isPackedTensor(packedV)).toBe(true);

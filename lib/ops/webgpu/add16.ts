@@ -8,7 +8,6 @@ import {
     TensorInfo,
 } from '@tensorflow/tfjs-core';
 import { BinaryOpProgram, BinaryOpType } from './utils/binary_op';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 
 function add16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { a, b } = args.inputs as { a: Tensor; b: Tensor };
@@ -16,8 +15,7 @@ function add16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: 
 
     const program = new BinaryOpProgram(BinaryOpType.ADD, a.shape, b.shape);
 
-    const result: PackedTensorInfo = backend.runWebGPUProgram(program, [a, b], 'int32');
-    result.packed = true;
+    const result = backend.runWebGPUProgram(program, [a, b], 'packedF16');
     return result;
 }
 

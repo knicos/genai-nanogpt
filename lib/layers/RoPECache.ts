@@ -1,4 +1,5 @@
-import { cos, keep, pow, range, reciprocal, scalar, sin, Tensor, tidy } from '@tensorflow/tfjs-core';
+import { cos, div, keep, pow, range, reciprocal, scalar, sin, Tensor, tidy } from '@tensorflow/tfjs-core';
+import '@tensorflow/tfjs-core/dist/public/chained_ops/register_all_chained_ops';
 import { GPTConfig } from '../models/config';
 
 export default class RoPECache {
@@ -18,7 +19,7 @@ export default class RoPECache {
         }
         this.ropeBase = 10000; // Could be a little smaller for shorter sequences
         const i = range(0, this.rotaryDim, 2, 'float32'); // even indices
-        const exponent = i.div(scalar(this.rotaryDim, 'float32')); // i/rotaryDim
+        const exponent = div(i, scalar(this.rotaryDim, 'float32')); // i/rotaryDim
         const basePow = pow(scalar(this.ropeBase, 'float32'), exponent);
         this.ropeInvFreq = reciprocal(basePow); // [rotaryDim/2]
 

@@ -12,7 +12,6 @@ import {
     TransposeAttrs,
 } from '@tensorflow/tfjs-core';
 
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import { reshape16 } from '../reshape16';
 import TransposeSharedProgram16 from './transpose16_shared_program';
 import TransposeProgram16 from './transpose16_program';
@@ -35,8 +34,7 @@ function transpose16_(args: { inputs: NamedTensorInfoMap; backend: unknown; attr
 
         // Accepts rank 2 or 3, where 3 has a batch dimension
         const program = new TransposeSharedProgram16(reshaped.shape, newPerm);
-        const output: PackedTensorInfo = backend.runWebGPUProgram(program, [reshaped], 'int32');
-        output.packed = true;
+        const output = backend.runWebGPUProgram(program, [reshaped], 'packedF16');
 
         // If rank 4, reshape back to rank 4
         if (rank === 4) {
@@ -57,8 +55,7 @@ function transpose16_(args: { inputs: NamedTensorInfoMap; backend: unknown; attr
     // If the last dimension is not moved, we can use the regular transpose program
     if (packed) {
         const program = new TransposeProgram16(x.shape, perm);
-        const output: PackedTensorInfo = backend.runWebGPUProgram(program, [x], 'int32');
-        output.packed = true;
+        const output = backend.runWebGPUProgram(program, [x], 'packedF16');
         return output;
     } else {
         return transpose(x, perm);

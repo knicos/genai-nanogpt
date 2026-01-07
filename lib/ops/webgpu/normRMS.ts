@@ -10,7 +10,6 @@ import { createReduceInfo, reduce } from './utils/reductions';
 import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 import { isPackedTensor } from '@base/utilities/packed';
 import { pack16 } from '../pack16';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 import RMSProgram16 from './normRMS16_program';
 import RMSProgram32 from './normRMS32_program';
 import WebGPUBackendPatch from '@base/patches/webgpu_backend';
@@ -50,8 +49,7 @@ function rmsNormGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?
         );
     }
 
-    const result: PackedTensorInfo = reduce(program, inputs, backend);
-    result.packed = packed;
+    const result = reduce(program, inputs, backend);
 
     if (packed && !packedX) {
         pX.dispose();

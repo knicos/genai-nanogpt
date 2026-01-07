@@ -1,4 +1,4 @@
-import './patches/engine';
+import '@tensorflow/tfjs';
 
 export { default as NanoGPT } from './models/NanoGPTV1';
 export { default as TeachableLLM } from './TeachableLLM';

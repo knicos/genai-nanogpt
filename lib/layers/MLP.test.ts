@@ -1,4 +1,3 @@
-import '@base/patches/engine';
 import { afterEach, describe, it } from 'vitest';
 import MLP from './MLP';
 import * as tf from '@tensorflow/tfjs';

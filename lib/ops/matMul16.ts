@@ -3,7 +3,7 @@ import { Tensor, engine } from '@tensorflow/tfjs-core';
 import './grads/matMul16';
 import './webgl/matMul16';
 import './cpu/matMul16';
-import { isPackedTensor, packTensor } from '@base/utilities/packed';
+import { isPackedTensor } from '@base/utilities/packed';
 import { pack16 } from './pack16';
 
 export function matMul16(
@@ -38,7 +38,7 @@ export function matMul16(
         pB.dispose();
     }
 
-    return packed ? packTensor(t) : t;
+    return t;
 }
 
 export function matMul16Scaled(A: Tensor, B: Tensor, scale: number, transposeA = false, transposeB = false): Tensor {

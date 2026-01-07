@@ -1,4 +1,3 @@
-import '@base/patches/engine';
 import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
 import { pack16 } from '../../pack16';
@@ -34,7 +33,7 @@ describe('Sum 16-bit', { timeout: 10000 }, () => {
         const unpackedData = await unpacked.data();
 
         console.log(originalData.length, originalData.slice(390, 400));
-        console.log(unpackedData.length, unpackedData.slice(390,400));
+        console.log(unpackedData.length, unpackedData.slice(390, 400));
 
         expect(originalSum.shape).toEqual([100, 4]);
         expect(unpacked.shape).toEqual([100, 4]);

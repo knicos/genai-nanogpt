@@ -31,7 +31,6 @@ import { getMainHeaderString as main, WebGPUProgram } from '@tensorflow/tfjs-bac
 import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { reshape } from '@tensorflow/tfjs-backend-webgpu/dist/kernels/Reshape';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 
 export class ConcatProgram implements WebGPUProgram {
     outputShape: number[];
@@ -142,9 +141,8 @@ function concatImpl(inputs: ConcatInputs, axis: number, backend: WebGPUBackend):
     const res = backend.runWebGPUProgram(program, tensors2D, tensors2D[0].dtype, uniformData);
     tensors2D.forEach((r) => backend.disposeData(r.dataId));
 
-    const reshapedResult: PackedTensorInfo = reshape({ inputs: { x: res }, backend, attrs: { shape: outShape } });
+    const reshapedResult = reshape({ inputs: { x: res }, backend, attrs: { shape: outShape } });
     backend.disposeData(res.dataId);
-    reshapedResult.packed = true;
     return reshapedResult;
 }
 

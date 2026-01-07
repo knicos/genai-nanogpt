@@ -3,7 +3,6 @@ import { matMul16GradConfig } from './matMul16';
 import { concat16 } from '../concat16';
 import { sum16 } from '../sum16';
 import { NamedGradientMap } from '@tensorflow/tfjs-core/dist/tape';
-import { isPackedTensor, packTensor } from '@base/utilities/packed';
 
 const qkvGradConfig: GradConfig = {
     kernelName: 'QKV',
@@ -43,7 +42,7 @@ const qkvGradConfig: GradConfig = {
                 const bGrad = grads.B();
                 const sumBgrad = bGrad.shape[0] === 1 ? squeeze(bGrad, [0]) : sum16(bGrad, 0);
                 bGrad.dispose();
-                return isPackedTensor(bGrad) ? packTensor(sumBgrad) : sumBgrad;
+                return sumBgrad;
             },
         };
     },

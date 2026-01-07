@@ -3,7 +3,6 @@ import { WebGPUProgram, WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { getMainHeaderString as main } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { computeDispatch, flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_util';
 import { isPackedTensor } from '@base/utilities/packed';
-import { PackedTensorInfo } from '@base/patches/PackedTensor';
 
 const K = 0.7978845608028654; // sqrt(2/pi)
 const A = 0.044715;
@@ -162,8 +161,7 @@ function geluGradKernelFunc(args: { inputs: NamedTensorInfoMap; backend: unknown
     const backend = args.backend as WebGPUBackend;
     const packed = isPackedTensor(dy);
     const program = packed ? new GeluGradProgram16(x.shape) : new GeluGradProgram32(x.shape);
-    const result: PackedTensorInfo = backend.runWebGPUProgram(program, [dy, x], packed ? 'int32' : 'float32');
-    result.packed = packed;
+    const result = backend.runWebGPUProgram(program, [dy, x], packed ? 'packedF16' : 'float32');
     return result;
 }
 

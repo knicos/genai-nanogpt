@@ -1,4 +1,3 @@
-import '@base/patches/engine';
 import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
 import { pack16 } from '../../pack16';
@@ -103,7 +102,7 @@ describe('Pack and Unpack 16-bit floats', { timeout: 30000 }, () => {
         expect(unpackedGradXData.every((v) => v === 0)).toBe(false);
         expect(unpackedGradXData.some((v) => isNaN(v))).toBe(false);
         expect(unpackedGradXData.some((v) => !isFinite(v))).toBe(false);
-        expect(gradX.dtype).toBe('int32');
+        expect(gradX.dtype).toBe('packedF16');
         expect(isPackedTensor(gradX)).toBe(true);
     });
 });

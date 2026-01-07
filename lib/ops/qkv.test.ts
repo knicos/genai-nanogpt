@@ -1,4 +1,3 @@
-import '@base/patches/engine';
 import { describe, it } from 'vitest';
 import { qkvCPU } from './cpu/qkv';
 import * as tf from '@tensorflow/tfjs';

@@ -32,7 +32,7 @@ function packGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: N
 
     const uniformData = [{ type: 'float32', data: [scaling] }];
 
-    return backend.runWebGPUProgram(program, [x], 'int32', hasScaling ? uniformData : undefined);
+    return backend.runWebGPUProgram(program, [x], 'packedF16', hasScaling ? uniformData : undefined);
 }
 
 const kernelConfig: KernelConfig = {

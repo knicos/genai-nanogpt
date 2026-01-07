@@ -11,9 +11,9 @@ import {
     transpose,
     TransposeAttrs,
 } from '@tensorflow/tfjs-core';
-import { forceFloat, forceInt } from './grads/utils';
+import { forceFloat, forcePacked } from './grads/utils';
 import { getUndoAxesPermutation } from '@tensorflow/tfjs-core/dist/ops/axis_util';
-import { isPackedTensor, packTensor } from '@base/utilities/packed';
+import { isPackedTensor } from '@base/utilities/packed';
 
 export const transpose16GradConfig: GradConfig = {
     kernelName: 'Transpose16',
@@ -42,7 +42,7 @@ function transpose16_(args: { inputs: NamedTensorInfoMap; backend: unknown; attr
         throw new Error('Transpose16 currently only supports the last axis being unchanged.');
     }
 
-    const result = packed ? packTensor(forceInt(transpose(forceFloat(x) as Tensor, perm))) : transpose(x, perm);
+    const result = packed ? forcePacked(transpose(forceFloat(x) as Tensor, perm)) : transpose(x, perm);
     return result;
 }
 

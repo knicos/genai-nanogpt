@@ -1,4 +1,3 @@
-import '@base/patches/engine';
 import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
 import { pack16 } from '../../pack16';
@@ -414,14 +413,14 @@ describe('MatMul 16-bit', { timeout: 30000 }, () => {
             expect(gradAData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
             expect(gradAData.some((v) => isNaN(v))).toBe(false);
             expect(gradAData.some((v) => !isFinite(v))).toBe(false);
-            expect(gradA.dtype).toBe('int32');
+            expect(gradA.dtype).toBe('packedF16');
             expect(isPackedTensor(gradA)).toBe(true);
 
             expect(gradB.size).toBe(packedB.size);
             expect(gradBData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
             expect(gradBData.some((v) => isNaN(v))).toBe(false);
             expect(gradBData.some((v) => !isFinite(v))).toBe(false);
-            expect(gradB.dtype).toBe('int32');
+            expect(gradB.dtype).toBe('packedF16');
             expect(isPackedTensor(gradB)).toBe(true);
         });
 
@@ -450,14 +449,14 @@ describe('MatMul 16-bit', { timeout: 30000 }, () => {
             expect(gradAData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
             expect(gradAData.some((v) => isNaN(v))).toBe(false);
             expect(gradAData.some((v) => !isFinite(v))).toBe(false);
-            expect(gradA.dtype).toBe('int32');
+            expect(gradA.dtype).toBe('packedF16');
             expect(isPackedTensor(gradA)).toBe(true);
 
             expect(gradB.size).toBe(packedB.size);
             expect(gradBData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
             expect(gradBData.some((v) => isNaN(v))).toBe(false);
             expect(gradBData.some((v) => !isFinite(v))).toBe(false);
-            expect(gradB.dtype).toBe('int32');
+            expect(gradB.dtype).toBe('packedF16');
             expect(isPackedTensor(gradB)).toBe(true);
         });
 
@@ -486,14 +485,14 @@ describe('MatMul 16-bit', { timeout: 30000 }, () => {
             expect(gradAData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
             expect(gradAData.some((v) => isNaN(v))).toBe(false);
             expect(gradAData.some((v) => !isFinite(v))).toBe(false);
-            expect(gradA.dtype).toBe('int32');
+            expect(gradA.dtype).toBe('packedF16');
             expect(isPackedTensor(gradA)).toBe(true);
 
             expect(gradB.size).toBe(packedB.size);
             expect(gradBData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
             expect(gradBData.some((v) => isNaN(v))).toBe(false);
             expect(gradBData.some((v) => !isFinite(v))).toBe(false);
-            expect(gradB.dtype).toBe('int32');
+            expect(gradB.dtype).toBe('packedF16');
             expect(isPackedTensor(gradB)).toBe(true);
         });
 

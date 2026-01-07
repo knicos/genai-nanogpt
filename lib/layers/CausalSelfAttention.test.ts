@@ -1,6 +1,5 @@
 import { describe, it, afterEach, afterAll } from 'vitest';
-import '@base/patches/engine';
-import '@tensorflow/tfjs-core/dist/base_side_effects';
+import '@tensorflow/tfjs';
 import * as tf from '@tensorflow/tfjs-core';
 import { create, globals } from 'webgpu';
 import CausalSelfAttention, { KVCache } from './CausalSelfAttention';
