@@ -1,6 +1,5 @@
 import parseTokens from '../utilities/tokenParse';
-import EE from 'eventemitter3';
-import type { ITokeniser } from './type';
+import BaseTokeniser, { SPECIALS } from './BaseTokeniser';
 
 interface TokenPair {
     a: string;
@@ -113,7 +112,7 @@ function mergeTokens(state: InternalTokenState, pair: TokenPair) {
     state.pairs.delete(makePairKey(pair.a, pair.b));
 }
 
-export default class BPETokeniser extends EE<'trainStatus'> implements ITokeniser {
+export default class BPETokeniser extends BaseTokeniser {
     private targetSize: number;
     private vocab: Set<string> = new Set();
     private vocabIndex: Map<string, number> = new Map();
@@ -134,10 +133,28 @@ export default class BPETokeniser extends EE<'trainStatus'> implements ITokenise
                 this.merges = merges;
             }
             this.targetSize = vocab.length;
+
+            // Find and add special tokens
+            SPECIALS.forEach((token) => {
+                const index = vocab.indexOf(token);
+                if (index !== -1) {
+                    this.addSpecialToken(token, index);
+                }
+            });
         } else {
-            this.vocab.add('<eos>');
-            this.vocab.add('');
+            this.addSpecialTokens();
             this.targetSize = vocab;
+        }
+    }
+
+    addToken(token: string, index?: number): number {
+        if (!this.vocab.has(token)) {
+            this.vocab.add(token);
+            const idx = index !== undefined ? index : this.vocab.size - 1;
+            this.vocabIndex.set(token, idx);
+            return idx;
+        } else {
+            return this.vocabIndex.get(token)!;
         }
     }
 

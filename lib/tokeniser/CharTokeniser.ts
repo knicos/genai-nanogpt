@@ -1,9 +1,8 @@
-import EE from 'eventemitter3';
-import type { ITokeniser } from './type';
+import BaseTokeniser, { SPECIALS } from './BaseTokeniser';
 
 const specialTokens = ['<eos>', '<unk>'];
 
-export default class CharTokeniser extends EE<'trainStatus'> implements ITokeniser {
+export default class CharTokeniser extends BaseTokeniser {
     public vocabSize: number = 0;
     public eosToken = 0;
     public unkToken = 0;
@@ -19,8 +18,17 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
             this.vocab = vocabSizeOrVocab;
             if (this.vocab.length > 0) {
                 this.vocabSize = this.vocab.length;
-                this.eosToken = this.vocab.indexOf('<eos>');
-                this.unkToken = this.vocab.indexOf('');
+
+                SPECIALS.forEach((token) => {
+                    const index = this.vocab.indexOf(token);
+                    if (index !== -1) {
+                        this.addSpecialToken(token, index);
+                    }
+                });
+
+                this.eosToken = this.getSpecialTokenIndex('<eos>')!;
+                this.unkToken = this.getSpecialTokenIndex('') ?? -1;
+
                 // Try a few common fallback tokens if <unk> is not found
                 if (this.unkToken === -1) {
                     this.unkToken = this.vocab.indexOf('<unk>');
@@ -51,13 +59,36 @@ export default class CharTokeniser extends EE<'trainStatus'> implements ITokenis
         } else {
             this.vocabSize = vocabSizeOrVocab;
             this.vocab = new Array<string>(this.vocabSize).fill('');
-            this.vocab[0] = '<eos>';
-            this.vocab[1] = '';
-            this.eosToken = 0;
-            this.unkToken = 1;
-            this.cache.set('<eos>', 0);
-            this.cache.set('', 1);
+            this.addSpecialTokens();
+            this.eosToken = this.getSpecialTokenIndex('<eos>')!;
+            this.unkToken = this.getSpecialTokenIndex('')!;
+            this.cache.set('<eos>', this.eosToken);
+            this.cache.set('', this.unkToken);
         }
+    }
+
+    addToken(token: string, index?: number): number {
+        if (this.cache.has(token)) {
+            return this.cache.get(token)!;
+        }
+
+        let tokenIndex: number;
+        if (index !== undefined) {
+            tokenIndex = index;
+        } else {
+            tokenIndex = this.vocab.indexOf('', this.unkToken + 1);
+            if (tokenIndex === -1) {
+                tokenIndex = this.vocabSize;
+            }
+        }
+
+        if (tokenIndex >= this.vocabSize) {
+            throw new Error('Vocab size exceeded');
+        }
+
+        this.vocab[tokenIndex] = token;
+        this.cache.set(token, tokenIndex);
+        return tokenIndex;
     }
 
     public get trained(): boolean {

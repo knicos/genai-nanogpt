@@ -1,5 +1,6 @@
 import { describe, it } from 'vitest';
 import BPETokeniser from './bpe';
+import { Conversation } from './type';
 
 describe('BPE Tokeniser Tests', () => {
     it('token per word if possible', async ({ expect }) => {
@@ -107,5 +108,22 @@ describe('BPE Tokeniser Tests', () => {
         const decodedText = await bpe.detokenise(eosTokens);
 
         expect(decodedText.map((t) => t.trim())).toEqual(textData.map((t) => t + '<eos>'));
+    });
+
+    it('can encode and decode a conversation', async ({ expect }) => {
+        const bpeTokeniser = new BPETokeniser(100);
+
+        const conversation: Conversation[] = [
+            { role: 'user', content: 'Hello, how are you?' },
+            { role: 'assistant', content: 'I am fine, thank you!' },
+            { role: 'system', content: 'This is a system message.' },
+        ];
+
+        await bpeTokeniser.train(conversation.map((c) => c.content));
+
+        const encoded = await bpeTokeniser.encodeConversation(conversation);
+        const decoded = await bpeTokeniser.decodeConversation(encoded);
+
+        expect(decoded).toEqual(conversation);
     });
 });
