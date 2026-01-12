@@ -3,6 +3,7 @@ import EE from 'eventemitter3';
 
 export const SPECIALS = [
     '<eos>',
+    '<bos>',
     '',
     '<|user_start|>',
     '<|user_end|>',
@@ -14,22 +15,30 @@ export const SPECIALS = [
 
 export default abstract class BaseTokeniser extends EE<'trainStatus'> implements ITokeniser {
     protected specialTokens: Map<string, number> = new Map();
+    protected specialTokenSet: Set<number> = new Set();
 
     abstract vocabSize: number;
     abstract eosToken: number;
+    abstract bosToken: number;
     abstract trained: boolean;
 
     abstract addToken(token: string, index?: number): number;
+
+    public isSpecialToken(index: number): boolean {
+        return this.specialTokenSet.has(index);
+    }
 
     protected addSpecialTokens() {
         SPECIALS.forEach((token, index) => {
             this.addToken(token, index);
             this.specialTokens.set(token, index);
+            this.specialTokenSet.add(index);
         });
     }
 
     protected addSpecialToken(token: string, index: number) {
         this.specialTokens.set(token, index);
+        this.specialTokenSet.add(index);
     }
 
     abstract train(text: string[]): Promise<number>;
@@ -40,8 +49,13 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
     abstract destroy(): void;
     abstract encode(text: string): Promise<number[]>;
 
+    async encodeSequence(text: string): Promise<number[]> {
+        const tokens = await this.encode(text);
+        return [this.bosToken, ...tokens, this.eosToken];
+    }
+
     async encodeConversation(conversation: Conversation[], completion?: boolean): Promise<number[]> {
-        const resultTokens: number[][] = [];
+        const resultTokens: number[][] = [[this.bosToken]];
 
         const startTokens = [
             this.getSpecialTokenIndex('<|user_start|>')!,
@@ -84,6 +98,8 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
 
         if (completion) {
             tokens.push(startTokens[1]); // Assistant start token for completion
+        } else {
+            tokens.push(this.eosToken);
         }
 
         return tokens;
@@ -123,7 +139,7 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
         return conversation;
     }
 
-    protected getSpecialTokenIndex(token: string): number | undefined {
+    public getSpecialTokenIndex(token: string): number | undefined {
         return this.specialTokens.get(token);
     }
 }

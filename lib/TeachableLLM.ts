@@ -1,5 +1,5 @@
 import { defaultConfig, GPTConfig } from './models/config';
-import type { ITokeniser } from './tokeniser/type';
+import type { Conversation, ITokeniser } from './tokeniser/type';
 import { saveModel, SaveOptions } from './loader/save';
 import { loadModel } from './loader/load';
 import Generator, { IGenerateOptions } from './Generator';
@@ -214,7 +214,7 @@ export default class TeachableLLM {
         return trainer;
     }
 
-    async train(text: string[], options?: ITrainerOptions): Promise<void> {
+    async train(text: Conversation[][], options?: ITrainerOptions): Promise<void> {
         const trainer = this.trainer();
         await trainer.prepare(text, options);
         await trainer.train(options);
@@ -245,8 +245,13 @@ export default class TeachableLLM {
         return generator;
     }
 
-    generateText(prompt?: string, options?: IGenerateOptions): Promise<string> {
-        return this.generator().generate(prompt, options);
+    generateText(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;
+    generateText(options?: IGenerateOptions): Promise<Conversation[]>;
+    generateText(prompt?: Conversation[] | IGenerateOptions, options?: IGenerateOptions): Promise<Conversation[]> {
+        if (Array.isArray(prompt)) {
+            return this.generator().generate(prompt, options);
+        }
+        return this.generator().generate([], options);
     }
 
     dispose() {

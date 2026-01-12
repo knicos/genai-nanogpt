@@ -1,4 +1,4 @@
-import type { ITokeniser } from './tokeniser/type';
+import type { Conversation, ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import FullTrainer from './training/FullTrainer';
 import { TrainingLogEntry, TrainingProgress } from './training/Trainer';
@@ -49,14 +49,16 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         this.trainer.reset();
     }
 
-    async prepare(text: string[], options?: ITrainerOptions): Promise<void> {
+    async prepare(text: Conversation[][], options?: ITrainerOptions): Promise<void> {
         const { trainDataset, validationDataset } = await this.trainer.createTrainValidationSplit(
             text,
             options?.batchSize || 32,
             options?.validationSplit || 0.1
         );
 
-        const totalSamples = text.reduce((sum, t) => sum + t.length, 0) * (1 - (options?.validationSplit || 0));
+        const totalSamples =
+            text.reduce((sum, t) => sum + t.reduce((sum, tt) => sum + tt.content.length, 0), 0) *
+            (1 - (options?.validationSplit || 0));
 
         this.trainDataset = trainDataset;
         this.validationDataset = validationDataset;

@@ -1,4 +1,4 @@
-import type { ITokeniser } from './tokeniser/type';
+import type { Conversation, ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import { KVCache } from './layers/CausalSelfAttention';
 import {
@@ -19,6 +19,12 @@ import multinomialCPU from './utilities/multinomialCPU';
 import Model, { ModelForwardAttributes } from './models/model';
 import topP from './utilities/topP';
 import { sparseSoftmaxCrossEntropy } from './training/sparseCrossEntropy';
+import { SPECIALS } from './tokeniser/BaseTokeniser';
+
+interface GeneratorConversation extends Conversation {
+    _completed?: boolean;
+    _timestamp?: number;
+}
 
 export interface GenerateOptions {
     temperature?: number;
@@ -31,7 +37,12 @@ export interface GenerateOptions {
     targets?: number[];
 }
 
+export function isConversation(data: unknown): data is Conversation[] {
+    return Array.isArray(data);
+}
+
 const CHARS = [
+    ...SPECIALS,
     ...Array.from({ length: 95 }, (_, i) => String.fromCharCode(i + 32)), // ASCII
     // Spanish accented letters and punctuation
     ...'áéíóúüñ¿¡',
@@ -52,6 +63,7 @@ function padArray(arr: string[], length: number): string[] {
 export interface IGenerateOptions extends GenerateOptions {
     maxLength?: number; /// Maximum length of the generated text
     noCache?: boolean;
+    allowSpecial?: boolean;
 }
 
 /**
@@ -61,8 +73,8 @@ export interface IGenerateOptions extends GenerateOptions {
 export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     private active = false;
     private cache: KVCache[] | null = null;
-    private initialPrompt: string | null = null;
-    private outputText = '';
+    private initialPrompt: string | Conversation[] | null = null;
+    private outputConversation: GeneratorConversation[] = [];
     private actualTokeniser: ITokeniser;
     private lastToken = -1;
     private attentionData: number[][][][][] = [];
@@ -76,26 +88,38 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         this.actualTokeniser = tokeniser;
     }
 
-    private async tokenisePrompt(tokeniser: ITokeniser, prompt?: string): Promise<Tensor> {
-        const tokenisedPrompt = prompt ? await tokeniser.tokenise([prompt], true) : [[tokeniser.eosToken]];
-        if (tokenisedPrompt[0].length > this.model.config.blockSize) {
-            tokenisedPrompt[0] = tokenisedPrompt[0].slice(-this.model.config.blockSize);
+    private async tokenisePrompt(tokeniser: ITokeniser, prompt?: Conversation[]): Promise<Tensor> {
+        if (prompt) {
+            let tokenisedPrompt = await tokeniser.encodeConversation(prompt, true);
+            if (tokenisedPrompt.length > this.model.config.blockSize) {
+                tokenisedPrompt = tokenisedPrompt.slice(-this.model.config.blockSize);
+            }
+
+            const inputTensor: Tensor = tensor2d([tokenisedPrompt], [1, tokenisedPrompt.length], 'int32');
+            return inputTensor;
+        } else {
+            const startToken = tokeniser.getSpecialTokenIndex('<|assistant_start|>');
+            const tokenisedPrompt = startToken !== undefined ? [tokeniser.bosToken, startToken] : [tokeniser.bosToken];
+            const inputTensor: Tensor = tensor2d([tokenisedPrompt], [1, tokenisedPrompt.length], 'int32');
+            return inputTensor;
         }
-        const inputTensor: Tensor = tensor2d(tokenisedPrompt, [1, tokenisedPrompt[0].length], 'int32');
-        return inputTensor;
     }
 
     private async processResponse(
         tokeniser: ITokeniser,
         generatedToken: Tensor,
+        allowSpecial: boolean,
         attention: Tensor[] | undefined,
         probabilities: number[][] | undefined
     ): Promise<string | null> {
         const newToken = ((await generatedToken.array()) as number[][])[0][0];
         this.lastToken = newToken;
-        if (newToken === this.tokeniser.eosToken) {
+
+        // Todo: Handle special tokens properly
+        if (!allowSpecial && this.tokeniser.isSpecialToken(newToken)) {
             return null;
         }
+
         const newText = await tokeniser.decode([newToken]);
 
         if (attention) {
@@ -283,11 +307,22 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     }
 
     /** Generate multiple tokens in a loop and produce text */
-    private async _generate(options?: IGenerateOptions): Promise<string> {
+    private async _generate(options?: IGenerateOptions): Promise<Conversation[]> {
+        // Begin a new assistant response in conversation
+        if (
+            this.lastToken < 0 ||
+            this.outputConversation.length === 0 ||
+            this.outputConversation[this.outputConversation.length - 1]._completed ||
+            this.outputConversation[this.outputConversation.length - 1].role !== 'assistant'
+        ) {
+            this.outputConversation.push({ role: 'assistant', content: '', _timestamp: Date.now() });
+            this.resetCache();
+        }
+
         let inputTensor =
             this.lastToken >= 0 && this.cache
                 ? tensor2d([this.lastToken], [1, 1], 'int32')
-                : await this.tokenisePrompt(this.actualTokeniser, this.outputText);
+                : await this.tokenisePrompt(this.actualTokeniser, this.outputConversation.slice(0, -1));
 
         const maxTokens = options?.maxLength ?? 1000;
 
@@ -320,21 +355,29 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
                 oldInput.dispose();
             }
 
-            const newText = await this.processResponse(this.actualTokeniser, generatedToken, attention, probabilities);
+            const newText = await this.processResponse(
+                this.actualTokeniser,
+                generatedToken,
+                options?.allowSpecial ?? false,
+                attention,
+                probabilities
+            );
             if (!this.cache) {
                 generatedToken.dispose();
             }
             if (newText === null) {
+                this.outputConversation[this.outputConversation.length - 1]._completed = true;
                 break;
             }
-            this.outputText += newText;
+
+            this.outputConversation[this.outputConversation.length - 1].content += newText;
         }
 
         inputTensor.dispose();
-        return this.outputText;
+        return this.outputConversation;
     }
 
-    public reset() {
+    private resetCache() {
         if (this.cache) {
             this.cache.forEach((c) => {
                 if (c) {
@@ -344,9 +387,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             });
             this.cache = null;
         }
-        this.outputText = '';
-        this.initialPrompt = null;
         this.lastToken = -1;
+    }
+
+    public reset() {
+        this.resetCache();
+        this.outputConversation = [];
+        this.initialPrompt = null;
         this.attentionData = [];
         this.probabilitiesData = [];
         this.tokens = [];
@@ -357,14 +404,19 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         this.reset();
     }
 
-    private initialise(prompt?: string, options?: IGenerateOptions) {
+    private initialise(prompt?: Conversation[], options?: IGenerateOptions) {
         if (this.cache && options?.noCache) {
             this.reset();
         }
 
         this.initialPrompt = prompt || null;
         if (this.lastToken === -1) {
-            this.outputText = this.initialPrompt || '';
+            this.outputConversation = (this.initialPrompt || []).slice();
+            console.log('Setting conversation in generator.', prompt);
+        } else if (prompt && prompt.length > this.outputConversation.length) {
+            // If the conversation is now longer, update it
+            this.outputConversation = (this.initialPrompt || []).slice();
+            this.resetCache();
         }
 
         if (!this.cache && !options?.noCache && this.model.config.useRope) {
@@ -382,12 +434,32 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         this.actualTokeniser = tokeniser;
     }
 
-    public async step(prompt?: string, options?: IGenerateOptions): Promise<string> {
+    async step(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;
+    async step(options?: IGenerateOptions): Promise<Conversation[]>;
+    public async step(
+        promptOrOptions?: Conversation[] | IGenerateOptions,
+        options?: IGenerateOptions
+    ): Promise<Conversation[]> {
         const stepOptions = { ...options, maxLength: 1 };
-        return this.generate(prompt, stepOptions);
+        if (isConversation(promptOrOptions)) {
+            return this.generate(promptOrOptions, stepOptions);
+        } else {
+            return this.generate({ ...promptOrOptions, ...stepOptions });
+        }
     }
 
-    public async generate(prompt?: string, options?: IGenerateOptions): Promise<string> {
+    async generate(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;
+    async generate(options?: IGenerateOptions): Promise<Conversation[]>;
+    public async generate(
+        promptOrOptions?: Conversation[] | IGenerateOptions,
+        options?: IGenerateOptions
+    ): Promise<Conversation[]> {
+        let prompt: Conversation[] | undefined = undefined;
+        if (Array.isArray(promptOrOptions)) {
+            prompt = promptOrOptions;
+        } else if (typeof promptOrOptions === 'object') {
+            options = promptOrOptions;
+        }
         this.initialise(prompt, options);
         this.active = true;
         if (options?.maxLength !== 1) this.emit('start');
@@ -402,8 +474,8 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         this.active = false;
     }
 
-    public getText(): string {
-        return this.outputText;
+    public getConversation(): Conversation[] {
+        return this.outputConversation;
     }
 
     public getAttentionData(): number[][][][][] {

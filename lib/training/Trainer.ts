@@ -1,4 +1,4 @@
-import type { ITokeniser } from '../tokeniser/type';
+import type { Conversation, ITokeniser } from '../tokeniser/type';
 import { DatasetBuilder, flattenTokens, PAGE_FACTOR } from './DatasetBuilder';
 import AdamExt from './AdamExt';
 import { NamedTensorMap, NamedVariableMap, TensorContainer } from '@tensorflow/tfjs-core/dist/tensor_types';
@@ -211,7 +211,7 @@ export default abstract class GPTTrainer {
     ): Promise<{ log: TrainingLogEntry; progress: TrainingProgress }>;
 
     async createTrainValidationSplit(
-        textData: string[],
+        textData: Conversation[][],
         batchSize: number = 32,
         validationSplit: number = 0.1
     ): Promise<{
@@ -242,7 +242,7 @@ export default abstract class GPTTrainer {
         return { trainDataset, validationDataset };
     }
 
-    async createDataset(textData: string[], batchSize: number = 32): Promise<Dataset<TensorContainer>> {
+    async createDataset(textData: Conversation[][], batchSize: number = 32): Promise<Dataset<TensorContainer>> {
         const allTokens = await flattenTokens(textData, this.tokenizer);
         const trainDataset = await this.datasetBuilder.createTextDataset(allTokens, batchSize);
         return trainDataset;

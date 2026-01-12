@@ -5,6 +5,7 @@ const specialTokens = ['<eos>', '<unk>'];
 export default class CharTokeniser extends BaseTokeniser {
     public vocabSize: number = 0;
     public eosToken = 0;
+    public bosToken = 0;
     public unkToken = 0;
     public vocab: string[] = [];
     private cache: Map<string, number> = new Map();
@@ -27,6 +28,7 @@ export default class CharTokeniser extends BaseTokeniser {
                 });
 
                 this.eosToken = this.getSpecialTokenIndex('<eos>')!;
+                this.bosToken = this.getSpecialTokenIndex('<bos>') ?? this.eosToken;
                 this.unkToken = this.getSpecialTokenIndex('') ?? -1;
 
                 // Try a few common fallback tokens if <unk> is not found
@@ -61,8 +63,13 @@ export default class CharTokeniser extends BaseTokeniser {
             this.vocab = new Array<string>(this.vocabSize).fill('');
             this.addSpecialTokens();
             this.eosToken = this.getSpecialTokenIndex('<eos>')!;
+            this.bosToken = this.getSpecialTokenIndex('<bos>') ?? this.eosToken;
             this.unkToken = this.getSpecialTokenIndex('')!;
-            this.cache.set('<eos>', this.eosToken);
+
+            // Special tokens don't really need to be cached
+            this.vocab.forEach((token, index) => {
+                this.cache.set(token, index);
+            });
             this.cache.set('', this.unkToken);
         }
     }

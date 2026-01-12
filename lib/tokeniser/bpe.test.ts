@@ -84,13 +84,14 @@ describe('BPE Tokeniser Tests', () => {
     });
 
     it('merges repeated punctuation', async ({ expect }) => {
-        const bpe = new BPETokeniser(40);
+        const bpe = new BPETokeniser(60);
 
         const textData = ['hello!!!', 'this is a test...', 'hello again!!!', '\t\t\twow'];
 
         await bpe.train(textData);
 
         const vocab = bpe.getVocab();
+        console.log('Vocab:', vocab);
         expect(vocab).toContain('!!!');
         expect(vocab).toContain('...');
         expect(vocab).toContain('\t\t\t');
@@ -120,6 +121,8 @@ describe('BPE Tokeniser Tests', () => {
         ];
 
         await bpeTokeniser.train(conversation.map((c) => c.content));
+
+        console.log('Vocab:', bpeTokeniser.getVocab());
 
         const encoded = await bpeTokeniser.encodeConversation(conversation);
         const decoded = await bpeTokeniser.decodeConversation(encoded);

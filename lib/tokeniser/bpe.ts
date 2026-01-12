@@ -177,6 +177,10 @@ export default class BPETokeniser extends BaseTokeniser {
         return this.vocabIndex.get('<eos>') ?? 0;
     }
 
+    public get bosToken(): number {
+        return this.vocabIndex.get('<bos>') ?? 0;
+    }
+
     public get unkToken(): number {
         return this.vocabIndex.get('') ?? 1;
     }
@@ -189,8 +193,7 @@ export default class BPETokeniser extends BaseTokeniser {
         this.pretokenMap.clear();
         this.merges = [];
 
-        this.vocab.add('<eos>');
-        this.vocab.add('');
+        this.addSpecialTokens();
 
         const pretokensArray = Array.from(preTokenSet);
         const tokens = pretokensArray.map((token) => {

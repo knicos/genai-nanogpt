@@ -15,10 +15,14 @@ export interface ITokeniser extends EE<'trainStatus'> {
     getMerges(): Promise<[string, string][]>;
     destroy(): void;
     encode(text: string): Promise<number[]>;
-    encodeConversation(conversation: Conversation[]): Promise<number[]>;
+    encodeConversation(conversation: Conversation[], completion?: boolean): Promise<number[]>;
+    encodeSequence(text: string): Promise<number[]>;
     decode(tokens: number[]): Promise<string>;
     decodeConversation(tokens: number[]): Promise<Conversation[]>;
     vocabSize: number;
     eosToken: number;
+    bosToken: number;
     trained: boolean;
+    getSpecialTokenIndex(token: string): number | undefined;
+    isSpecialToken(index: number): boolean;
 }

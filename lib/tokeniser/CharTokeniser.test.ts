@@ -78,7 +78,8 @@ describe('CharTokeniser Tests', () => {
         expect(vocabAfterSecondTrain).toContain('r');
         expect(vocabAfterSecondTrain).toContain('t');
         expect(vocabAfterSecondTrain).toContain('');
-        expect(vocabAfterSecondTrain[1]).toBe('');
+        expect(vocabAfterSecondTrain[2]).toBe('');
+        expect(vocabAfterSecondTrain[1]).toBe('<bos>');
         expect(vocabAfterFirstTrain).toHaveLength(30);
         expect(vocabAfterSecondTrain).toHaveLength(30);
     });
@@ -95,6 +96,13 @@ describe('CharTokeniser Tests', () => {
         await charTokeniser.train(conversation.map((c) => c.content));
 
         const encoded = await charTokeniser.encodeConversation(conversation);
+
+        expect(encoded[0]).toBe(charTokeniser.bosToken);
+        expect(encoded[encoded.length - 1]).toBe(charTokeniser.eosToken);
+        expect(encoded).toContain(charTokeniser.getSpecialTokenIndex('<|user_start|>')!);
+        expect(encoded).toContain(charTokeniser.getSpecialTokenIndex('<|assistant_start|>')!);
+        expect(encoded).toContain(charTokeniser.getSpecialTokenIndex('<|assistant_end|>')!);
+
         const decoded = await charTokeniser.decodeConversation(encoded);
 
         expect(decoded).toEqual(conversation);

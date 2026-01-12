@@ -1,23 +1,14 @@
 import { Tensor, tidy } from '@tensorflow/tfjs-core';
-import type { ITokeniser } from '../tokeniser/type';
+import type { Conversation, ITokeniser } from '../tokeniser/type';
 import { Dataset, generator } from '@tensorflow/tfjs-data';
 
 export const PAGE_FACTOR = 8;
 
-export async function flattenTokens(textData: string[], tokenizer: ITokeniser): Promise<number[]> {
+export async function flattenTokens(textData: Conversation[][], tokenizer: ITokeniser): Promise<number[]> {
     // Process ALL text into one token array first
-    const tokenisedTexts = await Promise.all(textData.map((text) => tokenizer.encode(text)));
-    // Flatten and add EOS token
-    const hasEOS = tokenizer.eosToken >= 0;
-    const flatTokens = tokenisedTexts.map((t) => (hasEOS ? [...t, tokenizer.eosToken] : t)).flat();
+    const tokenisedTexts = await Promise.all(textData.map((text) => tokenizer.encodeConversation(text)));
 
-    // Assert all indices are valid
-    for (const token of flatTokens) {
-        if (token < 0 || token >= tokenizer.vocabSize) {
-            throw new Error(`Invalid token index ${token} found in tokenised data`);
-        }
-    }
-
+    const flatTokens = tokenisedTexts.flat();
     return flatTokens;
 }
 
