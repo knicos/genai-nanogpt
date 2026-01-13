@@ -154,9 +154,9 @@ export default class CharTokeniser extends BaseTokeniser {
         return this.vocabSize;
     }
 
-    public async tokenise(text: string[], numeric: true): Promise<number[][]>;
-    public async tokenise(text: string[]): Promise<string[][]>;
-    public async tokenise(text: string[], numeric?: boolean): Promise<string[][] | number[][]> {
+    public tokenise(text: string[], numeric: true): number[][];
+    public tokenise(text: string[]): string[][];
+    public tokenise(text: string[], numeric?: boolean): string[][] | number[][] {
         if (!this.trained) {
             throw new Error('Tokeniser not trained');
         }
@@ -175,24 +175,28 @@ export default class CharTokeniser extends BaseTokeniser {
         return tokenised as string[][] | number[][];
     }
 
-    public async detokenise(tokens: number[][]): Promise<string[]> {
-        const text = tokens.map((t) => t.map((tt) => this.vocab[tt]).join(''));
+    public detokenise(tokens: (number[] | Uint16Array)[]): string[] {
+        const text = tokens.map((t) => {
+            return Array.from(t)
+                .map((index) => this.vocab[index] || '')
+                .join('');
+        });
         return text;
     }
 
-    public async encode(text: string): Promise<number[]> {
-        return (await this.tokenise([text], true))[0];
+    public encode(text: string): number[] {
+        return this.tokenise([text], true)[0];
     }
 
-    public async decode(tokens: number[]): Promise<string> {
-        return (await this.detokenise([tokens]))[0];
+    public decode(tokens: number[] | Uint16Array): string {
+        return this.detokenise([tokens])[0];
     }
 
     public getVocab(): string[] {
         return this.vocab;
     }
 
-    public async getMerges(): Promise<[string, string][]> {
+    public getMerges(): [string, string][] {
         // Char tokeniser does not use merges
         return [];
     }

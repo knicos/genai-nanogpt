@@ -42,19 +42,17 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
     }
 
     abstract train(text: string[]): Promise<number>;
-    abstract tokenise(text: string[], numeric?: boolean): Promise<string[][] | number[][]>;
-    abstract detokenise(tokens: string[][] | number[][]): Promise<string[]>;
     abstract getVocab(): string[];
-    abstract getMerges(): Promise<[string, string][]>;
+    abstract getMerges(): [string, string][];
     abstract destroy(): void;
-    abstract encode(text: string): Promise<number[]>;
+    abstract encode(text: string): number[];
 
-    async encodeSequence(text: string): Promise<number[]> {
-        const tokens = await this.encode(text);
+    encodeSequence(text: string): number[] {
+        const tokens = this.encode(text);
         return [this.bosToken, ...tokens, this.eosToken];
     }
 
-    async encodeConversation(conversation: Conversation[], completion?: boolean): Promise<number[]> {
+    encodeConversation(conversation: Conversation[], completion?: boolean): number[] {
         const resultTokens: number[][] = [[this.bosToken]];
 
         const startTokens = [
@@ -69,7 +67,7 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
         ];
 
         for (const fragment of conversation) {
-            const encodedContent = await this.encode(fragment.content);
+            const encodedContent = this.encode(fragment.content);
             switch (fragment.role) {
                 case 'user':
                     resultTokens.push([startTokens[0]]);
@@ -105,9 +103,9 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
         return tokens;
     }
 
-    abstract decode(tokens: number[]): Promise<string>;
+    abstract decode(tokens: number[]): string;
 
-    async decodeConversation(tokens: number[]): Promise<Conversation[]> {
+    decodeConversation(tokens: number[]): Conversation[] {
         const conversation: Conversation[] = [];
 
         let index = 0;
@@ -130,7 +128,7 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
                     contentTokens.push(tokens[index]);
                     index++;
                 }
-                const content = await this.decode(contentTokens);
+                const content = this.decode(contentTokens);
                 conversation.push({ role, content });
             }
             index++;

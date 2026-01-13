@@ -29,7 +29,7 @@ describe('DatasetBuilder', () => {
                 { role: 'assistant', content: 'I am fine' },
             ],
         ];
-        const allTokens = await flattenTokens(textData, mockTokenizer);
+        const allTokens = new Uint16Array(await flattenTokens(textData, mockTokenizer));
         const dataset = await datasetBuilder.createTextDataset(allTokens, 2);
 
         // Assertions
@@ -67,7 +67,7 @@ describe('DatasetBuilder', () => {
 
         // Test createTextDataset method with a single text input
         const textData: Conversation[] = [{ role: 'user', content: 'hello world hello world hello world hello world' }];
-        const allTokens = await flattenTokens([textData], mockTokenizer);
+        const allTokens = new Uint16Array(await flattenTokens([textData], mockTokenizer));
         const maskSet = new Set<number>();
         maskSet.add(0); // Mask the first page
         const dataset = await datasetBuilder.createTextDataset(allTokens, 2, maskSet, false);

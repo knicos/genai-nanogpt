@@ -26,7 +26,7 @@ export class DatasetBuilder {
 
     // Create dataset from text files
     public async createTextDataset(
-        flatTokens: number[],
+        flatTokens: Uint16Array,
         batchSize: number = 32,
         masked?: Set<number>,
         invertMask?: boolean
@@ -52,8 +52,8 @@ export class DatasetBuilder {
                         continue; // Skip if out of bounds
                     }
 
-                    const xs = flatTokens.slice(i, i + this.blockSize);
-                    const ys = flatTokens.slice(i + 1, i + this.blockSize + 1);
+                    const xs = new Int32Array(flatTokens.subarray(i, i + this.blockSize));
+                    const ys = new Int32Array(flatTokens.subarray(i + 1, i + this.blockSize + 1));
                     yield { xs, ys };
                 }
             } else {
@@ -70,8 +70,8 @@ export class DatasetBuilder {
                         }
                     }
 
-                    const xs = flatTokens.slice(i, i + this.blockSize);
-                    const ys = flatTokens.slice(i + 1, i + this.blockSize + 1);
+                    const xs = new Int32Array(flatTokens.subarray(i, i + this.blockSize));
+                    const ys = new Int32Array(flatTokens.subarray(i + 1, i + this.blockSize + 1));
                     yield { xs, ys };
                 }
             }

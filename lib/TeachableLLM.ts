@@ -12,6 +12,7 @@ import BPETokeniser from './tokeniser/bpe';
 import { TrainingLogEntry, TrainingProgress } from './training/Trainer';
 import Model, { ModelForwardAttributes } from './models/model';
 import createModelInstance from './models/factory';
+import { Task } from './training/tasks/Task';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded';
@@ -214,7 +215,7 @@ export default class TeachableLLM {
         return trainer;
     }
 
-    async train(text: Conversation[][], options?: ITrainerOptions): Promise<void> {
+    async train(text: Task[], options?: ITrainerOptions): Promise<void> {
         const trainer = this.trainer();
         await trainer.prepare(text, options);
         await trainer.train(options);

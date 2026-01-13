@@ -1,10 +1,11 @@
-import type { Conversation, ITokeniser } from './tokeniser/type';
+import type { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
 import FullTrainer from './training/FullTrainer';
 import { TrainingLogEntry, TrainingProgress } from './training/Trainer';
 import { Dataset } from '@tensorflow/tfjs-data';
 import { Tensor } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from './models/model';
+import { Task } from './training/tasks/Task';
 
 export interface ITrainerOptions {
     batchSize?: number; // Batch size for training
@@ -49,16 +50,18 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         this.trainer.reset();
     }
 
-    async prepare(text: Conversation[][], options?: ITrainerOptions): Promise<void> {
-        const { trainDataset, validationDataset } = await this.trainer.createTrainValidationSplit(
-            text,
+    getTotalSamples(): number {
+        return this.totalSamples;
+    }
+
+    async prepare(tasks: Task[], options?: ITrainerOptions): Promise<void> {
+        const { trainDataset, validationDataset, size } = await this.trainer.createTrainValidationSplit(
+            tasks,
             options?.batchSize || 32,
             options?.validationSplit || 0.1
         );
 
-        const totalSamples =
-            text.reduce((sum, t) => sum + t.reduce((sum, tt) => sum + tt.content.length, 0), 0) *
-            (1 - (options?.validationSplit || 0));
+        const totalSamples = size * (1 - (options?.validationSplit || 0));
 
         this.trainDataset = trainDataset;
         this.validationDataset = validationDataset;

@@ -32,11 +32,11 @@ export function meanPooling(embeddings: Tensor3D, attentionMask?: Tensor2D): Ten
     return pooledEmbeddings;
 }
 
-export async function sentenceEmbeddingsTensor(
+export function sentenceEmbeddingsTensor(
     model: TeachableLLM,
     sentences: string[],
     batchSize: number = BATCH_SIZE
-): Promise<Tensor2D> {
+): Tensor2D {
     // Generate tokens and batches from sentence strings
     const tokeniser = model.tokeniser;
     const contextLength = model.config.blockSize;
@@ -46,7 +46,7 @@ export async function sentenceEmbeddingsTensor(
     let currentIndex = 0;
     while (currentIndex < sentences.length) {
         const batchSentences = sentences.slice(currentIndex, currentIndex + BATCH_SIZE);
-        const sentenceTokens = (await tokeniser.tokenise(batchSentences, true)) as number[][];
+        const sentenceTokens = batchSentences.map((s) => tokeniser.encode(s));
 
         // Truncate or pad tokens to context length and track attention mask
         const inputTokens: number[][] = [];

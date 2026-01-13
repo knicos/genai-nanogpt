@@ -21,6 +21,16 @@ export {
     validateConfig,
 } from './utilities/parameters';
 export { default as topP } from './utilities/topP';
+export { Task } from './training/tasks/Task';
+import { default as PretrainingTask } from './training/tasks/PretrainingTask';
+import { default as StartSentenceTask } from './training/tasks/StartSentenceTask';
+import { default as ConversationTask } from './training/tasks/ConversationTask';
+
+export const tasks = {
+    PretrainingTask,
+    StartSentenceTask,
+    ConversationTask,
+};
 
 import './ops/scatterSub';
 import './ops/gatherSub';

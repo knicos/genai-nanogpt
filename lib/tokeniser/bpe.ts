@@ -238,7 +238,7 @@ export default class BPETokeniser extends BaseTokeniser {
         return Array.from(this.vocab);
     }
 
-    public async getMerges() {
+    public getMerges() {
         return this.merges;
     }
 
@@ -267,9 +267,9 @@ export default class BPETokeniser extends BaseTokeniser {
         });
     }
 
-    public async tokenise(text: string[], numeric: true): Promise<number[][]>;
-    public async tokenise(text: string[]): Promise<string[][]>;
-    public async tokenise(text: string[], numeric?: boolean): Promise<number[][] | string[][]> {
+    public tokenise(text: string[], numeric: true): number[][];
+    public tokenise(text: string[]): string[][];
+    public tokenise(text: string[], numeric?: boolean): number[][] | string[][] {
         const tokens = this.tokeniseStrings(text);
         if (numeric) {
             return tokens.map((ts) => ts.map((t) => this.vocabIndex.get(t) ?? this.unkToken));
@@ -278,17 +278,17 @@ export default class BPETokeniser extends BaseTokeniser {
         }
     }
 
-    public async detokenise(tokens: number[][]): Promise<string[]> {
+    public detokenise(tokens: number[][]): string[] {
         const vocab = this.getVocab();
         const text = tokens.map((t) => t.map((tt) => vocab[tt]).join(''));
         return text;
     }
 
-    public async encode(text: string): Promise<number[]> {
-        return (await this.tokenise([text], true))[0];
+    public encode(text: string): number[] {
+        return this.tokenise([text], true)[0];
     }
 
-    public async decode(tokens: number[]): Promise<string> {
-        return (await this.detokenise([tokens]))[0];
+    public decode(tokens: number[]): string {
+        return this.detokenise([tokens])[0];
     }
 }

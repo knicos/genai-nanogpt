@@ -1,11 +1,12 @@
-import type { Conversation, ITokeniser } from '../tokeniser/type';
-import { DatasetBuilder, flattenTokens, PAGE_FACTOR } from './DatasetBuilder';
+import type { ITokeniser } from '../tokeniser/type';
+import { DatasetBuilder, PAGE_FACTOR } from './DatasetBuilder';
 import AdamExt from './AdamExt';
-import { NamedTensorMap, NamedVariableMap, TensorContainer } from '@tensorflow/tfjs-core/dist/tensor_types';
+import { NamedTensorMap, NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
 import { dispose, keep, scalar, Scalar, Tensor, tidy, variableGrads, zeros } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
 import Model, { ModelForwardAttributes } from '@base/models/model';
 import { TensorStatistics } from '../checks/weights';
+import { Task, tokensFromTasks } from './tasks/Task';
 
 export interface TrainingLogEntry {
     loss: number;
@@ -211,14 +212,15 @@ export default abstract class GPTTrainer {
     ): Promise<{ log: TrainingLogEntry; progress: TrainingProgress }>;
 
     async createTrainValidationSplit(
-        textData: Conversation[][],
+        tasks: Task[],
         batchSize: number = 32,
         validationSplit: number = 0.1
     ): Promise<{
         trainDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
         validationDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
+        size: number;
     }> {
-        const allTokens = await flattenTokens(textData, this.tokenizer);
+        const allTokens = await tokensFromTasks(tasks, this.tokenizer);
 
         const validationMask = new Set<number>();
         if (validationSplit > 0) {
@@ -239,13 +241,7 @@ export default abstract class GPTTrainer {
             true
         );
 
-        return { trainDataset, validationDataset };
-    }
-
-    async createDataset(textData: Conversation[][], batchSize: number = 32): Promise<Dataset<TensorContainer>> {
-        const allTokens = await flattenTokens(textData, this.tokenizer);
-        const trainDataset = await this.datasetBuilder.createTextDataset(allTokens, batchSize);
-        return trainDataset;
+        return { trainDataset, validationDataset, size: allTokens.length };
     }
 
     dispose(): void {

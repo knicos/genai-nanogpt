@@ -9,16 +9,16 @@ export interface Conversation {
 
 export interface ITokeniser extends EE<'trainStatus'> {
     train(text: string[]): Promise<number>;
-    tokenise(text: string[], numeric?: boolean): Promise<string[][] | number[][]>;
-    detokenise(tokens: string[][] | number[][]): Promise<string[]>;
+    //tokenise(text: string[], numeric?: boolean): Promise<string[][] | number[][]>;
+    //detokenise(tokens: (number[] | Uint16Array)[]): Promise<string[]>;
     getVocab(): string[];
-    getMerges(): Promise<[string, string][]>;
+    getMerges(): [string, string][];
     destroy(): void;
-    encode(text: string): Promise<number[]>;
-    encodeConversation(conversation: Conversation[], completion?: boolean): Promise<number[]>;
-    encodeSequence(text: string): Promise<number[]>;
-    decode(tokens: number[]): Promise<string>;
-    decodeConversation(tokens: number[]): Promise<Conversation[]>;
+    encode(text: string): number[];
+    encodeConversation(conversation: Conversation[], completion?: boolean): number[];
+    encodeSequence(text: string): number[];
+    decode(tokens: number[] | Uint16Array): string;
+    decodeConversation(tokens: number[] | Uint16Array): Conversation[];
     vocabSize: number;
     eosToken: number;
     bosToken: number;
