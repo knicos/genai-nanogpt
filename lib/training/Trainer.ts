@@ -64,7 +64,11 @@ export default abstract class GPTTrainer {
     protected _mixedPrecision: boolean = false;
     protected lossScaling: number;
 
-    constructor(model: Model<ModelForwardAttributes>, protected tokenizer: ITokeniser, learningRate: number = 1e-3) {
+    constructor(
+        model: Model<ModelForwardAttributes>,
+        protected tokenizer: ITokeniser,
+        learningRate: number = 1e-3
+    ) {
         this.model = model;
         this.lossScaling = model.lossScaling;
         this.learningRate = learningRate;
@@ -212,7 +216,7 @@ export default abstract class GPTTrainer {
     ): Promise<{ log: TrainingLogEntry; progress: TrainingProgress }>;
 
     async createTrainValidationSplit(
-        tasks: Task[],
+        tasks: Task[] | Uint16Array,
         batchSize: number = 32,
         validationSplit: number = 0.1
     ): Promise<{
@@ -220,7 +224,7 @@ export default abstract class GPTTrainer {
         validationDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
         size: number;
     }> {
-        const allTokens = await tokensFromTasks(tasks, this.tokenizer);
+        const allTokens = tasks instanceof Uint16Array ? tasks : await tokensFromTasks(tasks, this.tokenizer);
 
         const validationMask = new Set<number>();
         if (validationSplit > 0) {

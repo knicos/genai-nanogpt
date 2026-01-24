@@ -54,7 +54,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         return this.totalSamples;
     }
 
-    async prepare(tasks: Task[], options?: ITrainerOptions): Promise<void> {
+    async prepare(tasks: Task[] | Uint16Array = [], options?: ITrainerOptions): Promise<void> {
         const { trainDataset, validationDataset, size } = await this.trainer.createTrainValidationSplit(
             tasks,
             options?.batchSize || 32,

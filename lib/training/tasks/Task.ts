@@ -11,7 +11,7 @@ function roundRobinData(
     tasks: Task[],
     allTokens: Uint16Array[],
     tokenizer: ITokeniser,
-    state: { offset: number },
+    state: { offset: number; total: number },
     estimatedTokens: number
 ) {
     // Step through each task in round-robin fashion
@@ -19,6 +19,7 @@ function roundRobinData(
         const convs = tasks[t].nextConversation();
         if (convs) {
             const tokens = tokenizer.encodeConversation(convs);
+            state.total += tokens.length;
 
             const currentTokens = allTokens[allTokens.length - 1];
 
@@ -38,7 +39,11 @@ function roundRobinData(
     }
 }
 
-export async function tokensFromTasks(tasks: Task[], tokenizer: ITokeniser): Promise<Uint16Array> {
+export async function tokensFromTasks(
+    tasks: Task[],
+    tokenizer: ITokeniser,
+    cb?: (tokens: number) => void
+): Promise<Uint16Array> {
     const estimatedTokens = (await Promise.all(tasks.map((task) => task.estimateTokens(tokenizer)))).reduce(
         (sum, val) => sum + val,
         0
@@ -47,6 +52,7 @@ export async function tokensFromTasks(tasks: Task[], tokenizer: ITokeniser): Pro
     const allTokens = [new Uint16Array(estimatedTokens)];
     const state = {
         offset: 0,
+        total: 0,
     };
 
     let lastYield = performance.now();
@@ -61,6 +67,9 @@ export async function tokensFromTasks(tasks: Task[], tokenizer: ITokeniser): Pro
         if (now - lastYield > 40) {
             await new Promise(requestAnimationFrame);
             lastYield = performance.now();
+        }
+        if (cb) {
+            cb(state.total);
         }
     }
 
