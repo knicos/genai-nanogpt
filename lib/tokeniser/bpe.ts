@@ -166,7 +166,7 @@ export default class BPETokeniser extends BaseTokeniser {
     }
 
     public get trained(): boolean {
-        return this.vocab.size === this.targetSize && this.merges.length > 0;
+        return this.vocab.size > SPECIALS.length && this.vocab.size <= this.targetSize && this.merges.length > 0;
     }
 
     public get vocabSize(): number {
