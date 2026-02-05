@@ -7,7 +7,7 @@ import { disposeVariables, Tensor } from '@tensorflow/tfjs-core';
 import { dummyPassAsync } from '@base/utilities/dummy';
 import createModelInstance from '@base/models/factory';
 import Model, { ModelForwardAttributes } from '@base/models/model';
-import { TrainingState } from '@base/training/Trainer';
+import { TrainingState } from '@base/training/types';
 
 export interface TransformersConfig {
     model_type: string;

@@ -14,7 +14,7 @@ describe('sparseCrossEntropy', () => {
         const labels = tf.tensor1d([2, 1], 'int32');
 
         const loss = tf.tidy(() => {
-            const r = sparseSoftmaxCrossEntropy(logits, labels).mean();
+            const r = sparseSoftmaxCrossEntropy(logits, labels);
             console.log('SPARSE', tf.memory());
             return r;
         });
@@ -25,6 +25,40 @@ describe('sparseCrossEntropy', () => {
         const comparison = tf.tidy(() => {
             const r = tf.losses.softmaxCrossEntropy(tf.oneHot(labels, 13), logits);
             console.log('COMPARISON', tf.memory());
+            return r;
+        });
+
+        // Expect the comparison to be the mean of the loss, approximately
+        expect(lossValue).toBeCloseTo(comparison.arraySync() as number, 5);
+
+        logits.dispose();
+        labels.dispose();
+        comparison.dispose();
+    });
+
+    it('should compute masked loss correctly', ({ expect }) => {
+        const logits = tf.tensor2d(
+            [
+                [1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [1, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            ],
+            [2, 13]
+        );
+        const labels = tf.tensor1d([2, -100], 'int32');
+
+        const lossFn = createSoftmaxCrossEntropyWithGrad(true);
+
+        const loss = tf.tidy(() => {
+            const r = lossFn(logits, labels);
+            return r;
+        });
+
+        const lossValue = loss.arraySync();
+        loss.dispose();
+
+        const comparison = tf.tidy(() => {
+            const labels = tf.tensor1d([2], 'int32');
+            const r = tf.losses.softmaxCrossEntropy(tf.oneHot(labels, 13), logits.slice([0, 0], [1, -1]));
             return r;
         });
 
@@ -47,9 +81,11 @@ describe('sparseCrossEntropy', () => {
         const labels = tf.tensor1d([2, 1], 'int32');
 
         const lossFun = createSoftmaxCrossEntropyWithGrad();
-        const f = (x: tf.Tensor) => lossFun(x as tf.Tensor2D, labels).mean() as tf.Scalar;
+        const f = (x: tf.Tensor) => lossFun(x as tf.Tensor2D, labels) as tf.Scalar;
 
         const { value, grad } = tf.valueAndGrad(f)(logits);
+
+        console.log('Gradient', grad.arraySync());
 
         const comparison = tf.tidy(() => {
             const f = (x: tf.Tensor) => tf.losses.softmaxCrossEntropy(tf.oneHot(labels, 4), x);

@@ -6,7 +6,7 @@ import * as tf from '@tensorflow/tfjs-core';
  * Numerically stable sparse cross-entropy with gradient support
  * This version handles potential numerical issues better
  */
-export function sparseSoftmaxCrossEntropy(logits: tf.Tensor, labels: tf.Tensor): tf.Tensor {
+export function sparseSoftmaxCrossEntropy(logits: tf.Tensor, labels: tf.Tensor, validMask?: tf.Tensor): tf.Tensor {
     return tf.tidy(() => {
         const numClasses = logits.shape[logits.shape.length - 1];
         const batchShape = logits.shape.slice(0, -1);
@@ -24,13 +24,22 @@ export function sparseSoftmaxCrossEntropy(logits: tf.Tensor, labels: tf.Tensor):
 
         const logSumExp = tf.logSumExp(stableLogits, -1);
 
-        const loss = gatherSub(logSumExp, labels1d, stableLogits);
+        let loss = gatherSub(logSumExp, labels1d, stableLogits);
+        if (validMask) {
+            loss = tf.mul(loss, validMask);
+            const validCount = tf.sum(validMask);
+            loss = tf.div(tf.sum(loss), validCount);
+        } else {
+            loss = tf.mean(loss);
+        }
         return loss;
     });
 }
 
 // TODO: Create custom operator.
-export function createSoftmaxCrossEntropyWithGrad() {
+export function createSoftmaxCrossEntropyWithGrad(masked?: boolean) {
+    const ignoreIndex = -100;
+
     const sparseSoftmaxCrossEntropyGrad = tf.customGrad(
         // @ts-expect-error Invalid params
         (logits: tf.Tensor, labels: tf.Tensor, save: (tensor: tf.Tensor[]) => void) => {
@@ -41,8 +50,21 @@ export function createSoftmaxCrossEntropyWithGrad() {
             // Reshape logits and labels for computation
             const logits2d = logits.reshape([batchSize, numClasses]);
             const labels1d = labels.reshape([batchSize]).cast('int32');
-            const loss = sparseSoftmaxCrossEntropy(logits2d, labels1d);
-            save([logits2d, labels1d]);
+
+            let safeLabels: tf.Tensor;
+            let validMask: tf.Tensor | null = null;
+            if (masked) {
+                const ignoreTensor = tf.scalar(ignoreIndex, 'int32');
+                const validMaskBool = tf.notEqual(labels1d, ignoreTensor);
+                validMask = validMaskBool.cast('float32');
+
+                safeLabels = tf.where(validMaskBool, labels1d, tf.zerosLike(labels1d));
+            } else {
+                safeLabels = labels1d;
+            }
+
+            const loss = sparseSoftmaxCrossEntropy(logits2d, safeLabels, validMask || undefined);
+            save(validMask ? [logits2d, safeLabels, validMask] : [logits2d, safeLabels]);
             logits2d.dispose();
             labels1d.dispose();
 
@@ -50,11 +72,17 @@ export function createSoftmaxCrossEntropyWithGrad() {
                 return tf.tidy(() => {
                     const logitsSaved = saved[0];
                     const labelsSaved = saved[1];
-
+                    const validMaskSaved = masked ? saved[2] : undefined;
                     //TODO: Fuse softmax and scatterSub
                     const softmaxProbs = tf.softmax(logitsSaved);
 
-                    const gradLogitsScaled = scatterSub(softmaxProbs, labelsSaved, dy);
+                    const count = validMaskSaved ? tf.sum(validMaskSaved) : tf.scalar(logitsSaved.shape[0], 'float32');
+
+                    const dyScaled = dy.div(count);
+                    const dyVec = dyScaled.broadcastTo([logitsSaved.shape[0]]);
+                    const dyMasked = validMaskSaved && masked ? tf.mul(dyVec, validMaskSaved) : dyVec;
+
+                    const gradLogitsScaled = scatterSub(softmaxProbs, labelsSaved, dyMasked);
 
                     // Gradient for labels is always zero
                     const gradLabels = tf.zerosLike(labels);

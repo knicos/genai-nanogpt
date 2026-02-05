@@ -64,6 +64,7 @@ export interface IGenerateOptions extends GenerateOptions {
     maxLength?: number; /// Maximum length of the generated text
     noCache?: boolean;
     allowSpecial?: boolean;
+    nonConversational?: boolean;
 }
 
 /**
@@ -83,14 +84,23 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
     private tokens: number[] = [];
     private lastLoss: number | null = null;
 
-    constructor(private readonly model: Model<ModelForwardAttributes>, private readonly tokeniser: ITokeniser) {
+    constructor(
+        private readonly model: Model<ModelForwardAttributes>,
+        private readonly tokeniser: ITokeniser
+    ) {
         super();
         this.actualTokeniser = tokeniser;
     }
 
-    private async tokenisePrompt(tokeniser: ITokeniser, prompt?: Conversation[]): Promise<Tensor> {
+    private async tokenisePrompt(
+        tokeniser: ITokeniser,
+        prompt?: Conversation[],
+        options?: IGenerateOptions
+    ): Promise<Tensor> {
         if (prompt) {
-            let tokenisedPrompt = await tokeniser.encodeConversation(prompt, true);
+            let tokenisedPrompt = options?.nonConversational
+                ? await tokeniser.encodeAsSequence(prompt, true)
+                : await tokeniser.encodeConversation(prompt, true);
             if (tokenisedPrompt.length > this.model.config.blockSize) {
                 tokenisedPrompt = tokenisedPrompt.slice(-this.model.config.blockSize);
             }
@@ -98,7 +108,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             const inputTensor: Tensor = tensor2d([tokenisedPrompt], [1, tokenisedPrompt.length], 'int32');
             return inputTensor;
         } else {
-            const startToken = tokeniser.getSpecialTokenIndex('<|assistant_start|>');
+            const startToken = options?.nonConversational
+                ? undefined
+                : tokeniser.getSpecialTokenIndex('<|assistant_start|>');
             const tokenisedPrompt = startToken !== undefined ? [tokeniser.bosToken, startToken] : [tokeniser.bosToken];
             const inputTensor: Tensor = tensor2d([tokenisedPrompt], [1, tokenisedPrompt.length], 'int32');
             return inputTensor;
@@ -184,7 +196,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
                       ])
                     : cropIdx;
 
-            const [logits] = this.model.forward(attrs, padIdx);
+            const logits = this.model.forward(attrs, padIdx);
 
             // Focus only on the last time step
             const lastTimeStep = logits.shape[1]! - 1 - padding;
@@ -322,7 +334,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         let inputTensor =
             this.lastToken >= 0 && this.cache
                 ? tensor2d([this.lastToken], [1, 1], 'int32')
-                : await this.tokenisePrompt(this.actualTokeniser, this.outputConversation.slice(0, -1));
+                : await this.tokenisePrompt(this.actualTokeniser, this.outputConversation.slice(0, -1), options);
 
         const maxTokens = options?.maxLength ?? 1000;
 

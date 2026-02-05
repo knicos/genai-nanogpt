@@ -2,11 +2,15 @@ import { LazyIterator } from '@tensorflow/tfjs-data/dist/iterators/lazy_iterator
 import { Dataset } from '@tensorflow/tfjs-data';
 import { Tensor, TensorContainer } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from '@base/models/model';
+import { calculateLoss } from './loss';
 
 export default class Evaluator {
     private iterator: Promise<LazyIterator<TensorContainer>>;
 
-    constructor(private model: Model<ModelForwardAttributes>, dataset: Dataset<TensorContainer>) {
+    constructor(
+        private model: Model<ModelForwardAttributes>,
+        dataset: Dataset<TensorContainer>
+    ) {
         this.iterator = dataset.iterator();
     }
 
@@ -21,7 +25,8 @@ export default class Evaluator {
             const batch = result.value;
             const { xs, ys } = batch as { xs: Tensor; ys: Tensor };
 
-            const [logits, loss] = this.model.forward({ training: false }, xs, ys);
+            const logits = this.model.forward({ training: false }, xs);
+            const loss = calculateLoss(logits, ys);
             logits.dispose();
             xs.dispose();
             ys.dispose();

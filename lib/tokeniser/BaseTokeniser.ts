@@ -5,6 +5,7 @@ export const SPECIALS = [
     '<eos>',
     '<bos>',
     '',
+    '<pad>',
     '<|user_start|>',
     '<|user_end|>',
     '<|assistant_start|>',
@@ -50,6 +51,16 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
     encodeSequence(text: string): number[] {
         const tokens = this.encode(text);
         return [this.bosToken, ...tokens, this.eosToken];
+    }
+
+    encodeAsSequence(conversation: Conversation[], completion?: boolean): number[] {
+        const tokens = conversation.flatMap((fragment) => {
+            const encodedContent = this.encode(fragment.content);
+            return encodedContent;
+        });
+        return completion
+            ? [this.bosToken, ...tokens, this.eosToken, this.bosToken]
+            : [this.bosToken, ...tokens, this.eosToken];
     }
 
     encodeConversation(conversation: Conversation[], completion?: boolean): number[] {

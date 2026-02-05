@@ -27,6 +27,25 @@ export default class ConversationTask extends Task {
         return conv;
     }
 
+    nextTokens(tokeniser: ITokeniser): number[] | null {
+        const conv = this.nextConversation();
+        if (!conv) {
+            return null;
+        }
+        const tokens = tokeniser.encodeConversation(conv);
+        return tokens;
+    }
+
+    getRandomConversation(): Conversation[] {
+        const i = Math.floor(Math.random() * this.rawConvo.length);
+        return this.rawConvo[i];
+    }
+
+    getRandomTokens(tokeniser: ITokeniser): number[] {
+        const i = Math.floor(Math.random() * this.rawConvo.length);
+        return tokeniser.encodeConversation(this.rawConvo[i]);
+    }
+
     async estimateTokens(tokeniser: ITokeniser): Promise<number> {
         return (await tokeniser.encodeConversation(this.rawConvo[0])).length * this.length;
     }

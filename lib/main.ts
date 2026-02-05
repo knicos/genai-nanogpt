@@ -11,7 +11,7 @@ export type { ITrainerOptions } from './Trainer';
 export type { IGenerateOptions } from './Generator';
 export { type ModelForwardAttributes, default as Model } from './models/model';
 export type { ITokeniser, Conversation, Roles } from './tokeniser/type';
-export type { TrainingProgress, TrainingLogEntry } from './training/Trainer';
+export type { TrainingProgress, TrainingLogEntry } from './training/types';
 export type { GPTConfig } from './models/config';
 export {
     estimateParameterCount,

@@ -3,16 +3,16 @@ import type { Conversation, ITokeniser } from './tokeniser/type';
 import { saveModel, SaveOptions } from './loader/save';
 import { loadModel } from './loader/load';
 import Generator, { IGenerateOptions } from './Generator';
-import Trainer, { ITrainerOptions } from './Trainer';
+import Trainer, { ITrainerOptions, TrainingType } from './Trainer';
 import EE from 'eventemitter3';
 import { dummyPassTrainAsync, MemoryRequirements } from './utilities/dummy';
 import { CharTokeniser } from './main';
 import MemoryProfiler from './utilities/profile';
 import BPETokeniser from './tokeniser/bpe';
-import { TrainingLogEntry, TrainingProgress } from './training/Trainer';
 import Model, { ModelForwardAttributes } from './models/model';
 import createModelInstance from './models/factory';
 import { Task } from './training/tasks/Task';
+import { TrainingLogEntry, TrainingProgress } from './training/types';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded';
@@ -198,11 +198,11 @@ export default class TeachableLLM {
         return this._model.getNumParams();
     }
 
-    trainer() {
+    trainer(trainingType?: TrainingType): Trainer {
         if (!this._model || !this._tokeniser) {
             throw new Error('model_or_tokeniser_not_initialized.');
         }
-        const trainer = new Trainer(this._model, this._tokeniser);
+        const trainer = new Trainer(this._model, this._tokeniser, trainingType);
         trainer.on('start', () => this.setStatus('training'));
         trainer.on('stop', () => this.setStatus('ready'));
         trainer.on('log', async (step: TrainingLogEntry, progress: TrainingProgress) => {
@@ -215,8 +215,8 @@ export default class TeachableLLM {
         return trainer;
     }
 
-    async train(text: Task[], options?: ITrainerOptions): Promise<void> {
-        const trainer = this.trainer();
+    async train(text: Task[], options?: ITrainerOptions, trainingType?: TrainingType): Promise<void> {
+        const trainer = this.trainer(trainingType);
         await trainer.prepare(text, options);
         await trainer.train(options);
     }

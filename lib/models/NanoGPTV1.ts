@@ -66,7 +66,7 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
         });
     }
 
-    forward(attrs: ModelForwardAttributes, idx: Tensor, targets?: Tensor): Tensor[] {
+    forward(attrs: ModelForwardAttributes, idx: Tensor): Tensor {
         this.validateInput(idx);
 
         attrs.ropeCache = this.ropeCache;
@@ -125,7 +125,7 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
 
             if (attrs.skipLogits) {
                 this.endMemory('Forward');
-                return [x];
+                return x;
             }
 
             // Embedding to logits
@@ -143,14 +143,15 @@ export default class NanoGPT extends Model<ModelForwardAttributes> {
                 packedLogits.dispose();
             }
 
-            let loss: Tensor | undefined;
+            /*let loss: Tensor | undefined;
             if (targets) {
                 loss = this.calculateLoss(logits, targets);
             }
 
             this.endMemory('Forward');
 
-            return loss ? [logits, loss] : [logits];
+            return loss ? [logits, loss] : [logits];*/
+            return logits;
         });
     }
 

@@ -4,7 +4,10 @@ export abstract class Task {
     abstract get length(): number;
     abstract hasMoreConversations(): boolean;
     abstract nextConversation(): Conversation[] | null;
+    abstract nextTokens(tokeniser: ITokeniser): number[] | null;
     abstract estimateTokens(tokeniser: ITokeniser): Promise<number>;
+    abstract getRandomConversation(): Conversation[];
+    abstract getRandomTokens(tokeniser: ITokeniser): number[];
 }
 
 function roundRobinData(
@@ -16,9 +19,8 @@ function roundRobinData(
 ) {
     // Step through each task in round-robin fashion
     for (let t = 0; t < tasks.length; t++) {
-        const convs = tasks[t].nextConversation();
-        if (convs) {
-            const tokens = tokenizer.encodeConversation(convs);
+        const tokens = tasks[t].nextTokens(tokenizer);
+        if (tokens) {
             state.total += tokens.length;
 
             const currentTokens = allTokens[allTokens.length - 1];

@@ -72,7 +72,7 @@ export function sentenceEmbeddingsTensor(
         const maskTensor = tensor2d(attentionMask, [attentionMask.length, contextLength], 'float32');
 
         // Run forward pass
-        const embeddings = model.model.forward({ skipLogits: true, training: false }, inputTensor)[0] as Tensor3D;
+        const embeddings = model.model.forward({ skipLogits: true, training: false }, inputTensor) as Tensor3D;
 
         const pooledEmbeddings = meanPooling(embeddings, maskTensor);
 

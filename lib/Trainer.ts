@@ -1,11 +1,13 @@
 import type { ITokeniser } from './tokeniser/type';
 import EE from 'eventemitter3';
-import FullTrainer from './training/FullTrainer';
-import { TrainingLogEntry, TrainingProgress } from './training/Trainer';
+import PreTrainer from './training/PreTrainer';
 import { Dataset } from '@tensorflow/tfjs-data';
 import { Tensor } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from './models/model';
 import { Task } from './training/tasks/Task';
+import { TrainingLogEntry, TrainingProgress } from './training/types';
+import { createTrainValidationSplit } from './training/validation';
+import SFTTrainer from './training/SFTTrainer';
 
 export interface ITrainerOptions {
     batchSize?: number; // Batch size for training
@@ -26,8 +28,11 @@ interface ExtendedTrainingProgress extends TrainingProgress {
     remaining: number; // Estimated remaining time in seconds
 }
 
+export type TrainingType = 'pretraining' | 'sft';
+
 export default class Trainer extends EE<'start' | 'stop' | 'log'> {
-    private trainer: FullTrainer;
+    private trainer: PreTrainer | SFTTrainer;
+    private trainingType: TrainingType = 'pretraining';
     private hasTrained: boolean = false;
     private trainDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
     private validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
@@ -35,9 +40,18 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     private log: TrainingLogEntry[] = [];
     private progress: ExtendedTrainingProgress | null = null;
 
-    constructor(model: Model<ModelForwardAttributes>, tokeniser: ITokeniser) {
+    constructor(
+        model: Model<ModelForwardAttributes>,
+        tokeniser: ITokeniser,
+        trainingType: TrainingType = 'pretraining'
+    ) {
         super();
-        this.trainer = new FullTrainer(model, tokeniser, 1e-3);
+        if (trainingType === 'sft') {
+            this.trainer = new SFTTrainer(model, tokeniser, 1e-3);
+        } else {
+            this.trainer = new PreTrainer(model, tokeniser, 1e-3);
+        }
+        this.trainingType = trainingType;
     }
 
     stop() {
@@ -55,22 +69,37 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     }
 
     async prepare(tasks: Task[] | Uint16Array = [], options?: ITrainerOptions): Promise<void> {
-        const { trainDataset, validationDataset, size } = await this.trainer.createTrainValidationSplit(
-            tasks,
-            options?.batchSize || 32,
-            options?.validationSplit || 0.1
-        );
+        if (this.trainingType === 'pretraining' && this.trainer instanceof PreTrainer) {
+            const { trainDataset, validationDataset, size } = await createTrainValidationSplit(
+                tasks,
+                this.trainer.tokenizer,
+                this.trainer.datasetBuilder,
+                options?.batchSize || 32,
+                options?.validationSplit || 0.1
+            );
 
-        const totalSamples = size * (1 - (options?.validationSplit || 0));
+            const totalSamples = size * (1 - (options?.validationSplit || 0));
 
-        this.trainDataset = trainDataset;
-        this.validationDataset = validationDataset;
-        this.totalSamples = totalSamples;
+            this.trainDataset = trainDataset;
+            this.validationDataset = validationDataset;
+            this.totalSamples = totalSamples;
+        } else if (this.trainingType === 'sft' && this.trainer instanceof SFTTrainer) {
+            if (tasks instanceof Uint16Array) {
+                throw new Error('SFT training requires Task[] input');
+            }
+            const trainDataset = await this.trainer.datasetBuilder.createSFTDataset(
+                tasks,
+                options?.batchSize || 32,
+                -100
+            );
+            this.trainDataset = trainDataset;
+            this.totalSamples = tasks.reduce((acc, conv) => acc + conv.length, 0);
+        }
     }
 
     async train(options?: ITrainerOptions): Promise<void> {
-        if (!this.trainDataset || !this.validationDataset) {
-            throw new Error('Datasets not prepared');
+        if (!this.trainDataset) {
+            throw new Error('Dataset not prepared');
         }
 
         // Only set the learning rate if we haven't trained before
@@ -118,8 +147,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     }
 
     async step(options?: ITrainerOptions): Promise<void> {
-        if (!this.trainDataset || !this.validationDataset) {
-            throw new Error('Datasets not prepared');
+        if (!this.trainDataset) {
+            throw new Error('Dataset not prepared');
         }
         // Only set the learning rate if we haven't trained before
         // This allows for resuming training without resetting the learning rate

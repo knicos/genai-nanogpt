@@ -17,6 +17,7 @@ export interface ITokeniser extends EE<'trainStatus'> {
     encode(text: string): number[];
     encodeConversation(conversation: Conversation[], completion?: boolean): number[];
     encodeSequence(text: string): number[];
+    encodeAsSequence(conversation: Conversation[], completion?: boolean): number[];
     decode(tokens: number[] | Uint16Array): string;
     decodeConversation(tokens: number[] | Uint16Array): Conversation[];
     vocabSize: number;

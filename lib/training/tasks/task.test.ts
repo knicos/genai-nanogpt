@@ -65,8 +65,10 @@ describe('Task', () => {
 
         expect(tokens.length).toBeGreaterThan(data1.length + data2.length); // Should be more tokens than sentences
         const decodedText = await tokeniser.decode(tokens);
+
         expect(decodedText).toContain(
             '<bos><|user_start|>This is a test.<|user_end|><|assistant_start|>You now must complete the sentence.<|assistant_end|><eos>'
         );
+        expect(decodedText).toContain('<bos>Hello world.<eos>');
     });
 });

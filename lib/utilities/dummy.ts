@@ -1,16 +1,13 @@
-import { engine, memory, ones, Scalar, variableGrads, zeros } from '@tensorflow/tfjs-core';
+import { engine, memory, Scalar, variableGrads, zeros } from '@tensorflow/tfjs-core';
 import { ExtendedMemoryInfo } from './profile';
 import Model, { ModelForwardAttributes } from '@base/models/model';
 
 export async function dummyPassAsync(model: Model<ModelForwardAttributes>) {
     // Send a dummy input to initialize the model
     const dummyInput = zeros([1, model.config.blockSize], 'int32');
-    const [logits, loss] = model.forward({ training: false }, dummyInput);
+    const logits = model.forward({ training: false }, dummyInput);
     await logits.data(); // Just to wait
     logits.dispose();
-    if (loss) {
-        loss.dispose();
-    }
     dummyInput.dispose();
 }
 
@@ -30,7 +27,6 @@ export async function dummyPassTrainAsync(model: Model<ModelForwardAttributes>):
     console.log('Forward pass complete. Starting backward pass...');
     // Send a dummy input to initialize the model
     const dummyInput = zeros([1, model.config.blockSize], 'int32');
-    const dummyTarget = ones([1, model.config.blockSize], 'int32');
 
     const memoryReqs: MemoryRequirements = {
         perBatch: 0,
@@ -40,7 +36,7 @@ export async function dummyPassTrainAsync(model: Model<ModelForwardAttributes>):
 
     try {
         const f = () => {
-            const [logits, loss] = model.forward({ training: true }, dummyInput, dummyTarget);
+            const logits = model.forward({ training: true }, dummyInput);
 
             const tape = engine().state.activeTape;
             let totalTapeSize = 0;
@@ -51,6 +47,8 @@ export async function dummyPassTrainAsync(model: Model<ModelForwardAttributes>):
             }
 
             memoryReqs.tapeSize = totalTapeSize;
+
+            const loss = logits.mean() as Scalar;
 
             logits.dispose();
             return loss! as Scalar;
@@ -71,11 +69,9 @@ export async function dummyPassTrainAsync(model: Model<ModelForwardAttributes>):
             grads[key].dispose();
         }
         dummyInput.dispose();
-        dummyTarget.dispose();
     } catch (error) {
         console.error('Error during dummy training pass:', error);
         dummyInput.dispose();
-        dummyTarget.dispose();
     }
 
     return memoryReqs;
@@ -84,10 +80,7 @@ export async function dummyPassTrainAsync(model: Model<ModelForwardAttributes>):
 export function dummyPass(model: Model<ModelForwardAttributes>) {
     // Send a dummy input to initialize the model
     const dummyInput = zeros([1, model.config.blockSize], 'int32');
-    const [logits, loss] = model.forward({ training: false }, dummyInput);
+    const logits = model.forward({ training: false }, dummyInput);
     logits.dispose();
-    if (loss) {
-        loss.dispose();
-    }
     dummyInput.dispose();
 }

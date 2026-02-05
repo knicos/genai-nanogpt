@@ -30,6 +30,21 @@ export default class StartSentenceTask extends Task {
         return this.conversationFromString(text);
     }
 
+    nextTokens(tokeniser: ITokeniser): number[] | null {
+        const conv = this.nextConversation();
+        return conv ? tokeniser.encodeConversation(conv) : null;
+    }
+
+    getRandomConversation(): Conversation[] {
+        const i = Math.floor(Math.random() * this.rawText.length);
+        return this.conversationFromString(this.rawText[i]);
+    }
+
+    getRandomTokens(tokeniser: ITokeniser): number[] {
+        const conv = this.getRandomConversation();
+        return tokeniser.encodeConversation(conv);
+    }
+
     private conversationFromString(text: string): Conversation[] {
         const endOfFirstSentence = text.indexOf('.');
 

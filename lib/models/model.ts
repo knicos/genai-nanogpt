@@ -3,7 +3,6 @@ import type { ForwardAttributes } from '../layers/BaseLayer';
 import type { AttentionScores, KVCache } from '../layers/CausalSelfAttention';
 import BaseLayer from '../layers/BaseLayer';
 import { estimateParameterCount } from '../main';
-import { createSoftmaxCrossEntropyWithGrad } from '../training/sparseCrossEntropy';
 
 export interface ModelForwardAttributes extends ForwardAttributes {
     cache?: KVCache[];
@@ -26,7 +25,7 @@ export default abstract class Model<T extends ModelForwardAttributes> extends Ba
 
     abstract getClassName(): string;
 
-    abstract forward(attrs: T, idx: Tensor, targets?: Tensor): Tensor[];
+    abstract forward(attrs: T, idx: Tensor): Tensor;
 
     abstract project(embeddings: Tensor): Tensor;
 
@@ -45,20 +44,6 @@ export default abstract class Model<T extends ModelForwardAttributes> extends Ba
         }
         if (idx.dtype !== 'int32') {
             throw new Error(`Input tensor must be of type int32, got ${idx.dtype}`);
-        }
-    }
-
-    protected calculateLoss(logits: Tensor, targets: Tensor): Tensor {
-        try {
-            //return this.tf.losses.softmaxCrossEntropy(targets, logits, this.tf.Reduction.MEAN);
-            const lossFn = createSoftmaxCrossEntropyWithGrad();
-            const losses = lossFn(logits, targets);
-            const meanLoss = losses.mean();
-            losses.dispose();
-            return meanLoss;
-        } catch (error) {
-            console.error('Error computing loss:', error);
-            throw new Error(`Loss computation failed: ${error}`);
         }
     }
 }
