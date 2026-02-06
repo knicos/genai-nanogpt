@@ -27,11 +27,7 @@ export default class MLP extends BaseLayer {
         if (this.hasVariable(this.MLPHIDDEN) === false) {
             this.setVariable(
                 this.MLPHIDDEN,
-                variable(
-                    randomNormal([this.config.nEmbed, this.hiddenUnits], 0, 0.02),
-                    true,
-                    `block_${this.index}_mlpHidden_kernel`
-                )
+                variable(randomNormal([this.config.nEmbed, this.hiddenUnits], 0, 0.02), true, this.MLPHIDDEN)
             );
         }
         if (this.hasVariable(this.MLPOUT) === false) {
@@ -40,7 +36,7 @@ export default class MLP extends BaseLayer {
                 variable(
                     randomNormal([this.hiddenUnits, this.config.nEmbed], 0, 0.02 / Math.sqrt(2 * this.config.nLayer)),
                     true,
-                    `block_${this.index}_mlpOut_kernel`
+                    this.MLPOUT
                 )
             );
         }

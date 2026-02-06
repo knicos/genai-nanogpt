@@ -4,7 +4,7 @@ import CharTokeniser from '../tokeniser/CharTokeniser';
 import { Tensor } from '@tensorflow/tfjs-core';
 import { save_safetensors } from '../utilities/safetensors';
 import { VERSION } from './load';
-import { TransformersConfig } from '@base/loader/loadTransformers';
+import { TransformersConfig } from '@base/loader/types';
 import Model, { ModelForwardAttributes } from '@base/models/model';
 
 export interface SaveOptions {
@@ -19,7 +19,7 @@ export async function saveModel(
     options?: SaveOptions
 ): Promise<Blob> {
     const weightsMap = new Map<string, Tensor[]>();
-    model.saveWeights(weightsMap);
+    model.weightStore.saveWeights(weightsMap);
     const zipFile = new zip();
 
     const weights: Record<string, Tensor> = {};
@@ -59,6 +59,7 @@ export async function saveModel(
                 meta: options?.metadata,
                 name: options?.name,
                 training: model.trainingState || undefined,
+                reference: model.metaData?.url || undefined,
             },
             undefined,
             4

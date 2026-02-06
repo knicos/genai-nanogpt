@@ -1,7 +1,8 @@
 import { GPTConfig } from '@base/models/config';
 import MemoryProfiler from '@base/utilities/profile';
 import RoPECache from './RoPECache';
-import { customGrad, engine, grads, GradSaveFunc, Tensor, variable, Variable, clone } from '@tensorflow/tfjs-core';
+import { customGrad, engine, grads, GradSaveFunc, Tensor, Variable } from '@tensorflow/tfjs-core';
+import WeightStore from './WeightStore';
 
 export interface ForwardAttributes {
     training: boolean;
@@ -15,7 +16,7 @@ export interface ForwardAttributes {
 export default abstract class BaseLayer<ATTR extends ForwardAttributes = ForwardAttributes> {
     public readonly parent?: BaseLayer;
     public readonly config: GPTConfig;
-    private _variables: Map<string, Variable | null> = new Map();
+    public weightStore: WeightStore;
     private _trainable: boolean = true;
     public readonly children: BaseLayer[] = [];
     private profiler?: MemoryProfiler;
@@ -25,6 +26,9 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
         this.parent = parent;
         if (this.parent) {
             this.parent.children.push(this);
+            this.weightStore = this.parent.weightStore;
+        } else {
+            this.weightStore = new WeightStore();
         }
     }
 
@@ -48,21 +52,15 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
     }
 
     public addVariable(name: string, variable?: Variable) {
-        this._variables.set(name, variable || null);
+        this.weightStore.addVariable(name, variable);
     }
 
     get variables(): Variable[] {
-        const myVariables = Array.from(this._variables.values()).filter((v): v is Variable => v !== null);
-        const childVariables = this.children.flatMap((child) => child.variables);
-        return [...myVariables, ...childVariables];
+        return this.weightStore.variables;
     }
 
     get trainableVariables(): Variable[] {
-        const myVariables = Array.from(this._variables.values()).filter(
-            (v): v is Variable => v !== null && v.trainable
-        );
-        const childVariables = this.children.flatMap((child) => child.trainableVariables);
-        return [...myVariables, ...childVariables];
+        return this.weightStore.trainableVariables;
     }
 
     get trainable(): boolean {
@@ -71,7 +69,7 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
 
     set trainable(value: boolean) {
         this._trainable = value;
-        this._variables.forEach((variable) => {
+        this.weightStore.variables.forEach((variable) => {
             if (variable) {
                 variable.trainable = value;
             }
@@ -81,66 +79,20 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
         });
     }
 
-    public getVariable(name: string, recursive = false): Variable {
-        const vari = this._variables.get(name);
-        if (!vari && recursive) {
-            for (const child of this.children) {
-                const vari = child.getVariable(name, true);
-                if (vari) {
-                    return vari;
-                }
-            }
-        }
-        if (!vari) {
-            throw new Error(`Variable ${name} not found`);
-        }
-        return vari;
+    public getVariable(name: string): Variable {
+        return this.weightStore.getVariable(name);
     }
 
     public hasVariable(name: string): boolean {
-        return this._variables.get(name) !== null;
+        return this.weightStore.hasVariable(name);
     }
 
     public setVariable(name: string, variable: Variable) {
-        if (!this._variables.has(name)) {
-            throw new Error(`Variable ${name} not found`);
-        }
-        this._variables.set(name, variable);
-    }
-
-    saveWeights(map: Map<string, Tensor[]>) {
-        this._variables.forEach((variable, name) => {
-            if (variable) {
-                map.set(name, [clone(variable)]);
-            }
-        });
-        this.children.forEach((child) => {
-            child.saveWeights(map);
-        });
-    }
-
-    loadWeights(weights: Map<string, Tensor[]>): void {
-        this._variables.forEach((vari, name) => {
-            const weight = weights.get(name)?.[0];
-            if (!weight) {
-                throw new Error(`Weights for ${name} not found`);
-            }
-            if (!vari) {
-                this._variables.set(name, variable(weight, this._trainable));
-            } else {
-                vari.assign(weight);
-            }
-        });
-        this.children.forEach((child) => {
-            child.loadWeights(weights);
-        });
+        this.weightStore.setVariable(name, variable);
     }
 
     public dispose(): void {
-        this._variables.forEach((variable) => {
-            variable?.dispose();
-        });
-        this._variables.clear();
+        this.weightStore.dispose();
     }
 
     protected build(): void {}

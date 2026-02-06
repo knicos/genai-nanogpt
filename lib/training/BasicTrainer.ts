@@ -98,6 +98,10 @@ export default abstract class BasicTrainer {
                 // Apply gradients
                 this.optimizer.applyGradients(grads as NamedVariableMap);
 
+                // Tell the model the weights were updated.
+                const variableNames = Object.keys(grads);
+                this.model.weightStore.touchVariables(variableNames);
+
                 this.model.getProfiler()?.endMemory('Training');
 
                 if (keepGrads) {

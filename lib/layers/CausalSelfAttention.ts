@@ -58,21 +58,13 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
         if (this.hasVariable(this.ATTN) === false) {
             this.setVariable(
                 this.ATTN,
-                variable(
-                    randomNormal([this.config.nEmbed, this.units], 0, 0.02),
-                    true,
-                    `block_${this.index}_attn_cAttn_kernel`
-                )
+                variable(randomNormal([this.config.nEmbed, this.units], 0, 0.02), true, this.ATTN)
             );
         }
         if (this.hasVariable(this.PROJ) === false) {
             this.setVariable(
                 this.PROJ,
-                variable(
-                    randomNormal([this.projUnits, this.config.nEmbed], 0, 0.02),
-                    true,
-                    `block_${this.index}_attn_cProj_kernel`
-                )
+                variable(randomNormal([this.projUnits, this.config.nEmbed], 0, 0.02), true, this.PROJ)
             );
         }
     }

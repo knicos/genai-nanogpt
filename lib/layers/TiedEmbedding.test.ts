@@ -57,13 +57,16 @@ describe('TiedEmbedding', () => {
         tiedEmbedding.embed(input); // Initialize the layer
         const originalOutput = tiedEmbedding.embed(input);
 
+        // Touch all variables to simulate training
+        tiedEmbedding.weightStore.touchVariables(tiedEmbedding.weightStore.variableNames);
+
         const weights = new Map<string, tf.Tensor[]>();
-        tiedEmbedding.saveWeights(weights);
+        tiedEmbedding.weightStore.saveWeights(weights);
 
         tiedEmbedding.dispose();
 
         const newTiedEmbedding = new TiedEmbedding(config, 't1');
-        newTiedEmbedding.loadWeights(weights);
+        newTiedEmbedding.weightStore.loadWeights(weights, false);
 
         const newOutput = newTiedEmbedding.embed(input);
 

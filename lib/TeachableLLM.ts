@@ -1,7 +1,7 @@
 import { defaultConfig, GPTConfig } from './models/config';
 import type { Conversation, ITokeniser } from './tokeniser/type';
 import { saveModel, SaveOptions } from './loader/save';
-import { loadModel } from './loader/load';
+import { loadModel, LoadModelOptions } from './loader/load';
 import Generator, { IGenerateOptions } from './Generator';
 import Trainer, { ITrainerOptions, TrainingType } from './Trainer';
 import EE from 'eventemitter3';
@@ -20,6 +20,7 @@ type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded';
 interface TeachableLLMMeta {
     name?: string;
     id?: string;
+    reference?: string; // Reference model
     [key: string]: unknown;
 }
 
@@ -105,15 +106,15 @@ export default class TeachableLLM {
         });
     }
 
-    static loadModel(data: Blob | Buffer | string): TeachableLLM {
+    static loadModel(data: Blob | Buffer | string, options?: LoadModelOptions): TeachableLLM {
         const teachableLLM = new TeachableLLM();
-        loadModel(data)
-            .then(({ model, tokeniser, name }) => {
+        loadModel(data, options)
+            .then(({ model, tokeniser, metaData }) => {
                 teachableLLM._model = model;
                 teachableLLM._tokeniser = tokeniser;
                 teachableLLM._config = model.config;
-                if (name) {
-                    teachableLLM.meta.name = name;
+                if (metaData?.name) {
+                    teachableLLM.meta.name = metaData.name;
                 }
                 teachableLLM.setStatus('warmup');
 

@@ -6,10 +6,12 @@ import { disposeVariables, Tensor } from '@tensorflow/tfjs-core';
 import { dummyPassAsync } from '@base/utilities/dummy';
 import Model, { ModelForwardAttributes } from '@base/models/model';
 import createModelInstance from '@base/models/factory';
+import { TransformersMetadata } from './types';
 
 export default async function loadOldModel(
-    zipFile: zip
-): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser }> {
+    zipFile: zip,
+    metaData: TransformersMetadata
+): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
     const manifests = new Map<string, IWeightManifest>();
 
     const manifestFile = await zipFile.file('manifest.json')?.async('string');
@@ -62,9 +64,10 @@ export default async function loadOldModel(
     disposeVariables();
 
     const model = createModelInstance(manifest.config);
+    model.metaData = metaData;
 
     await dummyPassAsync(model); // Initialize the model to set up weights and caches
-    model.loadWeights(weights);
+    model.weightStore.loadWeights(weights, metaData.url ? true : false);
 
-    return { model, tokeniser };
+    return { model, tokeniser, metaData };
 }

@@ -7,42 +7,14 @@ import { disposeVariables, Tensor } from '@tensorflow/tfjs-core';
 import { dummyPassAsync } from '@base/utilities/dummy';
 import createModelInstance from '@base/models/factory';
 import Model, { ModelForwardAttributes } from '@base/models/model';
-import { TrainingState } from '@base/training/types';
-
-export interface TransformersConfig {
-    model_type: string;
-    vocab_size: number;
-    hidden_size: number;
-    num_hidden_layers: number;
-    num_attention_heads: number;
-    block_size: number;
-    dropout: number;
-    biasInLinear: boolean;
-    biasInLayerNorm: boolean;
-    mlpFactor: number;
-    useRope: boolean;
-}
-
-export interface TransformersTokeniser {
-    type: 'char' | 'bpe';
-    vocab: string[];
-    merges: [string, string][];
-}
-
-export interface TransformersMetadata {
-    name?: string;
-    version: number;
-    application: string;
-    training?: TrainingState;
-    [key: string]: unknown;
-}
+import { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './types';
 
 export default async function loadTransformers(
     config: TransformersConfig,
     tokeniser: TransformersTokeniser,
     metadata: TransformersMetadata,
     weightData: ArrayBuffer
-): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; name?: string }> {
+): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
     const modelConfig: GPTConfig = {
         modelType: config.model_type || 'GenAI_NanoGPT_v1',
         vocabSize: config.vocab_size,
@@ -74,9 +46,10 @@ export default async function loadTransformers(
     disposeVariables();
 
     const model = createModelInstance(modelConfig);
+    model.metaData = metadata;
 
     await dummyPassAsync(model); // Initialize the model to set up weights and caches
-    model.loadWeights(weightsMap);
+    model.weightStore.loadWeights(weightsMap, metadata.url ? true : false); // If loaded from URL, treat as reference to avoid saving again
 
-    return { model, tokeniser: tokeniserInstance, name: metadata.name };
+    return { model, tokeniser: tokeniserInstance, metaData: metadata };
 }

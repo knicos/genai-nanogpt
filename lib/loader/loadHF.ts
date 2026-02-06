@@ -1,10 +1,11 @@
-import loadTransformers, { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './loadTransformers';
+import loadTransformers from './loadTransformers';
 import { ITokeniser } from '@base/main';
 import Model, { ModelForwardAttributes } from '@base/models/model';
+import { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './types';
 
 export default async function loadHuggingFace(
     name: string
-): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; name?: string }> {
+): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
     const configUrl = `https://huggingface.co/${name}/resolve/main/config.json`;
     const tokenUrl = `https://huggingface.co/${name}/resolve/main/tokeniser.json`;
     const metaUrl = `https://huggingface.co/${name}/resolve/main/meta.json`;

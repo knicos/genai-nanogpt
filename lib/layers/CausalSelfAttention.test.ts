@@ -153,8 +153,11 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
         });
         layer.call({ training: false }, input); // Initialize the layer
 
+        // Touch all variables to simulate training
+        layer.weightStore.touchVariables(layer.weightStore.variableNames);
+
         const weightsMap = new Map<string, tf.Tensor[]>();
-        layer.saveWeights(weightsMap);
+        layer.weightStore.saveWeights(weightsMap);
 
         const originalOutput = layer.call({ training: false }, input) as tf.Tensor;
         layer.dispose();
@@ -172,7 +175,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
             useRope: true,
         });
         newLayer.call({ training: false }, input); // Initialize the layer
-        newLayer.loadWeights(weightsMap);
+        newLayer.weightStore.loadWeights(weightsMap, false);
 
         const newOutput = newLayer.call({ training: false }, input) as tf.Tensor;
         expect(originalOutput.shape).toEqual(newOutput.shape);

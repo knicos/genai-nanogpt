@@ -1,11 +1,13 @@
 import { ITokeniser } from '@base/main';
 import zip from 'jszip';
-import loadTransformers, { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './loadTransformers';
+import loadTransformers from './loadTransformers';
 import Model, { ModelForwardAttributes } from '@base/models/model';
+import { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './types';
 
 export default async function loadZipFile(
-    zipFile: zip
-): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; name?: string }> {
+    zipFile: zip,
+    metaData: TransformersMetadata
+): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
     const configFile = await zipFile.file('config.json')?.async('string');
     if (!configFile) {
         throw new Error('Config file not found in the zip archive');
@@ -18,16 +20,9 @@ export default async function loadZipFile(
     }
     const tokeniserData = JSON.parse(tokeniserFile) as TransformersTokeniser;
 
-    const weightData = await zipFile.file('model.safetensors')!.async('arraybuffer');
-
-    const metaFile = await zipFile.file('meta.json')?.async('string');
-    let metaData: TransformersMetadata = { version: 0, application: '' };
-    if (metaFile) {
-        try {
-            metaData = JSON.parse(metaFile) as TransformersMetadata;
-        } catch (error) {
-            console.error('Error parsing meta file:', error);
-        }
+    const weightData = await zipFile.file('model.safetensors')?.async('arraybuffer');
+    if (!weightData) {
+        throw new Error('Model weights not found in the zip archive');
     }
 
     return loadTransformers(config, tokeniserData, metaData, weightData);

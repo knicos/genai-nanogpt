@@ -46,15 +46,18 @@ describe('MLP', () => {
         const input = tf.randomNormal([1, 4, 16]);
         mlp.call({ training: false }, input); // Initialize the layer
 
+        // Touch all variables to simulate training
+        mlp.weightStore.touchVariables(mlp.weightStore.variableNames);
+
         const weightsMap = new Map<string, tf.Tensor[]>();
-        mlp.saveWeights(weightsMap);
+        mlp.weightStore.saveWeights(weightsMap);
         const originalOutput = mlp.call({ training: false }, input) as tf.Tensor;
 
         mlp.dispose();
 
         const newMlp = new MLP(0, config);
         newMlp.call({ training: false }, input); // Initialize the layer
-        newMlp.loadWeights(weightsMap);
+        newMlp.weightStore.loadWeights(weightsMap, false);
 
         const newOutput = newMlp.call({ training: false }, input) as tf.Tensor;
         expect(originalOutput.shape).toEqual(newOutput.shape);

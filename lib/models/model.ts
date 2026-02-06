@@ -3,6 +3,7 @@ import type { ForwardAttributes } from '../layers/BaseLayer';
 import type { AttentionScores, KVCache } from '../layers/CausalSelfAttention';
 import BaseLayer from '../layers/BaseLayer';
 import { estimateParameterCount } from '../main';
+import { TransformersMetadata } from '@base/loader/types';
 
 export interface ModelForwardAttributes extends ForwardAttributes {
     cache?: KVCache[];
@@ -22,6 +23,7 @@ interface TrainingState {
 export default abstract class Model<T extends ModelForwardAttributes> extends BaseLayer<T> {
     public lossScaling = 128;
     public trainingState: TrainingState | null = null;
+    public metaData?: TransformersMetadata;
 
     abstract getClassName(): string;
 
