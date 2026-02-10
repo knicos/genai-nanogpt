@@ -6,10 +6,16 @@ import * as tf from '@tensorflow/tfjs-core';
  * Numerically stable sparse cross-entropy with gradient support
  * This version handles potential numerical issues better
  */
-export function sparseSoftmaxCrossEntropy(logits: tf.Tensor, labels: tf.Tensor, validMask?: tf.Tensor): tf.Tensor {
+export function sparseSoftmaxCrossEntropy(
+    logits: tf.Tensor,
+    labels: tf.Tensor,
+    validMask?: tf.Tensor,
+    keepBatch?: boolean,
+    originalBatchShape?: number[]
+): tf.Tensor {
     return tf.tidy(() => {
         const numClasses = logits.shape[logits.shape.length - 1];
-        const batchShape = logits.shape.slice(0, -1);
+        const batchShape = originalBatchShape ? originalBatchShape : logits.shape.slice(0, -1);
         const batchSize = batchShape.reduce((a, b) => a * b, 1);
 
         // Reshape logits to [batchSize, numClasses]
@@ -27,17 +33,26 @@ export function sparseSoftmaxCrossEntropy(logits: tf.Tensor, labels: tf.Tensor, 
         let loss = gatherSub(logSumExp, labels1d, stableLogits);
         if (validMask) {
             loss = tf.mul(loss, validMask);
-            const validCount = tf.sum(validMask);
-            loss = tf.div(tf.sum(loss), validCount);
+            if (keepBatch) {
+                const validCount = tf.sum(validMask.reshape(batchShape), -1);
+                loss = tf.div(tf.sum(loss.reshape(batchShape), -1), validCount);
+            } else {
+                const validCount = tf.sum(validMask);
+                loss = tf.div(tf.sum(loss), validCount);
+            }
         } else {
-            loss = tf.mean(loss);
+            if (keepBatch) {
+                loss = tf.mean(loss.reshape(batchShape), -1);
+            } else {
+                loss = tf.mean(loss);
+            }
         }
         return loss;
     });
 }
 
 // TODO: Create custom operator.
-export function createSoftmaxCrossEntropyWithGrad(masked?: boolean) {
+export function createSoftmaxCrossEntropyWithGrad(masked?: boolean, keepBatch?: boolean) {
     const ignoreIndex = -100;
 
     const sparseSoftmaxCrossEntropyGrad = tf.customGrad(
@@ -63,10 +78,12 @@ export function createSoftmaxCrossEntropyWithGrad(masked?: boolean) {
                 safeLabels = labels1d;
             }
 
-            const loss = sparseSoftmaxCrossEntropy(logits2d, safeLabels, validMask || undefined);
+            const loss = sparseSoftmaxCrossEntropy(logits2d, safeLabels, validMask || undefined, keepBatch, batchShape);
             save(validMask ? [logits2d, safeLabels, validMask] : [logits2d, safeLabels]);
             logits2d.dispose();
             labels1d.dispose();
+
+            // Note: keepBatch does not affect the gradient computation since the loss is averaged over the batch dimension
 
             const grad = (dy: tf.Tensor, saved: tf.NamedTensorMap) => {
                 return tf.tidy(() => {

@@ -261,8 +261,12 @@ export default abstract class BasicTrainer {
         if (evaluator) {
             try {
                 const valLoss = await evaluator.evaluate(5);
-                state.validationLosses.push(valLoss);
-                entry.valLoss = valLoss;
+                if (Array.isArray(valLoss)) {
+                    entry.valLoss = valLoss[0];
+                } else {
+                    state.validationLosses.push(valLoss);
+                    entry.valLoss = valLoss;
+                }
             } catch (error) {
                 console.error('Validation error:', error);
             }

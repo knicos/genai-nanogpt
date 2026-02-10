@@ -3,12 +3,12 @@ import type { Conversation, ITokeniser } from '../tokeniser/type';
 import { Dataset, generator } from '@tensorflow/tfjs-data';
 import { Task } from '@base/training/tasks/Task';
 
-function buildSFTExample(
+export function buildSFTExample(
     conversation: Conversation[],
     ignoreIndex: number,
     tokenizer: ITokeniser,
     blockSize: number
-): { xs: Int32Array; ys: Int32Array } {
+): { xs: Int32Array; ys: Int32Array } | null {
     const tokens: number[] = [tokenizer.bosToken];
     const mask: boolean[] = [false];
 
@@ -68,11 +68,16 @@ function buildSFTExample(
     const maskShifted = mask.slice(1, blockSize + 1);
 
     const ys = new Int32Array(ysRaw.length);
+    let hasUnmasked = false;
     for (let i = 0; i < ysRaw.length; i++) {
-        ys[i] = maskShifted[i] ? ysRaw[i] : ignoreIndex;
+        const value = maskShifted[i] ? ysRaw[i] : ignoreIndex;
+        ys[i] = value;
+        if (value !== ignoreIndex) {
+            hasUnmasked = true;
+        }
     }
 
-    return { xs, ys };
+    return hasUnmasked ? { xs, ys } : null;
 }
 
 // Training data utilities using TensorFlow.js Dataset API
@@ -110,7 +115,9 @@ export class SFTDatasetBuilder {
                 const task = conversations[taskI];
                 const conversation = task.getRandomConversation();
                 const example = buildSFTExample(conversation, ignoreIndex, tokeniser, blockSize);
-                yield example;
+                if (example) {
+                    yield example;
+                }
             }
         };
 

@@ -36,6 +36,45 @@ describe('sparseCrossEntropy', () => {
         comparison.dispose();
     });
 
+    it('can compute loss with keepBatch option', ({ expect }) => {
+        const logits = tf.tensor3d(
+            [
+                [
+                    [1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [1, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                ],
+                [
+                    [1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [1, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                ],
+            ],
+            [2, 2, 13]
+        );
+        const labels = tf.tensor2d(
+            [
+                [2, 1],
+                [2, 1],
+            ],
+            [2, 2],
+            'int32'
+        );
+
+        const loss = tf.tidy(() => {
+            const r = sparseSoftmaxCrossEntropy(logits, labels, undefined, true);
+            return r;
+        });
+
+        const lossValue = loss.arraySync();
+        loss.dispose();
+
+        console.log('Loss value with keepBatch:', lossValue);
+
+        expect(lossValue).toHaveLength(2);
+
+        logits.dispose();
+        labels.dispose();
+    });
+
     it('should compute masked loss correctly', ({ expect }) => {
         const logits = tf.tensor2d(
             [
