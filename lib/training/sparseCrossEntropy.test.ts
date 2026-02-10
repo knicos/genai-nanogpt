@@ -85,8 +85,6 @@ describe('sparseCrossEntropy', () => {
 
         const { value, grad } = tf.valueAndGrad(f)(logits);
 
-        console.log('Gradient', grad.arraySync());
-
         const comparison = tf.tidy(() => {
             const f = (x: tf.Tensor) => tf.losses.softmaxCrossEntropy(tf.oneHot(labels, 4), x);
             return tf.valueAndGrad(f)(logits);
@@ -106,6 +104,34 @@ describe('sparseCrossEntropy', () => {
 
         comparison.grad.dispose();
         comparison.value.dispose();
+        logits.dispose();
+        labels.dispose();
+        value.dispose();
+        grad.dispose();
+    });
+
+    it('produces correct masked gradients', ({ expect }) => {
+        const logits = tf.tensor2d(
+            [
+                [1, 2, 3, 0],
+                [1, 3, 2, 0],
+            ],
+            [2, 4]
+        );
+        const labels = tf.tensor1d([2, -100], 'int32');
+
+        const lossFun = createSoftmaxCrossEntropyWithGrad(true);
+        const f = (x: tf.Tensor) => lossFun(x as tf.Tensor2D, labels) as tf.Scalar;
+
+        const { value, grad } = tf.valueAndGrad(f)(logits);
+
+        const gradValue = grad.arraySync() as number[][];
+
+        expect(gradValue[1][0]).toBeCloseTo(0.0, 5);
+        expect(gradValue[1][1]).toBeCloseTo(0.0, 5);
+        expect(gradValue[1][2]).toBeCloseTo(0.0, 5);
+        expect(gradValue[1][3]).toBeCloseTo(0.0, 5);
+
         logits.dispose();
         labels.dispose();
         value.dispose();

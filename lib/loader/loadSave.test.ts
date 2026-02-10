@@ -170,7 +170,7 @@ describe('save/load zips', () => {
             }))
         );
 
-        const loadWeightsCalls: Array<{ map: Map<string, Tensor[]>; reference: boolean }> = [];
+        const loadWeightsCalls: { map: Map<string, Tensor[]>; reference: boolean }[] = [];
         const stubModel = {
             weightStore: {
                 loadWeights: (map: Map<string, Tensor[]>, reference: boolean) => {

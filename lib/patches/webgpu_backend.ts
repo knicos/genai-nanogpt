@@ -3,7 +3,7 @@ import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu';
 import { compileProgram, WebGPUProgram } from './webgpu_program';
 import { makeShaderKey } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 
-type ProgramUniform = Array<{ type: string; data: number[] }>;
+type ProgramUniform = { type: string; data: number[] }[];
 
 // Reshape dispatch, not to exceed device limits.
 const reshapeDispatch = (device: GPUDevice, program: WebGPUProgram): [number, number, number] => {

@@ -44,7 +44,7 @@ export class ConcatProgram implements WebGPUProgram {
     size = true;
     offsetLength: number;
 
-    constructor(shapes: Array<[number, number]>) {
+    constructor(shapes: [number, number][]) {
         this.outputShape = backend_util.computeOutShape(shapes, 1 /* axis */) as [number, number];
         this.variableNames = shapes.map((_, i) => `T${i}`);
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
@@ -127,7 +127,7 @@ function concatImpl(inputs: ConcatInputs, axis: number, backend: WebGPUBackend):
     const shapes = tensors2D.map((t) => t.shape as [number, number]);
     const program = new ConcatProgram(shapes);
 
-    const uniformData: Array<{ type: string; data: number[] }> = [];
+    const uniformData: { type: string; data: number[] }[] = [];
     const offsets: number[] = new Array(shapes.length - 1);
     if (offsets.length > 0) {
         offsets[0] = shapes[0][1];

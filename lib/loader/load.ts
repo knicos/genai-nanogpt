@@ -7,7 +7,7 @@ import Model, { ModelForwardAttributes } from '@base/models/model';
 import { loadZipMeta } from './loadZipMeta';
 import { load_safetensors } from '@base/utilities/safetensors';
 import { Tensor } from '@tensorflow/tfjs-core';
-import { TransformersMetadata } from './types';
+import { TransformersConfig, TransformersMetadata } from './types';
 
 export const VERSION = 2;
 
@@ -33,6 +33,22 @@ async function mergeWeights(zipFile: zip, model: Model<ModelForwardAttributes>, 
     model.weightStore.loadWeights(weightsMap, reference);
 }
 
+async function mergeConfigs(zipFile: zip, model: Model<ModelForwardAttributes>): Promise<void> {
+    const file = zipFile.file('config.json');
+    if (!file) {
+        return;
+    }
+    const configData = await file.async('string');
+    const config = JSON.parse(configData) as TransformersConfig;
+
+    if (config.loraConfig) {
+        if (model.hasLoRA()) {
+            throw new Error('Model already has LoRA attached');
+        }
+        model.attachLoRA(config.loraConfig);
+    }
+}
+
 async function zipLoadCommon(
     zipFile: zip,
     metaData: TransformersMetadata
@@ -45,6 +61,13 @@ async function zipLoadCommon(
         await mergeWeights(zipFile, refModel.model, metaData.url ? true : false);
 
         // TODO: Validate that configs are compatible between the reference and the new weights.
+
+        await mergeConfigs(zipFile, refModel.model);
+
+        // Finally attach LoRA here.
+        if (refModel.model.config.loraConfig) {
+            refModel.model.attachLoRA(refModel.model.config.loraConfig);
+        }
 
         return {
             ...refModel,
@@ -59,7 +82,11 @@ async function zipLoadCommon(
         if (zipFile.file('manifest.json')) {
             return loadOldModel(zipFile, metaData);
         } else {
-            return loadZipFile(zipFile, metaData);
+            const result = await loadZipFile(zipFile, metaData);
+            if (result.model.config.loraConfig) {
+                result.model.attachLoRA(result.model.config.loraConfig);
+            }
+            return result;
         }
     }
 }

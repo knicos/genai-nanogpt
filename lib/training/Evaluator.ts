@@ -14,7 +14,7 @@ export default class Evaluator {
         this.iterator = dataset.iterator();
     }
 
-    async evaluate(maxBatches: number = 100): Promise<number> {
+    async evaluate(maxBatches = 100): Promise<number> {
         let totalLoss = 0;
         let batchCount = 0;
 

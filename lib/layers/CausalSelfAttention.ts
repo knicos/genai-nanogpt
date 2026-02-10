@@ -13,12 +13,12 @@ import { reshape16 } from '@base/ops/reshape16';
 import { isPackedTensor } from '@base/utilities/packed';
 import { qkv } from '@base/ops/qkv';
 
-export type KVCache = {
+export interface KVCache {
     k?: Tensor; // [B, nHead, T_cache, headDim]
     v?: Tensor; // [B, nHead, T_cache, headDim]
     length: number;
     cumulativeLength: number;
-};
+}
 
 export interface AttentionScores {
     meanOfHeads?: boolean; // If true, average attention weights over heads

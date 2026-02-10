@@ -20,10 +20,10 @@ import { matMulMul } from '../matMulMul';
 import { matMulGelu } from '../matMulGelu';
 import MatMul16ProgramGeneric from './matMul16_program';
 
-type ProgramUniform = Array<{
+type ProgramUniform = {
     type: string;
     data: number[];
-}>;
+}[];
 
 function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { A, B } = args.inputs as { A: Tensor; B: Tensor };

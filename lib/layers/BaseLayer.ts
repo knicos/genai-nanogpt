@@ -17,7 +17,6 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
     public readonly parent?: BaseLayer;
     public readonly config: GPTConfig;
     public weightStore: WeightStore;
-    private _trainable: boolean = true;
     public readonly children: BaseLayer[] = [];
     private profiler?: MemoryProfiler;
 
@@ -63,23 +62,7 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
         return this.weightStore.trainableVariables;
     }
 
-    get trainable(): boolean {
-        return this._trainable;
-    }
-
-    set trainable(value: boolean) {
-        this._trainable = value;
-        this.weightStore.variables.forEach((variable) => {
-            if (variable) {
-                variable.trainable = value;
-            }
-        });
-        this.children.forEach((child) => {
-            child.trainable = value;
-        });
-    }
-
-    public getVariable(name: string): Variable {
+    public getVariable(name: string): Tensor {
         return this.weightStore.getVariable(name);
     }
 
@@ -95,7 +78,9 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
         this.weightStore.dispose();
     }
 
-    protected build(): void {}
+    protected build(): void {
+        // Nothing to do by default.
+    }
     protected dropout(x: Tensor): Tensor {
         return x;
     }

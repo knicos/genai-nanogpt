@@ -18,7 +18,7 @@ export class DatasetBuilder {
     public blockSize: number;
     private pageSize: number;
 
-    constructor(tokenizer: ITokeniser, blockSize: number = 128) {
+    constructor(tokenizer: ITokeniser, blockSize = 128) {
         this.tokenizer = tokenizer;
         this.blockSize = blockSize;
         this.pageSize = blockSize * PAGE_FACTOR;
@@ -27,7 +27,7 @@ export class DatasetBuilder {
     // Create dataset from text files
     public async createTextDataset(
         flatTokens: Uint16Array,
-        batchSize: number = 32,
+        batchSize = 32,
         masked?: Set<number>,
         invertMask?: boolean
     ): Promise<Dataset<{ xs: Tensor; ys: Tensor }>> {

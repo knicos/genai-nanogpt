@@ -329,11 +329,11 @@ const isInfSnippet = `
   }
 `;
 
-type InputInfo = {
+interface InputInfo {
     dtype: DataType;
     shape: number[];
     name: string;
-};
+}
 
 function getInputAtCoordsSnippet(inputInfo: InputInfo, component: number): string {
     const texName = inputInfo.name;

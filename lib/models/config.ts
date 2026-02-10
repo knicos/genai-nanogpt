@@ -1,3 +1,9 @@
+export interface LoRAConfig {
+    rank: number;
+    alpha: number;
+    variables: string[];
+}
+
 // Configuration for the nanoGPT model
 export interface GPTConfig {
     modelType?: string;
@@ -11,6 +17,7 @@ export interface GPTConfig {
     biasInLayerNorm: boolean;
     mlpFactor: number;
     useRope: boolean;
+    loraConfig?: LoRAConfig;
 }
 
 // Default configuration

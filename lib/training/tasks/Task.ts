@@ -18,8 +18,8 @@ function roundRobinData(
     estimatedTokens: number
 ) {
     // Step through each task in round-robin fashion
-    for (let t = 0; t < tasks.length; t++) {
-        const tokens = tasks[t].nextTokens(tokenizer);
+    for (const task of tasks) {
+        const tokens = task.nextTokens(tokenizer);
         if (tokens) {
             state.total += tokens.length;
 

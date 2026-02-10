@@ -25,16 +25,10 @@ import { ConfigDict, Serializable, SerializableConstructor } from '@tensorflow/t
 import { NamedTensor, NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
 
 export class AdamOptimizer extends Optimizer {
-    /** @nocollapse */
-    static get className() {
-        // Name matters for Python compatibility.
-        // This is a getter instead of a property because when it's a property, it
-        // prevents the entire class from being tree-shaken.
-        return 'Adam';
-    }
+    public readonly className = 'Adam';
 
-    private accBeta1: number = 0;
-    private accBeta2: number = 0;
+    private accBeta1 = 0;
+    private accBeta2 = 0;
     private accumulatedMoments: OptimizerVariable[] = [];
 
     constructor(

@@ -1,3 +1,4 @@
+import { LoRAConfig } from '@base/models/config';
 import { TrainingState } from '@base/training/types';
 
 export interface TransformersConfig {
@@ -12,6 +13,7 @@ export interface TransformersConfig {
     biasInLayerNorm: boolean;
     mlpFactor: number;
     useRope: boolean;
+    loraConfig?: LoRAConfig;
 }
 
 export interface TransformersTokeniser {

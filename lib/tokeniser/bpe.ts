@@ -114,10 +114,10 @@ function mergeTokens(state: InternalTokenState, pair: TokenPair) {
 
 export default class BPETokeniser extends BaseTokeniser {
     private targetSize: number;
-    private vocab: Set<string> = new Set();
-    private vocabIndex: Map<string, number> = new Map();
+    private vocab = new Set<string>();
+    private vocabIndex = new Map<string, number>();
     private merges: [string, string][] = [];
-    private pretokenMap: Map<string, string[]> = new Map();
+    private pretokenMap = new Map<string, string[]>();
 
     constructor(vocabSize: number);
     constructor(vocab: string[], merges?: [string, string][]);

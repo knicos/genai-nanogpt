@@ -4,6 +4,8 @@ import type { AttentionScores, KVCache } from '../layers/CausalSelfAttention';
 import BaseLayer from '../layers/BaseLayer';
 import { estimateParameterCount } from '../main';
 import { TransformersMetadata } from '@base/loader/types';
+import { LoRAConfig } from './config';
+import LoRA from '@base/layers/LoRA';
 
 export interface ModelForwardAttributes extends ForwardAttributes {
     cache?: KVCache[];
@@ -24,6 +26,40 @@ export default abstract class Model<T extends ModelForwardAttributes> extends Ba
     public lossScaling = 128;
     public trainingState: TrainingState | null = null;
     public metaData?: TransformersMetadata;
+    private loraLayer?: LoRA;
+
+    /*constructor(config: GPTConfig) {
+        super(config);
+        if (config.loraConfig) {
+            console.log('Attaching LoRA layer with config:', config.loraConfig);
+            this.attachLoRA(config.loraConfig);
+        }
+    }*/
+
+    attachLoRA(loraConfig: LoRAConfig) {
+        if (this.loraLayer) {
+            throw new Error('LoRA is already attached to this model.');
+        }
+        this.config.loraConfig = loraConfig;
+        this.loraLayer = new LoRA(this.weightStore, loraConfig.alpha, loraConfig.rank, loraConfig.variables);
+    }
+
+    detachLoRA() {
+        if (!this.loraLayer) {
+            throw new Error('No LoRA layer is attached to this model.');
+        }
+        this.loraLayer.dispose();
+        this.loraLayer = undefined;
+        delete this.config.loraConfig;
+    }
+
+    hasLoRA(): boolean {
+        return !!this.loraLayer;
+    }
+
+    get lora(): LoRA | null {
+        return this.loraLayer || null;
+    }
 
     abstract getClassName(): string;
 

@@ -14,7 +14,7 @@ interface AdamExtConfig {
  * Extended Adam optimizer with warmup, cosine decay, and optional weight decay.
  */
 export default class AdamExt extends AdamOptimizer {
-    private step: number = 0;
+    private step = 0;
     private startLearningRate: number;
 
     constructor(learningRate: number, beta1: number, beta2: number, epsilon: number, private config: AdamExtConfig) {

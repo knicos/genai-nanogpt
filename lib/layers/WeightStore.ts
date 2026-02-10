@@ -1,8 +1,12 @@
 import { clone, Tensor, variable, Variable } from '@tensorflow/tfjs-core';
+import picomatch from 'picomatch';
 
 export default class WeightStore {
-    private _variables: Map<string, Variable | null> = new Map();
-    private touchedVariables: Set<string> = new Set();
+    private _variables = new Map<string, Variable | null>();
+    private touchedVariables = new Set<string>();
+
+    // Hooks
+    public onWeightRead?: (name: string, variable: Variable) => Tensor;
 
     saveWeights(map: Map<string, Tensor[]>) {
         this._variables.forEach((variable, name) => {
@@ -13,16 +17,14 @@ export default class WeightStore {
     }
 
     loadWeights(weights: Map<string, Tensor[]>, reference: boolean, trainable = true): void {
-        this._variables.forEach((vari, name) => {
-            const weight = weights.get(name)?.[0];
-            if (!weight) {
-                // throw new Error(`Weights for ${name} not found`);
-                return;
-            }
+        weights.forEach((weight, name) => {
+            const w0 = weight[0];
+            const vari = this._variables.get(name);
+
             if (!vari) {
-                this._variables.set(name, variable(weight, trainable, name));
+                this._variables.set(name, variable(w0, trainable, name));
             } else {
-                vari.assign(weight);
+                vari.assign(w0);
             }
 
             // Weights loaded from a reference model are not to be saved again
@@ -36,6 +38,15 @@ export default class WeightStore {
 
     public addVariable(name: string, variable?: Variable) {
         this._variables.set(name, variable || null);
+    }
+
+    public deleteVariable(name: string) {
+        const vari = this._variables.get(name);
+        if (vari) {
+            vari.dispose();
+        }
+        this._variables.delete(name);
+        this.touchedVariables.delete(name);
     }
 
     get variables(): Variable[] {
@@ -54,7 +65,7 @@ export default class WeightStore {
         return myVariables;
     }
 
-    public getVariable(name: string): Variable {
+    public getRawVariable(name: string): Variable {
         const vari = this._variables.get(name);
         if (!vari) {
             throw new Error(`Variable ${name} not found`);
@@ -62,8 +73,28 @@ export default class WeightStore {
         return vari;
     }
 
+    public getVariable(name: string): Tensor {
+        const vari = this._variables.get(name);
+        if (!vari) {
+            throw new Error(`Variable ${name} not found`);
+        }
+        if (this.onWeightRead) {
+            return this.onWeightRead(name, vari);
+        }
+        return vari;
+    }
+
+    public setTrainable(names: string[]) {
+        const isMatch = picomatch(names);
+        this._variables.forEach((vari, name) => {
+            if (vari) {
+                vari.trainable = isMatch(name);
+            }
+        });
+    }
+
     public hasVariable(name: string): boolean {
-        return this._variables.get(name) !== null;
+        return !!this._variables.get(name);
     }
 
     public setVariable(name: string, variable: Variable) {

@@ -44,6 +44,7 @@ export async function saveModel(
         biasInLayerNorm: model.config.biasInLayerNorm,
         mlpFactor: model.config.mlpFactor,
         useRope: model.config.useRope,
+        loraConfig: model.config.loraConfig,
     };
 
     zipFile.file('config.json', JSON.stringify(transformersConfig, undefined, 4), {

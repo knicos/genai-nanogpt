@@ -17,20 +17,20 @@ const DEFAULT_OPTIONS: TrainingOptions = {
 };
 
 export default abstract class BasicTrainer {
-    protected model: Model<ModelForwardAttributes>;
+    public model: Model<ModelForwardAttributes>;
     protected optimizer!: AdamExt;
     protected learningRate: number;
     protected running = false;
     protected lastState?: TrainingState;
-    protected _gradientCheckpointing: boolean = false;
-    protected _mixedPrecision: boolean = false;
+    protected _gradientCheckpointing = false;
+    protected _mixedPrecision = false;
     protected lossScaling: number;
-    protected maskedLoss: boolean = false;
+    protected maskedLoss = false;
 
     constructor(
         model: Model<ModelForwardAttributes>,
         public tokenizer: ITokeniser,
-        learningRate: number = 3e-4
+        learningRate = 3e-4
     ) {
         this.model = model;
         this.lossScaling = model.lossScaling;
@@ -171,7 +171,7 @@ export default abstract class BasicTrainer {
         this.lastState = state;
 
         await this.dummyPass();
-        this.model.trainable = true;
+        // this.model.trainable = true;
 
         if (options?.advancedMetrics) {
             if (!this.model.getProfiler()) {
@@ -296,7 +296,7 @@ export default abstract class BasicTrainer {
         this.lastState = state;
 
         await this.dummyPass();
-        this.model.trainable = true;
+        // this.model.trainable = true;
 
         if (options?.advancedMetrics) {
             if (!this.model.getProfiler()) {

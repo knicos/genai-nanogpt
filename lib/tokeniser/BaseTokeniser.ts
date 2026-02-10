@@ -15,8 +15,8 @@ export const SPECIALS = [
 ];
 
 export default abstract class BaseTokeniser extends EE<'trainStatus'> implements ITokeniser {
-    protected specialTokens: Map<string, number> = new Map();
-    protected specialTokenSet: Set<number> = new Set();
+    protected specialTokens = new Map<string, number>();
+    protected specialTokenSet = new Set<number>();
 
     abstract vocabSize: number;
     abstract eosToken: number;

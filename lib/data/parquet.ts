@@ -9,7 +9,7 @@ export async function loadParquet(file: File, maxSize = MAX_SIZE, column = 'text
     let totalSize = 0;
 
     while (true) {
-        const record = (await cursor.next()) as { [key: string]: string };
+        const record = (await cursor.next()) as Record<string, string>;
         if (!record || record[column] === undefined || typeof record[column] !== 'string') {
             break;
         }

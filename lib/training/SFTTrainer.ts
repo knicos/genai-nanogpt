@@ -11,7 +11,7 @@ export default class SFTTrainer extends BasicTrainer {
     constructor(
         model: Model<ModelForwardAttributes>,
         public tokenizer: ITokeniser,
-        learningRate: number = 3e-4
+        learningRate = 3e-4
     ) {
         super(model, tokenizer, learningRate);
         this.datasetBuilder = new SFTDatasetBuilder(tokenizer, model.config.blockSize);

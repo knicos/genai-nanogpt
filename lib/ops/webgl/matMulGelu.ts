@@ -68,7 +68,7 @@ const DGELU_PACKED = `
 // https://github.com/tensorflow/tfjs-core/pull/1379 for benchmarks.
 export const MATMUL_SHARED_DIM_THRESHOLD = 1000;
 
-type BatchMatMulConfig = {
+interface BatchMatMulConfig {
     a: TensorInfo;
     b: TensorInfo;
     transposeA: boolean;
@@ -76,7 +76,7 @@ type BatchMatMulConfig = {
     backend: MathBackendWebGL;
     activationSnippet?: string;
     multiplier?: TensorInfo;
-};
+}
 
 /*
  * This is largely adapted from the batchMatMul implementation in

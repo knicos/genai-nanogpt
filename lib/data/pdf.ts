@@ -19,7 +19,7 @@ export async function loadPDF(file: Blob | Uint8Array, maxSize = MAX_SIZE): Prom
     for (let i = 1; i <= numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        const textItems = textContent.items as Array<{ str: string }>;
+        const textItems = textContent.items as { str: string }[];
         const filtered = textItems.filter((item) => item.str.trim().length > 10);
         const pageText = filtered.map((item) => item.str).join(' ');
         result.push(pageText);

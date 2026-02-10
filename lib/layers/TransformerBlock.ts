@@ -19,7 +19,7 @@ export default class Block extends BaseLayer<BlockAttributes> {
     private ln2: RMSNorm;
     private mlp: MLP;
     private index: number;
-    public skipped: boolean = false;
+    public skipped = false;
 
     constructor(index: number, config: GPTConfig, parent?: BaseLayer) {
         super(config, parent);

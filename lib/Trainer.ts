@@ -8,6 +8,7 @@ import { Task } from './training/tasks/Task';
 import { TrainingLogEntry, TrainingProgress } from './training/types';
 import { createTrainValidationSplit } from './training/validation';
 import SFTTrainer from './training/SFTTrainer';
+import { LoRAConfig } from './models/config';
 
 export interface ITrainerOptions {
     batchSize?: number; // Batch size for training
@@ -21,6 +22,9 @@ export interface ITrainerOptions {
     gradientCheckpointing?: boolean; // Whether to use gradient checkpointing
     gradientMetrics?: boolean; // Whether to compute gradient metrics during training
     mixedPrecision?: boolean; // Whether to use mixed precision training
+    trainableWeights?: string[]; // List of weight names to train (supports glob patterns)
+    loraConfig?: LoRAConfig; // LoRA configuration for training
+    sftMode?: 'full' | 'lora' | 'last-layer'; // Mode for SFT training, if applicable
 }
 
 interface ExtendedTrainingProgress extends TrainingProgress {
@@ -33,10 +37,10 @@ export type TrainingType = 'pretraining' | 'sft';
 export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     private trainer: PreTrainer | SFTTrainer;
     private trainingType: TrainingType = 'pretraining';
-    private hasTrained: boolean = false;
+    private hasTrained = false;
     private trainDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
     private validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
-    private totalSamples: number = 0;
+    private totalSamples = 0;
     private log: TrainingLogEntry[] = [];
     private progress: ExtendedTrainingProgress | null = null;
 
@@ -97,6 +101,55 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         }
     }
 
+    private configureModel(options?: ITrainerOptions) {
+        const mode = options?.sftMode || 'full';
+
+        if (this.trainingType === 'pretraining') {
+            if (this.trainer.model.hasLoRA()) {
+                this.trainer.model.detachLoRA();
+            }
+            this.trainer.model.weightStore.setTrainable(['*']);
+        }
+
+        if (this.trainingType === 'sft') {
+            if (mode === 'lora') {
+                if (!options?.loraConfig) {
+                    throw new Error('LoRA configuration must be provided for lora mode');
+                }
+                if (this.trainer.model.hasLoRA()) {
+                    const existingLoRA = this.trainer.model.lora!;
+                    if (
+                        existingLoRA.alpha !== options.loraConfig.alpha ||
+                        existingLoRA.rank !== options.loraConfig.rank
+                    ) {
+                        // Reset to a new LoRA
+                        this.trainer.model.detachLoRA();
+                        this.trainer.model.attachLoRA(options.loraConfig);
+                    }
+                } else {
+                    this.trainer.model.attachLoRA(options.loraConfig);
+                }
+            } else {
+                if (this.trainer.model.hasLoRA()) {
+                    this.trainer.model.detachLoRA();
+                }
+            }
+
+            if (mode === 'last-layer') {
+                this.trainer.model.weightStore.setTrainable([
+                    `block_${this.trainer.model.config.nLayer - 1}_*`,
+                    'token_embedding',
+                ]);
+            } else if (mode === 'full') {
+                this.trainer.model.weightStore.setTrainable(['*']);
+            }
+        }
+
+        if (options?.trainableWeights) {
+            this.trainer.model.weightStore.setTrainable(options.trainableWeights);
+        }
+    }
+
     async train(options?: ITrainerOptions): Promise<void> {
         if (!this.trainDataset) {
             throw new Error('Dataset not prepared');
@@ -113,6 +166,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
 
         this.trainer.setGradientCheckpointing(options?.gradientCheckpointing || false);
         this.trainer.setMixedPrecision(options?.mixedPrecision || false);
+        this.configureModel(options);
 
         await this.trainer.trainOnDataset(
             this.trainDataset,

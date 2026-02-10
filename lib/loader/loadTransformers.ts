@@ -9,12 +9,7 @@ import createModelInstance from '@base/models/factory';
 import Model, { ModelForwardAttributes } from '@base/models/model';
 import { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './types';
 
-export default async function loadTransformers(
-    config: TransformersConfig,
-    tokeniser: TransformersTokeniser,
-    metadata: TransformersMetadata,
-    weightData: ArrayBuffer
-): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
+export function mapTransformersConfigToGPTConfig(config: TransformersConfig): GPTConfig {
     const modelConfig: GPTConfig = {
         modelType: config.model_type || 'GenAI_NanoGPT_v1',
         vocabSize: config.vocab_size,
@@ -27,7 +22,19 @@ export default async function loadTransformers(
         biasInLayerNorm: config.biasInLayerNorm,
         mlpFactor: config.mlpFactor,
         useRope: config.useRope,
+        loraConfig: config.loraConfig,
     };
+
+    return modelConfig;
+}
+
+export default async function loadTransformers(
+    config: TransformersConfig,
+    tokeniser: TransformersTokeniser,
+    metadata: TransformersMetadata,
+    weightData: ArrayBuffer
+): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
+    const modelConfig = mapTransformersConfigToGPTConfig(config);
 
     const tokeniserType = tokeniser.type ?? 'char';
 

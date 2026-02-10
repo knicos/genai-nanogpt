@@ -8,7 +8,7 @@ export async function createTrainValidationSplit(
     tokeniser: ITokeniser,
     datasetBuilder: DatasetBuilder,
     batchSize: number,
-    validationSplit: number = 0.1
+    validationSplit = 0.1
 ): Promise<{
     trainDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
     validationDataset: Dataset<{ xs: Tensor; ys: Tensor }>;

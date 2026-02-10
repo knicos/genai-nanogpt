@@ -63,9 +63,9 @@ export async function createTensorStatistics(weight: Tensor | number[]): Promise
     };
 }
 
-export async function createWeightStatistics(layer: BaseLayer): Promise<{ [key: string]: TensorStatistics }> {
+export async function createWeightStatistics(layer: BaseLayer): Promise<Record<string, TensorStatistics>> {
     const weights = layer.trainableVariables;
-    const stats: { [key: string]: TensorStatistics } = {};
+    const stats: Record<string, TensorStatistics> = {};
 
     for (const weight of weights) {
         stats[weight.name] = await createTensorStatistics(weight);

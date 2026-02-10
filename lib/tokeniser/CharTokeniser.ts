@@ -3,16 +3,14 @@ import BaseTokeniser, { SPECIALS } from './BaseTokeniser';
 const specialTokens = ['<eos>', '<unk>'];
 
 export default class CharTokeniser extends BaseTokeniser {
-    public vocabSize: number = 0;
+    public vocabSize = 0;
     public eosToken = 0;
     public bosToken = 0;
     public unkToken = 0;
     public vocab: string[] = [];
-    private cache: Map<string, number> = new Map();
-    private _trained: boolean = false;
+    private cache = new Map<string, number>();
+    private _trained = false;
 
-    constructor(vocabSize: number);
-    constructor(vocab: string[]);
     constructor(vocabSizeOrVocab: number | string[]) {
         super();
         if (Array.isArray(vocabSizeOrVocab)) {
@@ -102,7 +100,10 @@ export default class CharTokeniser extends BaseTokeniser {
         return this.vocab.length === this.vocabSize && this._trained;
     }
 
-    public destroy() {}
+    public destroy() {
+        this.cache.clear();
+        this.vocab = [];
+    }
 
     public async train(text: string[]): Promise<number> {
         const flatText = text.map((t) => t.split('')).flat();
@@ -201,7 +202,7 @@ export default class CharTokeniser extends BaseTokeniser {
         return [];
     }
 
-    public async createTrainingData(text: string[], windowSize: number = 5): Promise<[number[], number[]]> {
+    public async createTrainingData(text: string[], windowSize = 5): Promise<[number[], number[]]> {
         const tokenised = await this.tokenise(text, true);
         const inputs: number[] = [];
         const targets: number[] = [];

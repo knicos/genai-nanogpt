@@ -2,8 +2,8 @@ import { Tensor, tidy } from '@tensorflow/tfjs-core';
 
 export default async function performanceTest(
     fn: () => Tensor,
-    iterations: number = 10,
-    allowPromise: boolean = false
+    iterations = 10,
+    allowPromise = false
 ): Promise<number> {
     for (let i = 0; i < 100; i++) {
         const t = allowPromise ? await fn() : tidy(fn); // Warm-up

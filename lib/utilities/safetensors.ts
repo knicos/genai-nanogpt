@@ -12,9 +12,7 @@ interface BaseSafeTensorStruct {
     __metadata__?: Record<string, string>;
 }
 
-interface SafeTensorEntries {
-    [key: string]: SafeTensorEntry;
-}
+type SafeTensorEntries = Record<string, SafeTensorEntry>;
 
 type SafeTensorStruct = BaseSafeTensorStruct & SafeTensorEntries;
 

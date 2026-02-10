@@ -7,8 +7,8 @@ export function matMulMul(
     x: Tensor,
     kernel: Tensor,
     y: Tensor,
-    transposeA: boolean = false,
-    transposeB: boolean = false
+    transposeA = false,
+    transposeB = false
 ): Tensor {
     return engine().runKernel('MatMulMul', { x, kernel, y }, { transposeA, transposeB });
 }

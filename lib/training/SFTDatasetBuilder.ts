@@ -80,7 +80,7 @@ export class SFTDatasetBuilder {
     public tokenizer: ITokeniser;
     public blockSize: number;
 
-    constructor(tokenizer: ITokeniser, blockSize: number = 128) {
+    constructor(tokenizer: ITokeniser, blockSize = 128) {
         this.tokenizer = tokenizer;
         this.blockSize = blockSize;
     }
@@ -93,8 +93,8 @@ export class SFTDatasetBuilder {
      */
     public async createSFTDataset(
         conversations: Task[],
-        batchSize: number = 32,
-        ignoreIndex: number = -100
+        batchSize = 32,
+        ignoreIndex = -100
     ): Promise<Dataset<{ xs: Tensor; ys: Tensor }>> {
         if (!conversations.length) {
             throw new Error('No conversations provided.');
