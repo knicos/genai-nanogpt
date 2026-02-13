@@ -5,10 +5,10 @@ import { Dataset } from '@tensorflow/tfjs-data';
 import MemoryProfiler from '@base/utilities/profile';
 import Model, { ModelForwardAttributes } from '@base/models/model';
 import { createTensorStatistics, TensorStatistics } from '../checks/weights';
-import AdamExt from './AdamExt';
 import { NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
-import { AdamConfig, TrainingLogEntry, TrainingOptions, TrainingProgress, TrainingState } from './types';
+import { TrainingLogEntry, TrainingOptions, TrainingProgress, TrainingState } from './types';
 import { calculateLoss } from './loss';
+import { AdamWOptimizer, AdamWOptimizerConfig } from './AdamW';
 
 const DEFAULT_OPTIONS: TrainingOptions = {
     desiredLoss: 0.01,
@@ -16,25 +16,33 @@ const DEFAULT_OPTIONS: TrainingOptions = {
     maxSteps: 1000,
 };
 
-export default abstract class BasicTrainer {
+export default class BasicTrainer {
     public model: Model<ModelForwardAttributes>;
-    protected optimizer!: AdamExt;
-    protected learningRate: number;
+    protected optimizer!: AdamWOptimizer;
     protected running = false;
     protected lastState?: TrainingState;
     protected _gradientCheckpointing = false;
     protected _mixedPrecision = false;
-    protected lossScaling: number;
     protected maskedLoss = false;
+    protected optimizerConfig: AdamWOptimizerConfig;
 
     constructor(
         model: Model<ModelForwardAttributes>,
-        public tokenizer: ITokeniser,
-        learningRate = 3e-4
+        public tokenizer: ITokeniser
     ) {
         this.model = model;
-        this.lossScaling = model.lossScaling;
-        this.learningRate = learningRate;
+        this.optimizerConfig = {
+            learningRate: 3e-4,
+            beta1: 0.9,
+            beta2: 0.99,
+            epsilon: 1e-8,
+            weightDecay: 0.01,
+            warmupSteps: 100,
+            decaySteps: 10000,
+            minLearningRate: 1e-5,
+            lossScaling: model.lossScaling,
+        };
+        this.resetOptimizer();
     }
 
     setGradientCheckpointing(enabled: boolean): void {
@@ -46,8 +54,8 @@ export default abstract class BasicTrainer {
     }
 
     setLearningRate(learningRate: number): void {
-        this.learningRate = learningRate;
-        this.resetOptimizer({ learningRateFactor: 1, beta1: 0.9, beta2: 0.99, epsilon: 1e-8 });
+        this.optimizerConfig.learningRate = learningRate;
+        this.resetOptimizer();
     }
 
     reset() {
@@ -59,11 +67,18 @@ export default abstract class BasicTrainer {
         this.running = false;
     }
 
-    getOptimizer(): AdamExt {
+    getOptimizer(): AdamWOptimizer {
         return this.optimizer;
     }
 
-    abstract resetOptimizer(config: AdamConfig): void;
+    resetOptimizer(config?: Partial<AdamWOptimizerConfig>): void {
+        if (config) {
+            this.optimizerConfig = { ...this.optimizerConfig, ...config };
+        }
+        if (this.optimizer) this.optimizer.dispose();
+        const adam = new AdamWOptimizer(this.optimizerConfig);
+        this.optimizer = adam;
+    }
 
     // A single forward pass, backward pass, and optimizer step
     protected trainStep(
@@ -87,7 +102,7 @@ export default abstract class BasicTrainer {
                 );
                 const loss = calculateLoss(logits, ys, this.maskedLoss);
                 logits.dispose();
-                const scaledLoss = loss.mul(scalar(this.lossScaling));
+                const scaledLoss = loss.mul(scalar(this.optimizerConfig.lossScaling));
                 loss.dispose();
                 return scaledLoss as Scalar;
             };
@@ -114,7 +129,7 @@ export default abstract class BasicTrainer {
                 this.model.getProfiler()?.endMemory('Training');
             }
 
-            return lossValue.mul(scalar(1 / this.lossScaling)) as Scalar;
+            return lossValue.mul(scalar(1 / this.optimizerConfig.lossScaling)) as Scalar;
         });
     }
 

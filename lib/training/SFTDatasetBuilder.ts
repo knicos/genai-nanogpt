@@ -27,23 +27,24 @@ export function buildSFTExample(
     for (const fragment of conversation) {
         const start = roleToStart[fragment.role];
         const end = roleToEnd[fragment.role];
-        if (start == null || end == null) {
+        if (!start || !end) {
             throw new Error(`Missing special tokens for role: ${fragment.role}`);
         }
 
         tokens.push(start);
         mask.push(false);
 
+        const isAssistant = fragment.role === 'assistant';
+
         const contentTokens = tokenizer.encode(fragment.content);
         for (const t of contentTokens) {
             tokens.push(t);
             const isSpecial = tokenizer.isSpecialToken(t);
-            const isAssistant = fragment.role === 'assistant';
             mask.push(isAssistant && !isSpecial);
         }
 
         tokens.push(end);
-        mask.push(false);
+        mask.push(isAssistant); // Unmask end token only for assistant role
     }
 
     tokens.push(tokenizer.eosToken);

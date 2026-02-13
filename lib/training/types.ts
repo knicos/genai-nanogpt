@@ -20,7 +20,12 @@ export interface TrainingProgress {
 }
 
 export interface AdamConfig {
-    learningRateFactor: number;
+    learningRate: number;
+    minLearningRate?: number;
+    weightDecay?: number;
+    warmupSteps?: number;
+    decaySteps?: number;
+    lossScaling: number;
     beta1: number;
     beta2: number;
     epsilon: number;

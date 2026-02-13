@@ -15,11 +15,16 @@ class AdamAdjustProgram implements WebGPUProgram {
     uniforms = 'invbeta1: f32, invbeta2: f32, learningRate: f32, epsilon: f32';
     outputComponent = 1;
     variableComponents = [2, 1];
+    useWeightDecay: boolean;
 
-    constructor(outputShape: number[]) {
+    constructor(outputShape: number[], useWeightDecay: boolean) {
         this.outputShape = outputShape;
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
         this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);
+        this.useWeightDecay = useWeightDecay;
+        if (useWeightDecay) {
+            this.uniforms += ', weightDecay: f32';
+        }
     }
     getUserCode() {
         return `
@@ -33,7 +38,9 @@ class AdamAdjustProgram implements WebGPUProgram {
 
                 let invSqrt = inverseSqrt(max(m2Hat, 1e-30));
                 let invDenom = invSqrt / fma(uniforms.epsilon, invSqrt, 1.0);
-                let adjustedValue = fma(-uniforms.learningRate * m1Hat, invDenom, value);
+                var adjustedValue = fma(-uniforms.learningRate * m1Hat, invDenom, value);
+
+                ${this.useWeightDecay ? 'adjustedValue = adjustedValue - uniforms.learningRate * uniforms.weightDecay * value;' : ''}
 
                 setOutputAtIndex(index, adjustedValue);
             }
@@ -44,24 +51,28 @@ class AdamAdjustProgram implements WebGPUProgram {
 
 function adamAdjustGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { moments, value } = args.inputs as { moments: TensorInfo; value: TensorInfo };
-    const { beta1, beta2, learningRate, epsilon } = args.attrs as {
+    const { beta1, beta2, learningRate, epsilon, weightDecay } = args.attrs as {
         beta1: number;
         beta2: number;
         learningRate: number;
         epsilon: number;
+        weightDecay: number;
     };
 
     const backend = args.backend as WebGPUBackend;
 
     assertShapesMatch(moments.shape, [...value.shape, 2], 'Error in AdamAdjust: ');
 
-    const program = new AdamAdjustProgram(value.shape);
+    const program = new AdamAdjustProgram(value.shape, weightDecay > 0);
     const uniformData = [
         { type: 'float32', data: [1.0 / beta1] },
         { type: 'float32', data: [1.0 / beta2] },
         { type: 'float32', data: [learningRate] },
         { type: 'float32', data: [epsilon] },
     ];
+    if (weightDecay > 0) {
+        uniformData.push({ type: 'float32', data: [weightDecay] });
+    }
     return backend.runWebGPUProgram(program, [moments, value], 'float32', uniformData);
 }
 

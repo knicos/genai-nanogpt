@@ -81,22 +81,13 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
     protected build(): void {
         // Nothing to do by default.
     }
-    protected dropout(x: Tensor): Tensor {
-        return x;
-    }
 
     abstract forward(attrs: ATTR, ...x: Tensor[]): Tensor | Tensor[];
 
     public call(attrs: ATTR, ...x: Tensor[]): Tensor | Tensor[] {
         this.build();
         const f = this.forward(attrs, ...x);
-        if (attrs.training && f instanceof Tensor) {
-            const out = this.dropout(f);
-            if (out !== f) f.dispose();
-            return out;
-        } else {
-            return f;
-        }
+        return f;
     }
 
     public callCheckpoint(attrs: ATTR, ...x: Tensor[]): Tensor {
@@ -136,12 +127,6 @@ export default abstract class BaseLayer<ATTR extends ForwardAttributes = Forward
         });
 
         const output = cp(...x, ...vars);
-        if (attrs.training) {
-            const out = this.dropout(output);
-            if (out !== output) output.dispose();
-            return out;
-        } else {
-            return output;
-        }
+        return output;
     }
 }

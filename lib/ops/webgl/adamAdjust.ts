@@ -21,8 +21,12 @@ class AdamAdjustProgram implements GPGPUProgram {
         { name: 'epsilon', type: 'float' as UniformType },
     ];
 
-    constructor(outputShape: number[]) {
+    constructor(outputShape: number[], useWeightDecay: boolean) {
         this.outputShape = outputShape;
+
+        if (useWeightDecay) {
+            this.customUniforms.push({ name: 'weightDecay', type: 'float' as UniformType });
+        }
 
         this.userCode = `
         void main() {
@@ -39,6 +43,8 @@ class AdamAdjustProgram implements GPGPUProgram {
             float invDenom = invSqrt / (1.0 + epsilon * invSqrt);
             float adjustedValue = -learningRate * m1Hat * invDenom + v;
 
+            ${useWeightDecay ? 'adjustedValue = adjustedValue - learningRate * weightDecay * v;' : ''}
+
             setOutput(adjustedValue);
         }
         `;
@@ -47,11 +53,12 @@ class AdamAdjustProgram implements GPGPUProgram {
 
 function adamAdjustGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { moments, value } = args.inputs as { moments: Tensor; value: Tensor };
-    const { beta1, beta2, learningRate, epsilon } = args.attrs as {
+    const { beta1, beta2, learningRate, epsilon, weightDecay } = args.attrs as {
         beta1: number;
         beta2: number;
         learningRate: number;
         epsilon: number;
+        weightDecay: number;
     };
 
     const backend = args.backend as MathBackendWebGL;
@@ -59,13 +66,12 @@ function adamAdjustGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; att
     const momentsReshaped = reshape({ inputs: { x: moments }, backend, attrs: { shape: [-1] } });
     const valueReshaped = reshape({ inputs: { x: value }, backend, attrs: { shape: [-1] } });
 
-    const program = new AdamAdjustProgram(valueReshaped.shape);
-    const result = backend.runWebGLProgram(program, [momentsReshaped, valueReshaped], 'float32', [
-        [1 / beta1],
-        [1 / beta2],
-        [learningRate],
-        [epsilon],
-    ]);
+    const program = new AdamAdjustProgram(valueReshaped.shape, weightDecay > 0);
+    const uniforms = [[1 / beta1], [1 / beta2], [learningRate], [epsilon]];
+    if (weightDecay > 0) {
+        uniforms.push([weightDecay]);
+    }
+    const result = backend.runWebGLProgram(program, [momentsReshaped, valueReshaped], 'float32', uniforms);
 
     backend.disposeIntermediateTensorInfo(momentsReshaped);
     backend.disposeIntermediateTensorInfo(valueReshaped);

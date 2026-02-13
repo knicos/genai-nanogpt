@@ -8,7 +8,6 @@ export interface TransformersConfig {
     num_hidden_layers: number;
     num_attention_heads: number;
     block_size: number;
-    dropout: number;
     biasInLinear: boolean;
     biasInLayerNorm: boolean;
     mlpFactor: number;

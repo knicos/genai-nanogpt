@@ -63,6 +63,7 @@ function buildExpectedExample(
     } as const;
 
     for (const fragment of conversation) {
+        const isAssistant = fragment.role === 'assistant';
         const start = roleToStart[fragment.role]!;
         const end = roleToEnd[fragment.role]!;
 
@@ -73,12 +74,11 @@ function buildExpectedExample(
         for (const t of contentTokens) {
             tokens.push(t);
             const isSpecial = tokenizer.isSpecialToken(t);
-            const isAssistant = fragment.role === 'assistant';
             mask.push(isAssistant && !isSpecial);
         }
 
         tokens.push(end);
-        mask.push(false);
+        mask.push(isAssistant);
     }
 
     tokens.push(tokenizer.eosToken);

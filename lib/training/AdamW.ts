@@ -23,31 +23,59 @@ import { dispose, engine, Optimizer, tidy, zeros } from '@tensorflow/tfjs-core';
 import { OptimizerVariable } from '@tensorflow/tfjs-core/dist/optimizers/optimizer';
 import { ConfigDict, Serializable, SerializableConstructor } from '@tensorflow/tfjs-core/dist/serialization';
 import { NamedTensor, NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
+import LRScheduler, { LRSchedulerConfig } from './LRScheduler';
 
-export class AdamOptimizer extends Optimizer {
-    public readonly className = 'Adam';
+export interface AdamWOptimizerConfig extends LRSchedulerConfig {
+    learningRate: number;
+    beta1: number;
+    beta2: number;
+    epsilon?: number;
+    weightDecay: number;
+    lossScaling: number;
+}
+
+export class AdamWOptimizer extends Optimizer {
+    public readonly className = 'AdamW';
 
     private accBeta1 = 0;
     private accBeta2 = 0;
     private accumulatedMoments: OptimizerVariable[] = [];
+    protected learningRate: number;
+    protected beta1: number;
+    protected beta2: number;
+    protected lossScaling: number;
+    protected weightDecay: number;
+    protected epsilon: number | null = null;
+    protected lrScheduler: LRScheduler;
 
-    constructor(
-        protected learningRate: number,
-        protected beta1: number,
-        protected beta2: number,
-        protected lossScaling: number,
-        protected epsilon: number | null = null
-    ) {
+    constructor(config: AdamWOptimizerConfig) {
         super();
-        this.accBeta1 = beta1;
-        this.accBeta2 = beta2;
-
-        if (epsilon === null) {
+        this.accBeta1 = config.beta1;
+        this.accBeta2 = config.beta2;
+        this.learningRate = config.learningRate;
+        this.beta1 = config.beta1;
+        this.beta2 = config.beta2;
+        this.weightDecay = config.weightDecay;
+        this.lossScaling = config.lossScaling;
+        if (config.epsilon === null || config.epsilon === undefined) {
             this.epsilon = engine().backend.epsilon();
+        } else {
+            this.epsilon = config.epsilon;
         }
+
+        this.lrScheduler = new LRScheduler(config.learningRate, config);
+
+        console.log('Initialized AdamWOptimizer with config:', config);
+    }
+
+    get lr(): number {
+        return this.learningRate;
     }
 
     applyGradients(variableGradients: NamedVariableMap | NamedTensor[]) {
+        const lr = this.lrScheduler.getNextLR();
+        this.learningRate = lr;
+
         const varNames = Array.isArray(variableGradients)
             ? variableGradients.map((v) => v.name)
             : Object.keys(variableGradients);
@@ -83,7 +111,9 @@ export class AdamOptimizer extends Optimizer {
                     oneMinusAccBeta1,
                     oneMinusAccBeta2,
                     this.epsilon ?? 1e-8,
-                    this.learningRate
+                    this.learningRate,
+                    // Only apply weight decay if the variable is multi-dimensional (e.g. weights, not biases)
+                    value.shape.length > 1 ? this.weightDecay : 0
                 );
                 value.assign(newValue);
             });

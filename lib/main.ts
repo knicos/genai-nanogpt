@@ -74,7 +74,7 @@ export const layers = {
     RoPECache,
 };
 
-export { default as AdamExt } from './training/AdamExt';
+export { AdamWOptimizer } from './training/AdamW';
 
 export { default as checks } from './checks';
 export type { TensorStatistics } from './checks/weights';

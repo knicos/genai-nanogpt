@@ -39,7 +39,6 @@ export async function saveModel(
         num_hidden_layers: model.config.nLayer,
         num_attention_heads: model.config.nHead,
         block_size: model.config.blockSize,
-        dropout: model.config.dropout,
         biasInLinear: model.config.biasInLinear,
         biasInLayerNorm: model.config.biasInLayerNorm,
         mlpFactor: model.config.mlpFactor,

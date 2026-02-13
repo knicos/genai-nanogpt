@@ -17,7 +17,6 @@ export function mapTransformersConfigToGPTConfig(config: TransformersConfig): GP
         nLayer: config.num_hidden_layers,
         nHead: config.num_attention_heads,
         nEmbed: config.hidden_size,
-        dropout: config.dropout,
         biasInLinear: config.biasInLinear,
         biasInLayerNorm: config.biasInLayerNorm,
         mlpFactor: config.mlpFactor,

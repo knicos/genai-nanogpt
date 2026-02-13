@@ -1,4 +1,4 @@
-import { dropout, randomNormal, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
+import { randomNormal, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
 import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { GPTConfig } from '@base/main';
 import { matMul16, matMul16Gelu } from '@base/ops/matMul16';
@@ -57,14 +57,5 @@ export default class MLP extends BaseLayer {
             this.endMemory('MLP');
             return projected;
         });
-    }
-
-    protected override dropout(x: Tensor): Tensor {
-        if (this.config.dropout > 0) {
-            const dOut = dropout(x, this.config.dropout);
-            x.dispose();
-            return dOut;
-        }
-        return x;
     }
 }

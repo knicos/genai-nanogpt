@@ -9,7 +9,8 @@ export function adamAdjust(
     beta1: number,
     beta2: number,
     epsilon: number,
-    learningRate: number
+    learningRate: number,
+    weightDecay = 0
 ): Tensor {
-    return engine().runKernel('AdamAdjust', { moments, value }, { beta1, beta2, epsilon, learningRate });
+    return engine().runKernel('AdamAdjust', { moments, value }, { beta1, beta2, epsilon, learningRate, weightDecay });
 }

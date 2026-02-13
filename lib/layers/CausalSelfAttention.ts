@@ -2,7 +2,7 @@ import { attentionMask } from '../ops/attentionMask';
 import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { rope } from '../ops/rope';
 import { appendCache } from '@base/ops/appendCache';
-import { dropout, keep, randomNormal, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
+import { keep, randomNormal, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
 import { GPTConfig } from '@base/models/config';
 import { softmax16 } from '@base/ops/softmax16';
 import { matMul16 } from '@base/ops/matMul16';
@@ -200,15 +200,5 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             this.endMemory(`CausalSelfAttention`);
             return output;
         });
-    }
-
-    protected override dropout(x: Tensor): Tensor {
-        if (this.config.dropout > 0) {
-            const finalOutput = dropout(x, this.config.dropout);
-            x.dispose();
-            return finalOutput;
-        } else {
-            return x;
-        }
     }
 }

@@ -6,7 +6,6 @@ import { add } from '@tensorflow/tfjs-core/dist/engine';
 
 export default class PositionEmbedding extends BaseLayer {
     private wpe?: layers.Layer; // Position embeddings
-    private drop: layers.Layer; // Dropout
 
     constructor(config: GPTConfig, name = '', parent?: BaseLayer) {
         super(config, parent);
@@ -16,7 +15,6 @@ export default class PositionEmbedding extends BaseLayer {
             name,
             embeddingsInitializer: initializers.randomNormal({ mean: 0.0, stddev: 0.02 }),
         });
-        this.drop = layers.dropout({ rate: this.config.dropout });
     }
 
     forward(attrs: ModelForwardAttributes, x: Tensor): Tensor {
@@ -31,8 +29,7 @@ export default class PositionEmbedding extends BaseLayer {
 
             const embSum = x.add(posEmb);
 
-            const out = this.drop.apply(embSum, { training: attrs.training }) as Tensor;
-            return out;
+            return embSum;
         });
     }
 }
