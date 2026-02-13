@@ -9,10 +9,10 @@ const navigator = { gpu: create([]) };
 Object.assign(globalThis.navigator, navigator);
 
 import { selectBackend } from '@base/backend';
-import { ones, randomNormal } from '@tensorflow/tfjs-core';
+import { grad, ones, randomNormal } from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-core/dist/public/chained_ops/register_all_chained_ops';
 import { normRMS } from '@base/ops/normRMS';
-import { normRMSGradConfig } from '@base/ops/grads/normRMS';
+import { normRMSGradConfig, normRMSGradConfigNoGamma } from '@base/ops/grads/normRMS';
 import { isPackedTensor } from '@base/utilities/packed';
 
 describe('RMS Norm 16-bit', { timeout: 30000 }, () => {
@@ -56,6 +56,67 @@ describe('RMS Norm 16-bit', { timeout: 30000 }, () => {
         const fusedData = await fusedRMS.data();
 
         const error = arraysClose(manualData, fusedData);
+        expect(error).toBeLessThan(1e-4);
+    });
+
+    it('produces correct norm compared to manual approach without gamma', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const x = randomNormal([32, 128, 192], 0, 1, 'float32');
+
+        const fusedRMS = normRMS(x);
+
+        const meanSquares = x.square().mean(2, true);
+        const rms = meanSquares.add(1e-8).sqrt();
+        const normalized = x.div(rms);
+        const manualRMS = normalized;
+
+        const manualData = await manualRMS.data();
+        const fusedData = await fusedRMS.data();
+
+        const error = arraysClose(manualData, fusedData);
+        expect(error).toBeLessThan(1e-4);
+    });
+
+    it('matches gradients from TF auto-grad of manual forward (with gamma)', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const x = randomNormal([32, 128, 192], 0, 1, 'float32');
+        const gamma = ones([192], 'float32');
+
+        const fusedGrad = grad((xIn) => normRMS(xIn, gamma).sum())(x);
+
+        const manualGrad = grad((xIn) => {
+            const meanSquares = xIn.square().mean(2, true);
+            const rms = meanSquares.add(1e-8).sqrt();
+            const normalized = xIn.div(rms);
+            const manual = normalized.mul(gamma);
+            return manual.sum();
+        })(x);
+
+        const fusedData = await fusedGrad.data();
+        const manualData = await manualGrad.data();
+
+        const error = arraysClose(fusedData, manualData);
+        expect(error).toBeLessThan(1e-4);
+    });
+
+    it('matches gradients from TF auto-grad of manual forward (without gamma)', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const x = randomNormal([32, 128, 192], 0, 1, 'float32');
+
+        const fusedGrad = grad((xIn) => normRMS(xIn).sum())(x);
+
+        const manualGrad = grad((xIn) => {
+            const meanSquares = xIn.square().mean(2, true);
+            const rms = meanSquares.add(1e-8).sqrt();
+            const normalized = xIn.div(rms);
+            const manual = normalized;
+            return manual.sum();
+        })(x);
+
+        const fusedData = await fusedGrad.data();
+        const manualData = await manualGrad.data();
+
+        const error = arraysClose(fusedData, manualData);
         expect(error).toBeLessThan(1e-4);
     });
 
@@ -109,6 +170,26 @@ describe('RMS Norm 16-bit', { timeout: 30000 }, () => {
                     .gradFunc(unpack16(packedY), [unpack16(packedX), unpack16(packedGamma)], { dim: 1 })
                     .x()
             )
+        );
+        const gradX32Data = await gradX32.data();
+
+        const error = arraysClose(gradX16Data, gradX32Data);
+        expect(error).toBeLessThan(1e-3);
+    });
+
+    it('produces similar gradients for each precision without gamma', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const x = randomNormal([64, 128], 0, 1, 'float32');
+        const y = randomNormal([64, 128], 0, 1, 'float32');
+
+        const packedX = pack16(x);
+        const packedY = pack16(y);
+
+        const gradX16 = unpack16(normRMSGradConfigNoGamma.gradFunc(packedY, [packedX], { dim: 1 }).x());
+        const gradX16Data = await gradX16.data();
+
+        const gradX32 = unpack16(
+            pack16(normRMSGradConfigNoGamma.gradFunc(unpack16(packedY), [unpack16(packedX)], { dim: 1 }).x())
         );
         const gradX32Data = await gradX32.data();
 

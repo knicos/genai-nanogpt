@@ -22,6 +22,7 @@ export function mapTransformersConfigToGPTConfig(config: TransformersConfig): GP
         mlpFactor: config.mlpFactor,
         useRope: config.useRope,
         loraConfig: config.loraConfig,
+        noRMSLearnables: config.noRMSLearnables,
     };
 
     return modelConfig;

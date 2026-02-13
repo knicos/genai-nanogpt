@@ -3,11 +3,16 @@ import { ReduceProgram } from './utils/reductions';
 import { DeviceInformation } from './utils/deviceInfo';
 
 export default class RMSProgram16 extends ReduceProgram {
-    constructor(deviceInfo: DeviceInformation, reduceInfo: backend_util.ReduceInfo) {
+    private hasGamma: boolean;
+
+    constructor(deviceInfo: DeviceInformation, reduceInfo: backend_util.ReduceInfo, hasGamma = false) {
         super(deviceInfo, reduceInfo, { reductionOp: 'mean', elementwise: true }, true);
         this.shaderKey = 'RMSNorm16';
-        this.variableNames.push('gamma');
+        if (hasGamma) {
+            this.variableNames.push('gamma');
+        }
         this.variableComponents = [1, 1];
+        this.hasGamma = hasGamma;
     }
 
     override getPreprocessSnippet(): string {
@@ -21,9 +26,9 @@ export default class RMSProgram16 extends ReduceProgram {
     override getWriteSnippet(): string {
         return `
             let X = unpack2x16float(u32(x[offset + k]));
-            let gamma = unpack2x16float(u32(gamma[k]));
+            ${this.hasGamma ? `let gamma = unpack2x16float(u32(gamma[k]));` : ''}
             let normalized = X * bestValue;
-            let outVal = normalized * gamma;
+            let outVal = normalized ${this.hasGamma ? ' * gamma' : ''};
             result[offset + k] = i32(pack2x16float(outVal));
         `;
     }

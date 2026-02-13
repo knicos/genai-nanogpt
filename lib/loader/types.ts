@@ -13,6 +13,7 @@ export interface TransformersConfig {
     mlpFactor: number;
     useRope: boolean;
     loraConfig?: LoRAConfig;
+    noRMSLearnables?: boolean;
 }
 
 export interface TransformersTokeniser {

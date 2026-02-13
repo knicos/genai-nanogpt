@@ -8,13 +8,16 @@ export default class RMSNorm extends BaseLayer {
     constructor(config: GPTConfig, name = '', parent?: BaseLayer) {
         super(config, parent);
         this.GAMMA = name;
-        this.addVariable(this.GAMMA, variable(ones([config.nEmbed]), true, this.GAMMA, 'float32'));
+
+        if (!config.noRMSLearnables) {
+            this.addVariable(this.GAMMA, variable(ones([config.nEmbed]), true, this.GAMMA, 'float32'));
+        }
     }
 
     forward(_: ForwardAttributes, x: Tensor): Tensor {
         return tidy(() => {
             this.startMemory();
-            const result = normRMS(x, this.getVariable(this.GAMMA));
+            const result = normRMS(x, this.config.noRMSLearnables ? undefined : this.getVariable(this.GAMMA));
             this.endMemory('RMSNorm');
             return result;
         });

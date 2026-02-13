@@ -17,6 +17,7 @@ export interface GPTConfig {
     mlpFactor: number;
     useRope: boolean;
     loraConfig?: LoRAConfig;
+    noRMSLearnables?: boolean;
 }
 
 // Default configuration
@@ -31,4 +32,5 @@ export const defaultConfig: GPTConfig = {
     biasInLayerNorm: false,
     mlpFactor: 4,
     useRope: true, // Use Rotary Position Embeddings
+    noRMSLearnables: false, // Whether to make RMSNorm parameters learnable
 };

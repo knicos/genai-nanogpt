@@ -44,6 +44,7 @@ export async function saveModel(
         mlpFactor: model.config.mlpFactor,
         useRope: model.config.useRope,
         loraConfig: model.config.loraConfig,
+        noRMSLearnables: model.config.noRMSLearnables,
     };
 
     zipFile.file('config.json', JSON.stringify(transformersConfig, undefined, 4), {

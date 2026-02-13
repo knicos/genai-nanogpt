@@ -1,7 +1,7 @@
 import { engine, GradConfig, registerGradient, Tensor } from '@tensorflow/tfjs-core';
 
-function dNormRMS(dy: Tensor, x: Tensor, gamma: Tensor): Tensor[] {
-    return engine().runKernel('RMSNormGrad', { dy, x, gamma });
+function dNormRMS(dy: Tensor, x: Tensor, gamma?: Tensor): Tensor[] {
+    return engine().runKernel('RMSNormGrad', gamma ? { dy, x, gamma } : { dy, x });
 }
 
 export const normRMSGradConfig: GradConfig = {
@@ -21,3 +21,20 @@ export const normRMSGradConfig: GradConfig = {
 };
 
 registerGradient(normRMSGradConfig);
+
+export const normRMSGradConfigNoGamma: GradConfig = {
+    kernelName: 'RMSNormNoGamma',
+    inputsToSave: ['x'],
+    outputsToSave: [],
+    gradFunc: (dy: Tensor | Tensor[], saved: Tensor[]) => {
+        const [x] = saved;
+
+        const [dx] = dNormRMS(dy as Tensor, x);
+
+        return {
+            x: () => dx,
+        };
+    },
+};
+
+registerGradient(normRMSGradConfigNoGamma);
