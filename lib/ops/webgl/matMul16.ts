@@ -6,8 +6,10 @@ import {
     NamedAttrMap,
     NamedTensorInfoMap,
     registerKernel,
+    relu,
     reshape,
     scalar,
+    square,
     Tensor,
     TensorInfo,
     transpose,
@@ -43,6 +45,15 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
             result = matMulMul(sA, sB, scalar(scale), transposeA, transposeB);
         } else if (activation === 'gelu') {
             result = matMulGelu(sA, sB);
+        } else if (activation === 'relu2') {
+            // TODO Use fused implementation
+            const matMulResult = matMul(sA, sB, transposeA, transposeB);
+            const reluResult = relu(matMulResult);
+            matMulResult.dispose();
+            result = square(reluResult);
+            reluResult.dispose();
+        } else if (activation === 'relu') {
+            result = relu(matMul(sA, sB, transposeA, transposeB));
         } else {
             result = matMul(sA, sB, transposeA, transposeB);
         }

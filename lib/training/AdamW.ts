@@ -19,11 +19,12 @@
 
 import { adamAdjust } from '@base/ops/adamAdjust';
 import { adamMoments } from '@base/ops/adamMoments';
-import { dispose, engine, Optimizer, tidy, zeros } from '@tensorflow/tfjs-core';
+import { dispose, engine, Optimizer, scalar, Scalar, tidy, zeros } from '@tensorflow/tfjs-core';
 import { OptimizerVariable } from '@tensorflow/tfjs-core/dist/optimizers/optimizer';
 import { ConfigDict, Serializable, SerializableConstructor } from '@tensorflow/tfjs-core/dist/serialization';
 import { NamedTensor, NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
 import LRScheduler, { LRSchedulerConfig } from './LRScheduler';
+import { clipScale } from '@base/ops/globalNorm';
 
 export interface AdamWOptimizerConfig extends LRSchedulerConfig {
     learningRate: number;
@@ -32,6 +33,7 @@ export interface AdamWOptimizerConfig extends LRSchedulerConfig {
     epsilon?: number;
     weightDecay: number;
     lossScaling: number;
+    clipNorm?: number;
 }
 
 export class AdamWOptimizer extends Optimizer {
@@ -47,6 +49,7 @@ export class AdamWOptimizer extends Optimizer {
     protected weightDecay: number;
     protected epsilon: number | null = null;
     protected lrScheduler: LRScheduler;
+    protected clipNorm?: number;
 
     constructor(config: AdamWOptimizerConfig) {
         super();
@@ -57,6 +60,7 @@ export class AdamWOptimizer extends Optimizer {
         this.beta2 = config.beta2;
         this.weightDecay = config.weightDecay;
         this.lossScaling = config.lossScaling;
+        this.clipNorm = config.clipNorm;
         if (config.epsilon === null || config.epsilon === undefined) {
             this.epsilon = engine().backend.epsilon();
         } else {
@@ -83,6 +87,19 @@ export class AdamWOptimizer extends Optimizer {
             const oneMinusAccBeta1 = 1 - this.accBeta1;
             const oneMinusAccBeta2 = 1 - this.accBeta2;
 
+            let scaling: Scalar;
+            if (this.clipNorm !== undefined) {
+                const grads = varNames.map((name, i) => {
+                    const gradient = Array.isArray(variableGradients)
+                        ? variableGradients[i].tensor
+                        : variableGradients[name];
+                    return gradient;
+                });
+                scaling = clipScale(grads, 1 / this.lossScaling, this.clipNorm);
+            } else {
+                scaling = scalar(1 / this.lossScaling);
+            }
+
             varNames.forEach((name, i) => {
                 const value = engine().registeredVariables[name];
                 const trainable = false;
@@ -102,7 +119,7 @@ export class AdamWOptimizer extends Optimizer {
 
                 const moments = this.accumulatedMoments[i].variable;
 
-                const newMoments = adamMoments(moments, gradient, this.beta1, this.beta2, this.lossScaling);
+                const newMoments = adamMoments(moments, gradient, this.beta1, this.beta2, scaling);
                 moments.assign(newMoments);
 
                 const newValue = adamAdjust(

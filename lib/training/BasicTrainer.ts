@@ -16,6 +16,18 @@ const DEFAULT_OPTIONS: TrainingOptions = {
     maxSteps: 1000,
 };
 
+const DEFAULT_OPT_CONFIG: AdamWOptimizerConfig = {
+    learningRate: 3e-4,
+    beta1: 0.9,
+    beta2: 0.99,
+    epsilon: 1e-8,
+    weightDecay: 0.01,
+    warmupSteps: 100,
+    decaySteps: 10000,
+    minLearningRate: 1e-5,
+    lossScaling: 1.0,
+};
+
 export default class BasicTrainer {
     public model: Model<ModelForwardAttributes>;
     protected optimizer!: AdamWOptimizer;
@@ -28,18 +40,13 @@ export default class BasicTrainer {
 
     constructor(
         model: Model<ModelForwardAttributes>,
-        public tokenizer: ITokeniser
+        public tokenizer: ITokeniser,
+        optConfig?: Partial<AdamWOptimizerConfig>
     ) {
         this.model = model;
         this.optimizerConfig = {
-            learningRate: 3e-4,
-            beta1: 0.9,
-            beta2: 0.99,
-            epsilon: 1e-8,
-            weightDecay: 0.01,
-            warmupSteps: 100,
-            decaySteps: 10000,
-            minLearningRate: 1e-5,
+            ...DEFAULT_OPT_CONFIG,
+            ...optConfig,
             lossScaling: model.lossScaling,
         };
         this.resetOptimizer();

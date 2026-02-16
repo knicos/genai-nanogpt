@@ -2,6 +2,17 @@ import Model, { ModelForwardAttributes } from '@base/models/model';
 import BasicTrainer from './BasicTrainer';
 import { ITokeniser } from '@base/tokeniser/type';
 import { SFTDatasetBuilder } from './SFTDatasetBuilder';
+import { AdamWOptimizerConfig } from './AdamW';
+
+const DEFAULT_OPT_CONFIG: Partial<AdamWOptimizerConfig> = {
+    decaySteps: 10000,
+    warmupSteps: 100,
+    minLearningRate: 1e-5,
+    weightDecay: 0.1,
+    beta2: 0.95,
+    learningRate: 3e-4,
+    // clipNorm: 1.0,
+};
 
 export default class SFTTrainer extends BasicTrainer {
     public datasetBuilder: SFTDatasetBuilder;
@@ -9,18 +20,11 @@ export default class SFTTrainer extends BasicTrainer {
     constructor(
         model: Model<ModelForwardAttributes>,
         public tokenizer: ITokeniser,
-        learningRate = 3e-4
+        optConfig?: Partial<AdamWOptimizerConfig>
     ) {
-        super(model, tokenizer);
+        super(model, tokenizer, { ...DEFAULT_OPT_CONFIG, ...optConfig });
 
-        this.optimizerConfig.decaySteps = 10000;
-        this.optimizerConfig.warmupSteps = 100;
-        this.optimizerConfig.minLearningRate = 1e-5;
-        this.optimizerConfig.weightDecay = 0.1;
-        this.optimizerConfig.beta2 = 0.95;
-        this.optimizerConfig.learningRate = learningRate;
-
-        this.resetOptimizer();
+        // this.resetOptimizer();
 
         this.datasetBuilder = new SFTDatasetBuilder(tokenizer, model.config.blockSize);
         this.maskedLoss = true;

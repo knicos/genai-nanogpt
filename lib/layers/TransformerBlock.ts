@@ -1,6 +1,6 @@
 import CausalSelfAttention, { AttentionScores, KVCache } from './CausalSelfAttention';
-import MLP from './MLP';
-import RMSNorm from './RMSNorm';
+import MLP, { MLPConfig } from './MLP';
+import RMSNorm, { RMSNormConfig } from './RMSNorm';
 import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { keep, Tensor, tidy } from '@tensorflow/tfjs-core';
 import { GPTConfig } from '@base/models/config';
@@ -12,6 +12,8 @@ interface BlockAttributes extends ForwardAttributes {
     attentionScores?: AttentionScores;
 }
 
+export type TransformerBlockConfig = MLPConfig & RMSNormConfig;
+
 // Transformer block
 export default class Block extends BaseLayer<BlockAttributes> {
     private ln1: RMSNorm;
@@ -20,18 +22,19 @@ export default class Block extends BaseLayer<BlockAttributes> {
     private mlp: MLP;
     private index: number;
     public skipped = false;
+    private blockConfig: TransformerBlockConfig;
 
-    constructor(index: number, config: GPTConfig, parent?: BaseLayer) {
+    constructor(index: number, config: GPTConfig, blockConfig: TransformerBlockConfig, parent?: BaseLayer) {
         super(config, parent);
         this.index = index;
+        this.blockConfig = blockConfig;
 
-        this.ln1 = new RMSNorm(config, `block_${this.index}_rms1`, this);
+        this.ln1 = new RMSNorm(config, this.blockConfig, `block_${this.index}_rms1`, this);
 
         this.attn = new CausalSelfAttention(this.index, config, this);
 
-        this.ln2 = new RMSNorm(config, `block_${this.index}_rms2`, this);
-
-        this.mlp = new MLP(this.index, config, this);
+        this.ln2 = new RMSNorm(config, this.blockConfig, `block_${this.index}_rms2`, this);
+        this.mlp = new MLP(this.index, config, this.blockConfig, this);
     }
 
     private getMLPOutput(x: Tensor, attrs: BlockAttributes): Tensor {

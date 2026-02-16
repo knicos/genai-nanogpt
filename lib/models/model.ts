@@ -4,7 +4,7 @@ import type { AttentionScores, KVCache } from '../layers/CausalSelfAttention';
 import BaseLayer from '../layers/BaseLayer';
 import { estimateParameterCount } from '../main';
 import { TransformersMetadata } from '@base/loader/types';
-import { LoRAConfig } from './config';
+import { GPTConfig, LoRAConfig } from './config';
 import LoRA from '@base/layers/LoRA';
 
 export interface ModelForwardAttributes extends ForwardAttributes {
@@ -22,7 +22,10 @@ interface TrainingState {
 }
 
 // Abstract base class for models
-export default abstract class Model<T extends ModelForwardAttributes> extends BaseLayer<T> {
+export default abstract class Model<
+    T extends ModelForwardAttributes,
+    C extends GPTConfig = GPTConfig,
+> extends BaseLayer<T, C> {
     public lossScaling = 128;
     public trainingState: TrainingState | null = null;
     public metaData?: TransformersMetadata;

@@ -10,20 +10,32 @@ import Model, { ModelForwardAttributes } from '@base/models/model';
 import { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './types';
 
 export function mapTransformersConfigToGPTConfig(config: TransformersConfig): GPTConfig {
-    const modelConfig: GPTConfig = {
-        modelType: config.model_type || 'GenAI_NanoGPT_v1',
-        vocabSize: config.vocab_size,
-        blockSize: config.block_size,
-        nLayer: config.num_hidden_layers,
-        nHead: config.num_attention_heads,
-        nEmbed: config.hidden_size,
-        biasInLinear: config.biasInLinear,
-        biasInLayerNorm: config.biasInLayerNorm,
-        mlpFactor: config.mlpFactor,
-        useRope: config.useRope,
-        loraConfig: config.loraConfig,
-        noRMSLearnables: config.noRMSLearnables,
-    };
+    let modelConfig: GPTConfig;
+
+    if (config.model_type === 'GenAI_NanoGPT_v1') {
+        modelConfig = {
+            modelType: 'GenAI_NanoGPT_v1',
+            vocabSize: config.vocab_size,
+            blockSize: config.block_size,
+            nLayer: config.num_hidden_layers,
+            nHead: config.num_attention_heads,
+            nEmbed: config.hidden_size,
+            mlpFactor: config.mlpFactor,
+            useRope: config.useRope,
+        };
+    } else {
+        modelConfig = {
+            modelType: 'GenAI_NanoGPT_v2',
+            vocabSize: config.vocab_size,
+            blockSize: config.block_size,
+            nLayer: config.num_hidden_layers,
+            nHead: config.num_attention_heads,
+            nEmbed: config.hidden_size,
+            mlpFactor: config.mlpFactor,
+            loraConfig: config.loraConfig,
+            windowSize: config.windowSize,
+        };
+    }
 
     return modelConfig;
 }
@@ -33,7 +45,7 @@ export default async function loadTransformers(
     tokeniser: TransformersTokeniser,
     metadata: TransformersMetadata,
     weightData: ArrayBuffer
-): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
+): Promise<{ model: Model<ModelForwardAttributes, GPTConfig>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
     const modelConfig = mapTransformersConfigToGPTConfig(config);
 
     const tokeniserType = tokeniser.type ?? 'char';

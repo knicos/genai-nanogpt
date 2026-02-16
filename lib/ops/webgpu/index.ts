@@ -21,3 +21,5 @@ import './concat16';
 import './mul16';
 import './sub16';
 import './softmax16grad';
+import './norm2';
+import './clipScale';

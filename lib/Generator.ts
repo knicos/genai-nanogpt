@@ -431,7 +431,11 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
             this.resetCache();
         }
 
-        if (!this.cache && !options?.noCache && this.model.config.useRope) {
+        if (
+            !this.cache &&
+            !options?.noCache &&
+            (this.model.config.modelType !== 'GenAI_NanoGPT_v1' || this.model.config.useRope)
+        ) {
             const cache: KVCache[] = new Array(this.model.config.nLayer);
             for (let i = 0; i < this.model.config.nLayer; i++) {
                 cache[i] = { k: undefined, v: undefined, length: 0, cumulativeLength: 0 };

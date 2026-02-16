@@ -60,6 +60,7 @@ function sum16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: 
     }
 
     const reduceInfo = createReduceInfo([input], -1);
+
     const program = new SumProgram16(deviceInfo, reduceInfo, packed);
 
     const result = reduce(program, [input], backend);

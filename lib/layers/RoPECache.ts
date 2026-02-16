@@ -27,7 +27,9 @@ export default class RoPECache {
         basePow.dispose();
         i.dispose();
 
-        if (this.config.useRope === false) {
+        const useRope = this.config.modelType === 'GenAI_NanoGPT_v1' ? (this.config.useRope ?? true) : true;
+
+        if (useRope === false) {
             this.ropeCos = null;
             this.ropeSin = null;
             this.ropeNegSin = null;

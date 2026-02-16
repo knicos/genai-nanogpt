@@ -1,4 +1,5 @@
 import RoPECache from '@base/layers/RoPECache';
+import { GPTConfigV1 } from '@base/models/config';
 import { engine, setBackend, tensor4d } from '@tensorflow/tfjs-core';
 
 export async function execute(backend: string) {
@@ -16,14 +17,12 @@ export async function execute(backend: string) {
         [1, 1, 2, 2]
     ); // (1,1,T,rdim)
 
-    const config = {
-        biasInLayerNorm: false,
+    const config: GPTConfigV1 = {
+        modelType: 'GenAI_NanoGPT_v1',
         vocabSize: 20,
         nEmbed: 16,
         nHead: 2,
         nLayer: 1,
-        biasInLinear: false,
-        dropout: 0.0,
         blockSize: 128,
         mlpFactor: 4,
         useRope: true,

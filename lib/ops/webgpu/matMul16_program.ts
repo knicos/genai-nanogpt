@@ -19,7 +19,7 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
     scale = false;
     scaleA = false;
     scaleB = false;
-    activation?: 'gelu';
+    activation?: 'gelu' | 'relu2' | 'relu';
     causalMask = false;
     outputComponent?: number | undefined;
     variableComponents?: number[];
@@ -33,6 +33,7 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
         this.outputComponent = 2;
 
         this.shaderKey = `MatMul16TB_${O1}_${O2}_${I1}_${I2}_${transposeA ? 'TA' : ''}${transposeB ? 'TB' : ''}`;
+
         if (transposeA) {
             this.outputShape = [batch, I1, I2 / 2];
             this.dimInner = O1; // or O2
@@ -187,7 +188,7 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
         this.shaderKey += '_scaledB';
     }
 
-    useActivation(activation: 'gelu') {
+    useActivation(activation: 'gelu' | 'relu2' | 'relu') {
         this.activation = activation;
         this.shaderKey += `_${activation}`;
     }
@@ -219,6 +220,20 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
                     inner = tanhComplete(inner);
                     inner = 0.5f * (1.0f + inner);
                     return x * inner;
+                }
+                `;
+        } else if (this.activation === 'relu2') {
+            // ReLU squared
+            return `
+                fn activation(x : vec4<f32>) -> vec4<f32> {
+                    let y = max(x, vec4<f32>(0.0));
+                    return y * y;
+                }
+                `;
+        } else if (this.activation === 'relu') {
+            return `
+                fn activation(x : vec4<f32>) -> vec4<f32> {
+                    return max(x, vec4<f32>(0.0));
                 }
                 `;
         }
@@ -447,8 +462,6 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
                 
                 ${this.outputIndexSnippet}
                 for (var i = 0; i < 4; i = i + 1) {
-                    ${this.scale ? `acc[i] = acc[i] * uniforms.scale;` : ''}
-
                     ${
                         this.causalMask
                             ? `
@@ -463,6 +476,7 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
                     }
 
                     ${this.activation ? `acc[i] = activation(acc[i]);` : ''}
+                    ${this.scale ? `acc[i] = acc[i] * uniforms.scale;` : ''}
                     result[idx0 / 2] = vec2<i32>(
                         i32(pack2x16float(acc[i].xy)),
                         i32(pack2x16float(acc[i].zw))

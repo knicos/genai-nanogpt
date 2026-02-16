@@ -1,4 +1,4 @@
-import { GPTConfigV1 } from './config';
+import { GPTConfigV2 } from './config';
 import Block, { TransformerBlockConfig } from '../layers/TransformerBlock';
 import TiedEmbeddingOutputLayer from '../layers/TiedEmbedding';
 import RoPECache from '../layers/RoPECache';
@@ -10,19 +10,18 @@ import { packingSupported } from '@base/utilities/packed';
 import { pack16 } from '@base/ops/pack16';
 import { unpack16 } from '@base/ops/unpack16';
 
-const defaultConfig: GPTConfigV1 = {
-    modelType: 'GenAI_NanoGPT_v1',
+const defaultConfig: GPTConfigV2 = {
+    modelType: 'GenAI_NanoGPT_v2',
     vocabSize: 2000,
     blockSize: 128, // Maximum sequence length
     nLayer: 6, // Number of transformer layers
     nHead: 4, // Number of attention heads
     nEmbed: 256, // Embedding dimension
     mlpFactor: 4,
-    useRope: true,
 };
 
 // Main NanoGPT model
-export default class NanoGPTV1 extends Model<ModelForwardAttributes, GPTConfigV1> {
+export default class NanoGPTV2 extends Model<ModelForwardAttributes, GPTConfigV2> {
     private wte: TiedEmbeddingOutputLayer; // Token embeddings
     private wpe?: PositionEmbedding; // Position embeddings
     // private drop: layers.Layer; // Dropout
@@ -30,24 +29,18 @@ export default class NanoGPTV1 extends Model<ModelForwardAttributes, GPTConfigV1
     private lnF: RMSNorm; // Final layer norm
     private ropeCache?: RoPECache;
 
-    constructor(config: Partial<GPTConfigV1> = {}) {
+    constructor(config: Partial<GPTConfigV2> = {}) {
         super({ ...defaultConfig, ...config });
 
         const blockConfig: TransformerBlockConfig = {
-            activation: 'gelu',
+            activation: 'relu2',
             hiddenFactor: this.config.mlpFactor,
-            useGamma: true,
+            useGamma: false,
         };
 
         // Token embeddings
         this.wte = new TiedEmbeddingOutputLayer(this.config, 'token_embedding', this);
-
-        if (this.config.useRope === false) {
-            // Absolute positional embeddings
-            this.wpe = new PositionEmbedding(this.config, 'positional_embedding', this);
-        } else {
-            this.ropeCache = new RoPECache(this.config);
-        }
+        this.ropeCache = new RoPECache(this.config);
 
         // Transformer blocks
         this.blocks = [];
@@ -60,23 +53,12 @@ export default class NanoGPTV1 extends Model<ModelForwardAttributes, GPTConfigV1
     }
 
     getClassName() {
-        return 'GenAI_NanoGPT_v1';
+        return 'GenAI_NanoGPT_v2';
     }
 
-    private inputPhase(idx: Tensor, attrs: ModelForwardAttributes): Tensor {
+    private inputPhase(idx: Tensor): Tensor {
         return tidy(() => {
             const tokEmb = this.wte.embed(idx) as Tensor; // (b, t, n_embd)
-
-            if (this.config.useRope === false) {
-                const out = this.wpe!.call(attrs, tokEmb);
-                if (Array.isArray(out)) {
-                    throw new Error('PositionEmbedding output should not be an array');
-                }
-                return out;
-            } /* else {
-                const out = this.drop.apply(tokEmb, { training }) as Tensor;
-                return out;
-            }*/
             return tokEmb;
         });
     }
@@ -92,8 +74,8 @@ export default class NanoGPTV1 extends Model<ModelForwardAttributes, GPTConfigV1
 
         return tidy(() => {
             this.startMemory();
-            // Token and position embeddings
-            let x = this.inputPhase(idx, attrs);
+
+            let x = this.inputPhase(idx);
 
             if (attrs.cache && attrs.cache.length !== this.blocks.length) {
                 console.error('Cache', attrs.cache);

@@ -1,4 +1,4 @@
-import { backend_util, engine, TensorInfo, util } from '@tensorflow/tfjs-core';
+import { backend_util, engine, TensorInfo, util, zeros } from '@tensorflow/tfjs-core';
 import { getMainHeaderString as main, WebGPUProgram } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_program';
 import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { reshape16 } from '@base/ops/reshape16';
@@ -8,6 +8,7 @@ import { flatDispatchLayout } from '@tensorflow/tfjs-backend-webgpu/dist/webgpu_
 export interface ReduceParams {
     reductionOp: 'mean' | 'sum';
     elementwise?: boolean;
+    forceWorkgroupSize?: number;
 }
 
 interface ReduceShaderParams extends ReduceParams {
@@ -227,9 +228,13 @@ function createReductionShader32(params: ReduceShaderParams): string {
 
                 ${params.reducedSnippet}
 
-                for (var k = tid; k < Length;
+                ${
+                    !params.elementwise
+                        ? `${params.outputSnippet}`
+                        : `for (var k = tid; k < Length;
                     k = k + ${reduceSize}) {
                     ${params.outputSnippet}
+                }`
                 }
            }
          `;
@@ -246,11 +251,12 @@ export function createReduceInfo(inputs: TensorInfo[], axis: number | number[]):
     const xSize = util.sizeFromShape(input.shape);
     const batchSize = xSize / inSize;
 
-    const reduceInfo = { windowSize: inSize, inSize, batchSize, outSize: 1 };
+    const reduceInfo = { windowSize: inSize, inSize, batchSize, outSize: batchSize };
     return reduceInfo;
 }
 
 export class ReduceProgram implements WebGPUProgram {
+    atomic = false;
     outputShape: number[];
     shaderKey = 'reduce16';
     dispatchLayout: { x: number[] };
@@ -280,9 +286,13 @@ export class ReduceProgram implements WebGPUProgram {
         this.deviceInfo = deviceInfo;
         this.packed = packed;
 
-        const maxThreads = reduceInfo.inSize % 64 === 0 ? 64 : 32;
+        const maxThreads = params.forceWorkgroupSize
+            ? params.forceWorkgroupSize
+            : reduceInfo.inSize % 64 === 0
+              ? 64
+              : 32;
 
-        if (deviceInfo.subgroupsSupported) {
+        if (deviceInfo.subgroupsSupported && !params.forceWorkgroupSize) {
             this.workgroupSize = [Math.min(maxThreads, deviceInfo.subgroupMaxSize), 1, 1];
             this.subgroups = true;
             if (deviceInfo.variableSubgroups) {
@@ -292,9 +302,17 @@ export class ReduceProgram implements WebGPUProgram {
             this.workgroupSize[0] = maxThreads;
         }
 
-        this.outputShape = params.elementwise ? [reduceInfo.batchSize, reduceInfo.inSize] : [reduceInfo.batchSize / 2];
+        this.outputShape = params.elementwise
+            ? [reduceInfo.batchSize, reduceInfo.inSize]
+            : packed
+              ? [reduceInfo.outSize / 2]
+              : [reduceInfo.outSize];
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
-        this.dispatch = [params.elementwise ? reduceInfo.batchSize : reduceInfo.batchSize / 2, 1, 1];
+        this.dispatch = [
+            params.elementwise ? reduceInfo.batchSize : packed ? reduceInfo.batchSize / 2 : reduceInfo.batchSize,
+            1,
+            1,
+        ];
         this.outputComponent = 1;
         this.variableComponents = [1];
         this.elementwise = params.elementwise === true;
@@ -320,7 +338,7 @@ export class ReduceProgram implements WebGPUProgram {
                 let packed = u32(x[index]);
                 return unpack2x16float(packed);
                 `
-            : `return x[index];`;
+            : `return f32(x[index]);`;
     }
 
     getUserCode(): string {
@@ -352,21 +370,42 @@ export class ReduceProgram implements WebGPUProgram {
     }
 }
 
-export function reduce(program: ReduceProgram, inputs: TensorInfo[], backend: WebGPUBackend): TensorInfo {
+export function reduce(
+    program: ReduceProgram,
+    inputs: TensorInfo[],
+    backend: WebGPUBackend,
+    extraUniforms?: { type: string; data: number[] }[],
+    output?: TensorInfo
+): TensorInfo {
     const input = inputs[0];
     const inSize = program.inputShape[program.inputShape.length - 1];
-    const uniformData = [{ type: 'int32', data: [inSize] }];
+    const uniformData = [{ type: 'int32', data: [inSize] }, ...(extraUniforms ?? [])];
 
-    const reduced = backend.runWebGPUProgram(program, inputs, program.packed ? 'packedF16' : 'float32', uniformData);
+    let outputTensor: TensorInfo | undefined = output;
+    if (!output && program.atomic) {
+        outputTensor = zeros(program.outputShape, 'int32');
+    }
+
+    const reduced = backend.runWebGPUProgram(
+        program,
+        inputs,
+        program.packed ? 'packedF16' : program.atomic ? 'int32' : 'float32',
+        uniformData,
+        outputTensor
+    );
     const reducedTensor = engine().makeTensorFromTensorInfo(reduced);
+
+    if (program.outputShape.length === 1 && program.outputShape[0] === 1) {
+        return reducedTensor;
+    }
 
     const res = reshape16(
         reducedTensor,
         program.elementwise
             ? input.shape
             : program.packed
-            ? [...input.shape.slice(0, -2), input.shape[input.shape.length - 2] / 2]
-            : [...input.shape.slice(0, -2), input.shape[input.shape.length - 2]]
+              ? [...input.shape.slice(0, -2), input.shape[input.shape.length - 2] / 2]
+              : [...input.shape.slice(0, -2), input.shape[input.shape.length - 2]]
     );
     reducedTensor.dispose();
 

@@ -12,6 +12,8 @@ import {
     reshape,
     transpose,
     mul,
+    relu,
+    square,
 } from '@tensorflow/tfjs-core';
 import { WebGPUBackend } from '@tensorflow/tfjs-backend-webgpu';
 import { isPackedTensor } from '@base/utilities/packed';
@@ -34,7 +36,7 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
             scale?: number;
             scaleA?: number;
             scaleB?: number;
-            activation?: 'gelu';
+            activation?: 'gelu' | 'relu2' | 'relu';
             forceOutputShape?: number[];
             perm?: number[];
             originalShape?: number[];
@@ -63,6 +65,15 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
             result = matMulMul(sA, sB, scalar(scale), transposeA, transposeB);
         } else if (activation === 'gelu') {
             result = matMulGelu(sA, sB);
+        } else if (activation === 'relu2') {
+            // TODO Use fused implementation
+            const matMulResult = matMul(sA, sB, transposeA, transposeB);
+            const reluResult = relu(matMulResult);
+            matMulResult.dispose();
+            result = square(reluResult);
+            reluResult.dispose();
+        } else if (activation === 'relu') {
+            result = relu(matMul(sA, sB, transposeA, transposeB));
         } else {
             result = matMul(sA, sB, transposeA, transposeB);
         }

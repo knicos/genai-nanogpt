@@ -1,4 +1,4 @@
-import { defaultConfig, GPTConfig } from './models/config';
+import { GPTConfig, validateConfig } from './models/config';
 import type { Conversation, ITokeniser } from './tokeniser/type';
 import { saveModel, SaveOptions } from './loader/save';
 import { loadModel, LoadModelOptions } from './loader/load';
@@ -27,13 +27,13 @@ interface TeachableLLMMeta {
 export default class TeachableLLM {
     private ee = new EE<TeachableLLMEvents>();
     private _config?: GPTConfig;
-    private _model?: Model<ModelForwardAttributes>;
+    private _model?: Model<ModelForwardAttributes, GPTConfig>;
     private _tokeniser?: ITokeniser;
     private _status: TeachableLLMStatus = 'loading';
     private _memoryRequirements?: MemoryRequirements;
     public meta: TeachableLLMMeta = {};
 
-    constructor(tokeniser?: ITokeniser, model?: Model<ModelForwardAttributes>) {
+    constructor(tokeniser?: ITokeniser, model?: Model<ModelForwardAttributes, GPTConfig>) {
         this._config = model?.config;
         this._tokeniser = tokeniser;
         this._model = model;
@@ -55,7 +55,7 @@ export default class TeachableLLM {
         return this._config;
     }
 
-    get model(): Model<ModelForwardAttributes> {
+    get model(): Model<ModelForwardAttributes, GPTConfig> {
         if (!this._model) {
             throw new Error('model_not_initialized.');
         }
@@ -110,6 +110,7 @@ export default class TeachableLLM {
         const teachableLLM = new TeachableLLM();
         loadModel(data, options)
             .then(({ model, tokeniser, metaData }) => {
+                validateConfig(model.config);
                 teachableLLM._model = model;
                 teachableLLM._tokeniser = tokeniser;
                 teachableLLM._config = model.config;
@@ -127,18 +128,21 @@ export default class TeachableLLM {
                     .catch((err) => {
                         teachableLLM.setStatus('error');
                         teachableLLM.ee.emit('error', err);
+                        console.error('Error during warmup:', err);
                     });
             })
             .catch((err) => {
                 teachableLLM.setStatus('error');
                 teachableLLM.ee.emit('error', err);
+                console.error('Error loading model:', err);
             });
 
         return teachableLLM;
     }
 
-    static create(tokeniserType: 'char' | 'bpe', config: Partial<GPTConfig> = {}) {
-        const fullConfig = { ...defaultConfig, ...config };
+    static create(tokeniserType: 'char' | 'bpe', config: GPTConfig) {
+        validateConfig(config);
+        const fullConfig = config;
         const tokeniser =
             tokeniserType === 'char' ? new CharTokeniser(fullConfig.vocabSize) : new BPETokeniser(fullConfig.vocabSize);
         const model = createModelInstance(fullConfig);
@@ -165,6 +169,7 @@ export default class TeachableLLM {
             .catch((err) => {
                 tmodel.setStatus('error');
                 tmodel.ee.emit('error', err);
+                console.error('Error during warmup:', err);
             });
         return tmodel;
     }
@@ -199,11 +204,11 @@ export default class TeachableLLM {
         return this._model.getNumParams();
     }
 
-    trainer(trainingType?: TrainingType): Trainer {
+    trainer(trainingType?: TrainingType, options?: ITrainerOptions): Trainer {
         if (!this._model || !this._tokeniser) {
             throw new Error('model_or_tokeniser_not_initialized.');
         }
-        const trainer = new Trainer(this._model, this._tokeniser, trainingType);
+        const trainer = new Trainer(this._model, this._tokeniser, trainingType, options);
         trainer.on('start', () => this.setStatus('training'));
         trainer.on('stop', () => this.setStatus('ready'));
         trainer.on('log', async (step: TrainingLogEntry, progress: TrainingProgress) => {
@@ -217,9 +222,9 @@ export default class TeachableLLM {
     }
 
     async train(text: Task[], options?: ITrainerOptions, trainingType?: TrainingType): Promise<void> {
-        const trainer = this.trainer(trainingType);
-        await trainer.prepare(text, options);
-        await trainer.train(options);
+        const trainer = this.trainer(trainingType, options);
+        await trainer.prepare(text);
+        await trainer.train();
     }
 
     async trainTokeniser(text: string[]): Promise<number> {

@@ -9,8 +9,9 @@ import { TrainingLogEntry, TrainingProgress } from './training/types';
 import { createTrainValidationSplit } from './training/validation';
 import SFTTrainer from './training/SFTTrainer';
 import { LoRAConfig } from './models/config';
+import { AdamWOptimizerConfig } from './training/AdamW';
 
-export interface ITrainerOptions {
+export interface ITrainerOptions extends Partial<AdamWOptimizerConfig> {
     batchSize?: number; // Batch size for training
     learningRate?: number; // Learning rate for the optimizer
     maxSteps?: number; // Maximum training steps
@@ -43,17 +44,20 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     private totalSamples = 0;
     private log: TrainingLogEntry[] = [];
     private progress: ExtendedTrainingProgress | null = null;
+    public options: ITrainerOptions = {};
 
     constructor(
         model: Model<ModelForwardAttributes>,
         tokeniser: ITokeniser,
-        trainingType: TrainingType = 'pretraining'
+        trainingType: TrainingType = 'pretraining',
+        options?: ITrainerOptions
     ) {
         super();
+        this.options = options || {};
         if (trainingType === 'sft') {
-            this.trainer = new SFTTrainer(model, tokeniser, 1e-3);
+            this.trainer = new SFTTrainer(model, tokeniser, options);
         } else {
-            this.trainer = new PreTrainer(model, tokeniser, 1e-3);
+            this.trainer = new PreTrainer(model, tokeniser, options);
         }
         this.trainingType = trainingType;
     }
@@ -72,7 +76,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         return this.totalSamples;
     }
 
-    async prepare(tasks: Task[] | Uint16Array = [], options?: ITrainerOptions): Promise<void> {
+    async prepare(tasks: Task[] | Uint16Array = []): Promise<void> {
+        const options = this.options;
         if (this.trainingType === 'pretraining' && this.trainer instanceof PreTrainer) {
             const { trainDataset, validationDataset, size } = await createTrainValidationSplit(
                 tasks,
@@ -150,7 +155,9 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         }
     }
 
-    async train(options?: ITrainerOptions): Promise<void> {
+    async train(): Promise<void> {
+        const options = this.options;
+
         if (!this.trainDataset) {
             throw new Error('Dataset not prepared');
         }

@@ -6,6 +6,7 @@ import { save_safetensors } from '../utilities/safetensors';
 import { VERSION } from './load';
 import { TransformersConfig } from '@base/loader/types';
 import Model, { ModelForwardAttributes } from '@base/models/model';
+import { GPTConfig } from '@base/main';
 
 export interface SaveOptions {
     name?: string;
@@ -14,7 +15,7 @@ export interface SaveOptions {
 }
 
 export async function saveModel(
-    model: Model<ModelForwardAttributes>,
+    model: Model<ModelForwardAttributes, GPTConfig>,
     tokeniser: ITokeniser,
     options?: SaveOptions
 ): Promise<Blob> {
@@ -32,20 +33,34 @@ export async function saveModel(
     const weightsBin = await save_safetensors(weights);
     zipFile.file('model.safetensors', weightsBin as ArrayBuffer, { binary: true });
 
-    const transformersConfig: TransformersConfig = {
-        model_type: model.config.modelType || model.getClassName(),
-        vocab_size: tokeniser.getVocab().length,
-        hidden_size: model.config.nEmbed,
-        num_hidden_layers: model.config.nLayer,
-        num_attention_heads: model.config.nHead,
-        block_size: model.config.blockSize,
-        biasInLinear: model.config.biasInLinear,
-        biasInLayerNorm: model.config.biasInLayerNorm,
-        mlpFactor: model.config.mlpFactor,
-        useRope: model.config.useRope,
-        loraConfig: model.config.loraConfig,
-        noRMSLearnables: model.config.noRMSLearnables,
-    };
+    const modelType = model.config.modelType;
+
+    let transformersConfig: TransformersConfig;
+
+    if (modelType === 'GenAI_NanoGPT_v1') {
+        transformersConfig = {
+            model_type: 'GenAI_NanoGPT_v1',
+            vocab_size: tokeniser.getVocab().length,
+            hidden_size: model.config.nEmbed,
+            num_hidden_layers: model.config.nLayer,
+            num_attention_heads: model.config.nHead,
+            block_size: model.config.blockSize,
+            mlpFactor: model.config.mlpFactor,
+            useRope: model.config.useRope,
+        };
+    } else {
+        transformersConfig = {
+            model_type: 'GenAI_NanoGPT_v2',
+            vocab_size: tokeniser.getVocab().length,
+            hidden_size: model.config.nEmbed,
+            num_hidden_layers: model.config.nLayer,
+            num_attention_heads: model.config.nHead,
+            block_size: model.config.blockSize,
+            mlpFactor: model.config.mlpFactor,
+            loraConfig: model.config.loraConfig,
+            windowSize: model.config.windowSize,
+        };
+    }
 
     zipFile.file('config.json', JSON.stringify(transformersConfig, undefined, 4), {
         binary: false,

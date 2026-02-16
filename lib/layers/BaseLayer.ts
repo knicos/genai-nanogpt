@@ -13,14 +13,17 @@ export interface ForwardAttributes {
     embeddings?: { name: string; tensor: Tensor }[];
 }
 
-export default abstract class BaseLayer<ATTR extends ForwardAttributes = ForwardAttributes> {
+export default abstract class BaseLayer<
+    ATTR extends ForwardAttributes = ForwardAttributes,
+    CONFIG extends GPTConfig = GPTConfig,
+> {
     public readonly parent?: BaseLayer;
-    public readonly config: GPTConfig;
+    public readonly config: CONFIG;
     public weightStore: WeightStore;
     public readonly children: BaseLayer[] = [];
     private profiler?: MemoryProfiler;
 
-    constructor(config: GPTConfig, parent?: BaseLayer) {
+    constructor(config: CONFIG, parent?: BaseLayer) {
         this.config = config;
         this.parent = parent;
         if (this.parent) {

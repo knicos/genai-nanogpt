@@ -21,10 +21,13 @@ describe('Sentence embeddings', { timeout: 60000 }, () => {
         const sentences = ['Hello world!'];
 
         const model = TeachableLLM.create('char', {
+            modelType: 'GenAI_NanoGPT_v2',
             blockSize: 128,
             nEmbed: 128,
             nLayer: 2,
             nHead: 4,
+            mlpFactor: 4,
+            vocabSize: 20,
         });
 
         await model.trainTokeniser(sentences);
@@ -44,10 +47,13 @@ describe('Sentence embeddings', { timeout: 60000 }, () => {
         ];
 
         const model = TeachableLLM.create('char', {
+            modelType: 'GenAI_NanoGPT_v2',
             blockSize: 128,
             nEmbed: 128,
             nLayer: 2,
             nHead: 4,
+            mlpFactor: 4,
+            vocabSize: 20,
         });
 
         await model.trainTokeniser(sentences);
@@ -72,10 +78,13 @@ describe('Sentence embeddings', { timeout: 60000 }, () => {
         ];
 
         const model = TeachableLLM.create('char', {
+            modelType: 'GenAI_NanoGPT_v2',
             blockSize: 128,
             nEmbed: 128,
             nLayer: 2,
             nHead: 4,
+            mlpFactor: 4,
+            vocabSize: 20,
         });
 
         await model.trainTokeniser(sentences);

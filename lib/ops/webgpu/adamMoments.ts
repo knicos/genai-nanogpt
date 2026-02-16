@@ -5,16 +5,16 @@ import { registerKernel, KernelConfig, TensorInfo, NamedTensorInfoMap, NamedAttr
 import { assertShapesMatch } from '@tensorflow/tfjs-core/dist/util_base';
 
 class AdamMomentsProgram implements WebGPUProgram {
-    variableNames = ['moments', 'gradient'];
+    variableNames = ['moments', 'gradient', 'scaling'];
     outputShape: number[];
     shaderKey = 'AdamMoments';
     dispatchLayout: { x: number[] };
     dispatch: [number, number, number];
     workgroupSize: [number, number, number] = [64, 1, 1];
     size = true;
-    uniforms = 'beta1: f32, beta2: f32, lossScaling: f32';
+    uniforms = 'beta1: f32, beta2: f32';
     outputComponent = 2;
-    variableComponents = [2, 1];
+    variableComponents = [2, 1, 1];
 
     constructor(outputShape: number[]) {
         this.outputShape = outputShape;
@@ -33,8 +33,8 @@ class AdamMomentsProgram implements WebGPUProgram {
             if (index < uniforms.size) {
                 let m: vec2<f32> = moments[index];
 
-                // Add gradient clipping here
-                let g: f32 = clamp(gradient[index] * uniforms.lossScaling, -1.0, 1.0);
+                // Loss and clip scaling.
+                let g: f32 = gradient[index] * scaling[0];
 
                 let newM1 = fma(m.x, uniforms.beta1, g * (1.0 - uniforms.beta1));
                 let newM2 = fma(m.y, uniforms.beta2, g * g * (1.0 - uniforms.beta2));
@@ -47,8 +47,12 @@ class AdamMomentsProgram implements WebGPUProgram {
 }
 
 function adamMomentsGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
-    const { moments, gradient } = args.inputs as { moments: TensorInfo; gradient: TensorInfo };
-    const { beta1, beta2, lossScaling } = args.attrs as { beta1: number; beta2: number; lossScaling: number };
+    const { moments, gradient, scaling } = args.inputs as {
+        moments: TensorInfo;
+        gradient: TensorInfo;
+        scaling: TensorInfo;
+    };
+    const { beta1, beta2 } = args.attrs as { beta1: number; beta2: number };
 
     const backend = args.backend as WebGPUBackend;
 
@@ -68,9 +72,8 @@ function adamMomentsGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; at
     const uniformData = [
         { type: 'float32', data: [beta1] },
         { type: 'float32', data: [beta2] },
-        { type: 'float32', data: [1.0 / lossScaling] },
     ];
-    return backend.runWebGPUProgram(program, [moments, gradient], 'float32', uniformData);
+    return backend.runWebGPUProgram(program, [moments, gradient, scaling], 'float32', uniformData);
 }
 
 const kernelConfig: KernelConfig = {

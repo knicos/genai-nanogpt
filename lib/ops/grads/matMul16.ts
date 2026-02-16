@@ -3,6 +3,7 @@ import { matMul16, matMul16ScaleA, matMul16ScaleB } from '../matMul16';
 import { dGelu } from '../gelu';
 import { transpose16 } from '../transpose16';
 import { reshape16 } from '../reshape16';
+import { mul16 } from '../mul16';
 
 export const matMul16GradConfig: GradConfig = {
     kernelName: 'MatMul16',
@@ -21,7 +22,7 @@ export const matMul16GradConfig: GradConfig = {
             transposeA: boolean;
             transposeB: boolean;
             scale?: number;
-            activation?: 'gelu';
+            activation?: 'gelu' | 'relu2' | 'relu';
             originalShape?: number[];
             forceOutputShape?: number[];
             perm?: number[];
@@ -48,6 +49,12 @@ export const matMul16GradConfig: GradConfig = {
             const oldDy = intDy;
             const inputMatMul = matMul16(A, B, transposeA, transposeB);
             intDy = dGelu(oldDy, inputMatMul);
+            oldDy.dispose();
+            inputMatMul.dispose();
+        } else if (activation === 'relu2') {
+            const oldDy = intDy;
+            const inputMatMul = matMul16(A, B, transposeA, transposeB, { activation: 'relu', scale: 2 });
+            intDy = mul16(oldDy, inputMatMul);
             oldDy.dispose();
             inputMatMul.dispose();
         }

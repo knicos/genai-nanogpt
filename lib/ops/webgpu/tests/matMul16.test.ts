@@ -9,7 +9,7 @@ const navigator = { gpu: create([]) };
 Object.assign(globalThis.navigator, navigator);
 
 import { selectBackend } from '@base/backend';
-import { getGradient, matMul, mul, randomNormal, reshape, scalar, transpose } from '@tensorflow/tfjs-core';
+import { getGradient, grads, matMul, mul, randomNormal, reshape, scalar, Tensor, transpose } from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-core/dist/register_all_gradients';
 import { matMul16, matMul16Gelu, matMul16Scaled } from '../../matMul16';
 import { matMul16GradConfig } from '../../grads/matMul16';
@@ -523,6 +523,41 @@ describe('MatMul 16-bit', { timeout: 30000 }, () => {
             const error = arraysClose(gradAData, gradARealData);
             expect(error).toBeLessThan(1e-3);
         });
+
+        it('has correct grad for relu2', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const A = randomNormal([64, 32], 0, 1, 'float32');
+            const B = randomNormal([32, 128], 0, 1, 'float32');
+            const gradY = randomNormal([64, 128], 0, 0.001, 'float32');
+            const packedGradY = pack16(gradY);
+
+            const packedA = pack16(A);
+            const packedB = pack16(B);
+            const uA = unpack16(packedA);
+            const uB = unpack16(packedB);
+            // const unpackedMatMul = matMul(uA, uB);
+
+            const gradss = grads((A: Tensor, B: Tensor) => matMul16(A, B, false, false, { activation: 'relu2' }))(
+                [packedA, packedB],
+                packedGradY
+            )[0];
+            const gradA = gradss;
+            const gradAUnpacked = unpack16(gradA);
+
+            const gradsReal = unpack16(
+                pack16(
+                    grads((A: Tensor, B: Tensor) => matMul(A, B).relu().square())([uA, uB], unpack16(packedGradY))[0]
+                )
+            );
+
+            const gradAData = await gradAUnpacked.data();
+            const gradARealData = await gradsReal.data();
+
+            console.log('Grad Data', gradAData.slice(0, 10), gradARealData.slice(0, 10));
+
+            const error = arraysClose(gradAData, gradARealData);
+            expect(error).toBeLessThan(1e-3);
+        });
     });
 
     describe('Special features', () => {
@@ -595,6 +630,32 @@ describe('MatMul 16-bit', { timeout: 30000 }, () => {
 
             const rawMatMul = matMulGelu(unpackedScores, unpackedValues);
             const packedMatMul = matMul16Gelu(packedScores, packedValues);
+            const unpackedMatMul = unpack16(packedMatMul);
+
+            const repackedRaw = unpack16(pack16(rawMatMul));
+
+            const rawMatMulData = await repackedRaw.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+
+            expect(repackedRaw.shape).toEqual(unpackedMatMul.shape);
+
+            const error = arraysClose(rawMatMulData, unpackedMatMulData);
+            expect(error).toBeLessThan(1e-3);
+        });
+
+        it('supports relu2 activation', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const scores = randomNormal([100, 3, 128, 64], 0, 1, 'float32');
+            const values = randomNormal([100, 3, 64, 32], 0, 1, 'float32');
+
+            const packedScores = pack16(scores);
+            const packedValues = pack16(values);
+
+            const unpackedScores = unpack16(packedScores);
+            const unpackedValues = unpack16(packedValues);
+
+            const rawMatMul = matMul(unpackedScores, unpackedValues).relu().square();
+            const packedMatMul = matMul16(packedScores, packedValues, false, false, { activation: 'relu2' });
             const unpackedMatMul = unpack16(packedMatMul);
 
             const repackedRaw = unpack16(pack16(rawMatMul));
