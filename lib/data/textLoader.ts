@@ -25,6 +25,10 @@ function extname(file: string): string {
 function getFileType(file: string): string {
     const ext = extname(file);
     switch (ext) {
+        case 'json':
+            return 'application/json';
+        case 'jsonl':
+            return 'application/jsonl';
         case 'parquet':
             return 'application/parquet';
         case 'csv':
@@ -50,6 +54,31 @@ export default async function loadTextData(file: File, options?: DataOptions): P
     }
     if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         return loadDOCX(file);
+    }
+    if (type === 'application/json') {
+        const data = await file.text();
+        const json = JSON.parse(data);
+        if (Array.isArray(json)) {
+            return json.map((item) =>
+                typeof item === 'string' ? item : 'text' in item ? item.text : JSON.stringify(item)
+            );
+        } else {
+            throw new Error('Expected JSON array');
+        }
+    }
+    if (type === 'application/jsonl') {
+        const data = await file.text();
+        return data
+            .split('\n')
+            .filter((line) => line.trim() !== '')
+            .map((line) => {
+                try {
+                    const obj = JSON.parse(line);
+                    return typeof obj === 'string' ? obj : 'text' in obj ? obj.text : JSON.stringify(obj);
+                } catch {
+                    return line;
+                }
+            });
     }
     if (type === 'text/csv') {
         const data = await file.text();
