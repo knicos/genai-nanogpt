@@ -32,6 +32,7 @@ export default class TeachableLLM {
     private _status: TeachableLLMStatus = 'loading';
     private _memoryRequirements?: MemoryRequirements;
     public meta: TeachableLLMMeta = {};
+    private _trainer: Trainer | null = null;
 
     constructor(tokeniser?: ITokeniser, model?: Model<ModelForwardAttributes, GPTConfig>) {
         this._config = model?.config;
@@ -208,7 +209,18 @@ export default class TeachableLLM {
         if (!this._model || !this._tokeniser) {
             throw new Error('model_or_tokeniser_not_initialized.');
         }
-        const trainer = new Trainer(this._model, this._tokeniser, trainingType, options);
+
+        if (this._trainer && trainingType && this._trainer.trainingType !== trainingType) {
+            this._trainer.dispose();
+            this._trainer = null;
+        }
+
+        // Keep the trainer if possible to keep the optimizer state
+        const trainer =
+            this._trainer === null
+                ? new Trainer(this._model, this._tokeniser, trainingType, options)
+                : new Trainer(this._trainer, options);
+
         trainer.on('start', () => this.setStatus('training'));
         trainer.on('stop', () => this.setStatus('ready'));
         trainer.on('log', async (step: TrainingLogEntry, progress: TrainingProgress) => {
@@ -218,6 +230,8 @@ export default class TeachableLLM {
                 await listener(step, progress);
             }
         });
+
+        this._trainer = trainer;
         return trainer;
     }
 
@@ -263,6 +277,7 @@ export default class TeachableLLM {
 
     dispose() {
         this._model?.dispose();
+        this.ee.removeAllListeners();
     }
 
     on(event: 'status', listener: (status: TeachableLLMStatus) => void): void;

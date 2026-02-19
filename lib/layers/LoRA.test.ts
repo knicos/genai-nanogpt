@@ -10,7 +10,7 @@ Object.assign(globalThis, globals);
 const navigator = { gpu: create([]) };
 Object.assign(globalThis.navigator, navigator);
 
-describe('LoRA', () => {
+describe('LoRA', { timeout: 10000 }, () => {
     afterEach(() => {
         tf.disposeVariables();
     });

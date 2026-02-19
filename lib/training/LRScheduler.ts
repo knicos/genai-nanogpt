@@ -15,6 +15,13 @@ export default class LRScheduler {
         this.startLearningRate = learningRate;
     }
 
+    updateConfig(newConfig: Partial<LRSchedulerConfig>, learningRate?: number) {
+        this.config = { ...this.config, ...newConfig };
+        if (learningRate !== undefined) {
+            this.startLearningRate = learningRate;
+        }
+    }
+
     get lr(): number {
         return this.learningRate;
     }

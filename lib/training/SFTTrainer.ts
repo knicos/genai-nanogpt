@@ -2,7 +2,7 @@ import Model, { ModelForwardAttributes } from '@base/models/model';
 import BasicTrainer from './BasicTrainer';
 import { ITokeniser } from '@base/tokeniser/type';
 import { SFTDatasetBuilder } from './SFTDatasetBuilder';
-import { AdamWOptimizerConfig } from './AdamW';
+import { AdamWOptimizer, AdamWOptimizerConfig } from './AdamW';
 
 const DEFAULT_OPT_CONFIG: Partial<AdamWOptimizerConfig> = {
     decaySteps: 10000,
@@ -20,9 +20,10 @@ export default class SFTTrainer extends BasicTrainer {
     constructor(
         model: Model<ModelForwardAttributes>,
         public tokenizer: ITokeniser,
-        optConfig?: Partial<AdamWOptimizerConfig>
+        optConfig?: Partial<AdamWOptimizerConfig>,
+        optimizer?: AdamWOptimizer
     ) {
-        super(model, tokenizer, { ...DEFAULT_OPT_CONFIG, ...optConfig });
+        super(model, tokenizer, { ...DEFAULT_OPT_CONFIG, ...optConfig }, optimizer);
 
         // this.resetOptimizer();
 

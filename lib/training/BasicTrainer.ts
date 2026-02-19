@@ -30,7 +30,7 @@ const DEFAULT_OPT_CONFIG: AdamWOptimizerConfig = {
 
 export default class BasicTrainer {
     public model: Model<ModelForwardAttributes>;
-    protected optimizer!: AdamWOptimizer;
+    public optimizer!: AdamWOptimizer;
     protected running = false;
     protected lastState?: TrainingState;
     protected _gradientCheckpointing = false;
@@ -41,7 +41,8 @@ export default class BasicTrainer {
     constructor(
         model: Model<ModelForwardAttributes>,
         public tokenizer: ITokeniser,
-        optConfig?: Partial<AdamWOptimizerConfig>
+        optConfig?: Partial<AdamWOptimizerConfig>,
+        optimizer?: AdamWOptimizer
     ) {
         this.model = model;
         this.optimizerConfig = {
@@ -49,7 +50,11 @@ export default class BasicTrainer {
             ...optConfig,
             lossScaling: model.lossScaling,
         };
-        this.resetOptimizer();
+        const adam = optimizer ? optimizer : new AdamWOptimizer(this.optimizerConfig);
+        if (optimizer) {
+            optimizer.updateConfig(this.optimizerConfig);
+        }
+        this.optimizer = adam;
     }
 
     setGradientCheckpointing(enabled: boolean): void {
@@ -62,7 +67,7 @@ export default class BasicTrainer {
 
     setLearningRate(learningRate: number): void {
         this.optimizerConfig.learningRate = learningRate;
-        this.resetOptimizer();
+        this.updateOptimizer();
     }
 
     reset() {
@@ -78,13 +83,11 @@ export default class BasicTrainer {
         return this.optimizer;
     }
 
-    resetOptimizer(config?: Partial<AdamWOptimizerConfig>): void {
+    updateOptimizer(config?: Partial<AdamWOptimizerConfig>): void {
         if (config) {
             this.optimizerConfig = { ...this.optimizerConfig, ...config };
         }
-        if (this.optimizer) this.optimizer.dispose();
-        const adam = new AdamWOptimizer(this.optimizerConfig);
-        this.optimizer = adam;
+        this.optimizer.updateConfig(this.optimizerConfig);
     }
 
     // A single forward pass, backward pass, and optimizer step

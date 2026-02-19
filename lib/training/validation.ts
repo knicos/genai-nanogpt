@@ -1,7 +1,7 @@
 import { ITokeniser, Task, tokensFromTasks } from '@base/main';
 import { Tensor } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
-import { DatasetBuilder, PAGE_FACTOR } from './DatasetBuilder';
+import { DatasetBuilder, DatasetState, PAGE_FACTOR, shuffle } from './DatasetBuilder';
 
 export async function createTrainValidationSplit(
     tasks: Task[] | Uint16Array,
@@ -13,6 +13,8 @@ export async function createTrainValidationSplit(
     trainDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
     validationDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
     size: number;
+    validationState: DatasetState;
+    trainState: DatasetState;
 }> {
     const allTokens = tasks instanceof Uint16Array ? tasks : await tokensFromTasks(tasks, tokeniser);
 
@@ -27,8 +29,24 @@ export async function createTrainValidationSplit(
         }
     }
 
-    const trainDataset = await datasetBuilder.createTextDataset(allTokens, batchSize, validationMask, false);
-    const validationDataset = await datasetBuilder.createTextDataset(allTokens, batchSize, validationMask, true);
+    const indexArray = Array.from({ length: allTokens.length }, (_, i) => i);
+    const trainIndexes = indexArray.filter(
+        (i) => !validationMask.has(Math.floor(i / (datasetBuilder.blockSize * PAGE_FACTOR)))
+    );
+    const validationIndexes = indexArray.filter((i) =>
+        validationMask.has(Math.floor(i / (datasetBuilder.blockSize * PAGE_FACTOR)))
+    );
 
-    return { trainDataset, validationDataset, size: allTokens.length };
+    const { dataset: trainDataset, state: trainState } = await datasetBuilder.createTextDataset(
+        allTokens,
+        batchSize,
+        shuffle(trainIndexes)
+    );
+    const { dataset: validationDataset, state: validationState } = await datasetBuilder.createTextDataset(
+        allTokens,
+        batchSize,
+        shuffle(validationIndexes)
+    );
+
+    return { trainDataset, validationDataset, size: allTokens.length, validationState, trainState };
 }

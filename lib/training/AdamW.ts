@@ -51,7 +51,7 @@ export class AdamWOptimizer extends Optimizer {
     protected lrScheduler: LRScheduler;
     protected clipNorm?: number;
 
-    constructor(config: AdamWOptimizerConfig) {
+    constructor(private config: AdamWOptimizerConfig) {
         super();
         this.accBeta1 = config.beta1;
         this.accBeta2 = config.beta2;
@@ -68,12 +68,23 @@ export class AdamWOptimizer extends Optimizer {
         }
 
         this.lrScheduler = new LRScheduler(config.learningRate, config);
-
-        console.log('Initialized AdamWOptimizer with config:', config);
     }
 
     get lr(): number {
         return this.learningRate;
+    }
+
+    updateConfig(newConfig: Partial<AdamWOptimizerConfig>) {
+        const config = { ...this.config, ...newConfig };
+        this.learningRate = config.learningRate;
+        this.beta1 = config.beta1;
+        this.beta2 = config.beta2;
+        this.weightDecay = config.weightDecay;
+        this.lossScaling = config.lossScaling;
+        this.epsilon = config.epsilon ?? this.epsilon;
+        this.clipNorm = config.clipNorm;
+
+        this.lrScheduler.updateConfig(config, config.learningRate);
     }
 
     applyGradients(variableGradients: NamedVariableMap | NamedTensor[]) {

@@ -9,7 +9,7 @@ import { TrainingLogEntry, TrainingProgress } from './training/types';
 import { createTrainValidationSplit } from './training/validation';
 import SFTTrainer from './training/SFTTrainer';
 import { LoRAConfig } from './models/config';
-import { AdamWOptimizerConfig } from './training/AdamW';
+import { AdamWOptimizer, AdamWOptimizerConfig } from './training/AdamW';
 
 export interface ITrainerOptions extends Partial<AdamWOptimizerConfig> {
     batchSize?: number; // Batch size for training
@@ -37,29 +37,64 @@ export type TrainingType = 'pretraining' | 'sft';
 
 export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     private trainer: PreTrainer | SFTTrainer;
-    private trainingType: TrainingType = 'pretraining';
+    public readonly trainingType: TrainingType = 'pretraining';
     private hasTrained = false;
     private trainDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
     private validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
     private totalSamples = 0;
-    private log: TrainingLogEntry[] = [];
+    public log: TrainingLogEntry[] = [];
     private progress: ExtendedTrainingProgress | null = null;
     public options: ITrainerOptions = {};
 
     constructor(
         model: Model<ModelForwardAttributes>,
         tokeniser: ITokeniser,
+        trainingType?: TrainingType,
+        options?: ITrainerOptions
+    );
+    constructor(trainer: Trainer, options?: ITrainerOptions);
+    constructor(
+        modelOrCopy: Model<ModelForwardAttributes> | Trainer,
+        tokeniser?: ITokeniser | ITrainerOptions,
         trainingType: TrainingType = 'pretraining',
         options?: ITrainerOptions
     ) {
         super();
+
+        if (modelOrCopy instanceof Trainer) {
+            this.trainer = modelOrCopy.trainer;
+            this.trainingType = modelOrCopy.trainingType;
+            this.options = (tokeniser as ITrainerOptions) ?? modelOrCopy.options;
+            this.trainer.updateOptimizer(this.options);
+            this.log = modelOrCopy.log;
+            this.progress = modelOrCopy.progress;
+            this.totalSamples = modelOrCopy.totalSamples;
+            // Don't copy the datasets
+            return;
+        }
+
+        if (!tokeniser) {
+            throw new Error('Tokeniser must be provided when initializing Trainer with a model');
+        }
+        if (!modelOrCopy) {
+            throw new Error('Model must be provided when initializing Trainer');
+        }
+
         this.options = options || {};
         if (trainingType === 'sft') {
-            this.trainer = new SFTTrainer(model, tokeniser, options);
+            this.trainer = new SFTTrainer(modelOrCopy, tokeniser as ITokeniser, options);
         } else {
-            this.trainer = new PreTrainer(model, tokeniser, options);
+            this.trainer = new PreTrainer(modelOrCopy, tokeniser as ITokeniser, options);
         }
         this.trainingType = trainingType;
+    }
+
+    get model(): Model<ModelForwardAttributes> {
+        return this.trainer.model;
+    }
+
+    get optimizer(): AdamWOptimizer {
+        return this.trainer.optimizer;
     }
 
     stop() {
@@ -70,6 +105,11 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         this.hasTrained = false;
         this.log = [];
         this.trainer.reset();
+    }
+
+    dispose() {
+        this.trainer.dispose();
+        this.removeAllListeners();
     }
 
     getTotalSamples(): number {
