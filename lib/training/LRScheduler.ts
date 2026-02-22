@@ -1,8 +1,4 @@
-export interface LRSchedulerConfig {
-    warmupSteps: number;
-    decaySteps: number;
-    minLearningRate: number;
-}
+import { LRSchedulerConfig } from './types';
 
 export default class LRScheduler {
     private step = 0;

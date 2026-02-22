@@ -5,30 +5,13 @@ import { Dataset } from '@tensorflow/tfjs-data';
 import { Tensor } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from './models/model';
 import { Task } from './training/tasks/Task';
-import { TrainingLogEntry, TrainingProgress } from './training/types';
+import { TrainingOptions, TrainingLogEntry } from './training/types';
 import { createTrainValidationSplit } from './training/validation';
 import SFTTrainer from './training/SFTTrainer';
-import { LoRAConfig } from './models/config';
-import { AdamWOptimizer, AdamWOptimizerConfig } from './training/AdamW';
+import { AdamWOptimizer } from './training/AdamW';
 
-export interface ITrainerOptions extends Partial<AdamWOptimizerConfig> {
-    batchSize?: number; // Batch size for training
-    learningRate?: number; // Learning rate for the optimizer
-    maxSteps?: number; // Maximum training steps
-    desiredLoss?: number; // Desired loss to stop training
-    logInterval?: number; // Interval for logging training progress
-    prompt?: string; // Prompt for generating text during training
-    validationSplit?: number; // Fraction of data to use for validation
-    advancedMetrics?: boolean; // Whether to compute advanced metrics during training
-    gradientCheckpointing?: boolean; // Whether to use gradient checkpointing
-    gradientMetrics?: boolean; // Whether to compute gradient metrics during training
-    mixedPrecision?: boolean; // Whether to use mixed precision training
-    trainableWeights?: string[]; // List of weight names to train (supports glob patterns)
-    loraConfig?: LoRAConfig; // LoRA configuration for training
-    sftMode?: 'full' | 'lora' | 'last-layer'; // Mode for SFT training, if applicable
-}
-
-interface ExtendedTrainingProgress extends TrainingProgress {
+interface TrainingProgress {
+    lastLog: TrainingLogEntry;
     progress: number; // Progress as a fraction between 0 and 1
     remaining: number; // Estimated remaining time in seconds
 }
@@ -43,28 +26,32 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     private validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
     private totalSamples = 0;
     public log: TrainingLogEntry[] = [];
-    private progress: ExtendedTrainingProgress | null = null;
-    public options: ITrainerOptions = {};
+    private progress: TrainingProgress | null = null;
+    public options: TrainingOptions = {
+        batchSize: 32,
+        sftMode: 'full',
+        logInterval: 10,
+    };
 
     constructor(
         model: Model<ModelForwardAttributes>,
         tokeniser: ITokeniser,
         trainingType?: TrainingType,
-        options?: ITrainerOptions
+        options?: TrainingOptions
     );
-    constructor(trainer: Trainer, options?: ITrainerOptions);
+    constructor(trainer: Trainer, options?: TrainingOptions);
     constructor(
         modelOrCopy: Model<ModelForwardAttributes> | Trainer,
-        tokeniser?: ITokeniser | ITrainerOptions,
+        tokeniser?: ITokeniser | TrainingOptions,
         trainingType: TrainingType = 'pretraining',
-        options?: ITrainerOptions
+        options?: TrainingOptions
     ) {
         super();
 
         if (modelOrCopy instanceof Trainer) {
             this.trainer = modelOrCopy.trainer;
             this.trainingType = modelOrCopy.trainingType;
-            this.options = (tokeniser as ITrainerOptions) ?? modelOrCopy.options;
+            this.options = (tokeniser as TrainingOptions) ?? modelOrCopy.options;
             this.trainer.updateOptimizer(this.options);
             this.log = modelOrCopy.log;
             this.progress = modelOrCopy.progress;
@@ -80,7 +67,10 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             throw new Error('Model must be provided when initializing Trainer');
         }
 
-        this.options = options || {};
+        this.options = options || {
+            batchSize: 32,
+            sftMode: 'full',
+        };
         if (trainingType === 'sft') {
             this.trainer = new SFTTrainer(modelOrCopy, tokeniser as ITokeniser, options);
         } else {
@@ -116,6 +106,52 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         return this.totalSamples;
     }
 
+    setOptions(options: TrainingOptions): void {
+        // Check which options have changed and only update those
+        // This allows us to change options like learning rate or metrics on the fly without resetting the entire trainer
+        // Throw if some options are changed during training such as batchSize.
+
+        const changedOptions = new Set(
+            Object.keys(options).filter(
+                (key) => options[key as keyof TrainingOptions] !== this.options[key as keyof TrainingOptions]
+            )
+        );
+
+        if (this.trainer.isRunning) {
+            if (changedOptions.has('batchSize')) {
+                throw new Error('Cannot change batch size during training');
+            }
+            if (changedOptions.has('sftMode')) {
+                throw new Error('Cannot change SFT mode during training');
+            }
+            if (changedOptions.has('loraConfig')) {
+                throw new Error('Cannot change LoRA configuration during training');
+            }
+            if (changedOptions.has('validationSplit')) {
+                throw new Error('Cannot change validation split during training');
+            }
+            if (changedOptions.has('trainableWeights')) {
+                throw new Error('Cannot change trainable weights during training');
+            }
+            if (changedOptions.has('mixedPrecision')) {
+                throw new Error('Cannot change mixed precision setting during training');
+            }
+            if (changedOptions.has('gradientCheckpointing')) {
+                throw new Error('Cannot change gradient checkpointing setting during training');
+            }
+        }
+
+        this.options = {
+            ...this.options,
+            ...options,
+        };
+
+        this.trainer.updateOptimizer(this.options);
+        if (changedOptions.has('metrics')) {
+            this.trainer.setMetrics(options.metrics || []);
+        }
+    }
+
     async prepare(tasks: Task[] | Uint16Array = []): Promise<void> {
         const options = this.options;
         if (this.trainingType === 'pretraining' && this.trainer instanceof PreTrainer) {
@@ -146,7 +182,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         }
     }
 
-    private configureModel(options?: ITrainerOptions) {
+    private configureModel(options?: TrainingOptions) {
         const mode = options?.sftMode || 'full';
 
         if (this.trainingType === 'pretraining') {
@@ -218,20 +254,15 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         await this.trainer.trainOnDataset(
             this.trainDataset,
             {
-                prompt: options?.prompt,
-                logInterval: options?.logInterval || 10,
-                desiredLoss: options?.desiredLoss || 0.01,
-                maxSteps: options?.maxSteps || 1000,
-                advancedMetrics: options?.advancedMetrics || false,
-                gradientMetrics: options?.gradientMetrics || false,
-                onStep: async (log: TrainingLogEntry, progress: TrainingProgress) => {
+                ...options,
+                onStep: async (log: TrainingLogEntry) => {
                     this.log.push(log);
                     this.progress = {
-                        ...progress,
-                        progress: progress.totalSamples / this.totalSamples,
+                        lastLog: log,
+                        progress: log.totalSamples / this.totalSamples,
                         remaining: Math.max(
                             0,
-                            ((this.totalSamples - progress.totalSamples) / progress.totalSamples) * progress.duration
+                            ((this.totalSamples - log.totalSamples) / log.totalSamples) * log.duration
                         ),
                     };
 
@@ -247,7 +278,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         this.emit('stop');
     }
 
-    async step(options?: ITrainerOptions): Promise<void> {
+    async step(options?: TrainingOptions): Promise<void> {
         if (!this.trainDataset) {
             throw new Error('Dataset not prepared');
         }
@@ -260,28 +291,15 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
 
         this.emit('start');
 
-        const { log, progress } = await this.trainer.stepDataset(
-            this.trainDataset,
-            {
-                prompt: options?.prompt,
-                logInterval: options?.logInterval || 10,
-                desiredLoss: options?.desiredLoss || 0.01,
-                maxSteps: options?.maxSteps || 1000,
-                advancedMetrics: options?.advancedMetrics || false,
-            },
-            this.validationDataset
-        );
+        const { log } = await this.trainer.stepDataset(this.trainDataset, options || {}, this.validationDataset);
 
         const listeners = this.listeners('log');
         for (const listener of listeners) {
             // These listeners can be async, so we await them
             await listener(log, {
-                ...progress,
-                progress: progress.totalSamples / this.totalSamples,
-                remaining: Math.max(
-                    0,
-                    ((this.totalSamples - progress.totalSamples) / progress.totalSamples) * progress.duration
-                ),
+                lastLog: log,
+                progress: log.totalSamples / this.totalSamples,
+                remaining: Math.max(0, ((this.totalSamples - log.totalSamples) / log.totalSamples) * log.duration),
             });
         }
         this.emit('stop');
@@ -291,7 +309,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         return this.log;
     }
 
-    getProgress(): ExtendedTrainingProgress | null {
+    getProgress(): TrainingProgress | null {
         return this.progress;
     }
 

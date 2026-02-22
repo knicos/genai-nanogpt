@@ -19,22 +19,13 @@
 
 import { adamAdjust } from '@base/ops/adamAdjust';
 import { adamMoments } from '@base/ops/adamMoments';
-import { dispose, engine, Optimizer, scalar, Scalar, tidy, zeros } from '@tensorflow/tfjs-core';
+import { dispose, engine, Optimizer, scalar, Scalar, Tensor, tidy, zeros } from '@tensorflow/tfjs-core';
 import { OptimizerVariable } from '@tensorflow/tfjs-core/dist/optimizers/optimizer';
 import { ConfigDict, Serializable, SerializableConstructor } from '@tensorflow/tfjs-core/dist/serialization';
 import { NamedTensor, NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
-import LRScheduler, { LRSchedulerConfig } from './LRScheduler';
+import LRScheduler from './LRScheduler';
 import { clipScale } from '@base/ops/globalNorm';
-
-export interface AdamWOptimizerConfig extends LRSchedulerConfig {
-    learningRate: number;
-    beta1: number;
-    beta2: number;
-    epsilon?: number;
-    weightDecay: number;
-    lossScaling: number;
-    clipNorm?: number;
-}
+import { AdamWOptimizerConfig } from './types';
 
 export class AdamWOptimizer extends Optimizer {
     public readonly className = 'AdamW';
@@ -87,14 +78,14 @@ export class AdamWOptimizer extends Optimizer {
         this.lrScheduler.updateConfig(config, config.learningRate);
     }
 
-    applyGradients(variableGradients: NamedVariableMap | NamedTensor[]) {
+    applyGradients(variableGradients: NamedVariableMap | NamedTensor[]): Tensor {
         const lr = this.lrScheduler.getNextLR();
         this.learningRate = lr;
 
         const varNames = Array.isArray(variableGradients)
             ? variableGradients.map((v) => v.name)
             : Object.keys(variableGradients);
-        tidy(() => {
+        const scaling = tidy(() => {
             const oneMinusAccBeta1 = 1 - this.accBeta1;
             const oneMinusAccBeta2 = 1 - this.accBeta2;
 
@@ -148,8 +139,11 @@ export class AdamWOptimizer extends Optimizer {
 
             this.accBeta1 = this.accBeta1 * this.beta1;
             this.accBeta2 = this.accBeta2 * this.beta2;
+
+            return scaling;
         });
         this.incrementIterations();
+        return scaling;
     }
 
     override dispose(): void {

@@ -6,14 +6,15 @@ import MemoryProfiler from '@base/utilities/profile';
 import Model, { ModelForwardAttributes } from '@base/models/model';
 import { createTensorStatistics, TensorStatistics } from '../checks/weights';
 import { NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
-import { TrainingLogEntry, TrainingOptions, TrainingProgress, TrainingState } from './types';
+import { AdamWOptimizerConfig, TrainingLogEntry, TrainingMetrics, TrainingOptions, TrainingState } from './types';
 import { calculateLoss } from './loss';
-import { AdamWOptimizer, AdamWOptimizerConfig } from './AdamW';
+import { AdamWOptimizer } from './AdamW';
 
 const DEFAULT_OPTIONS: TrainingOptions = {
-    desiredLoss: 0.01,
     logInterval: 1,
     maxSteps: 1000,
+    sftMode: 'full',
+    batchSize: 32,
 };
 
 const DEFAULT_OPT_CONFIG: AdamWOptimizerConfig = {
@@ -37,6 +38,7 @@ export default class BasicTrainer {
     protected _mixedPrecision = false;
     protected maskedLoss = false;
     protected optimizerConfig: AdamWOptimizerConfig;
+    protected metrics = new Set<TrainingMetrics>();
 
     constructor(
         model: Model<ModelForwardAttributes>,
@@ -70,6 +72,10 @@ export default class BasicTrainer {
         this.updateOptimizer();
     }
 
+    setMetrics(metrics: TrainingMetrics[]): void {
+        this.metrics = new Set(metrics);
+    }
+
     reset() {
         this.lastState = undefined;
         this.running = false;
@@ -77,6 +83,10 @@ export default class BasicTrainer {
 
     stop() {
         this.running = false;
+    }
+
+    get isRunning(): boolean {
+        return this.running;
     }
 
     getOptimizer(): AdamWOptimizer {
@@ -121,7 +131,14 @@ export default class BasicTrainer {
 
             if (!dummy) {
                 // Apply gradients
-                this.optimizer.applyGradients(grads as NamedVariableMap);
+                const scaling = this.optimizer.applyGradients(grads as NamedVariableMap);
+                if (this.metrics.has('gradientNorm')) {
+                    state.gradientNorm = scaling;
+                    keep(scaling);
+                } else {
+                    state.gradientNorm = undefined;
+                    scaling.dispose();
+                }
 
                 // Tell the model the weights were updated.
                 const variableNames = Object.keys(grads);
@@ -184,11 +201,15 @@ export default class BasicTrainer {
         dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
         options: Partial<TrainingOptions>,
         validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
-    ): Promise<{ log: TrainingLogEntry; progress: TrainingProgress }> {
-        const { logInterval } = {
+    ): Promise<{ log: TrainingLogEntry }> {
+        const { logInterval = 10 } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
+
+        if (options.metrics) {
+            this.setMetrics(options.metrics);
+        }
 
         const startTime = Date.now();
 
@@ -198,7 +219,7 @@ export default class BasicTrainer {
         await this.dummyPass();
         // this.model.trainable = true;
 
-        if (options?.advancedMetrics) {
+        if (this.metrics.has('memoryUsage')) {
             if (!this.model.getProfiler()) {
                 this.model.setProfiler(new MemoryProfiler());
             }
@@ -225,6 +246,11 @@ export default class BasicTrainer {
 
                 if (state.step % logInterval === 0) {
                     await this.performLogging(lossScalar, batch.xs.shape[0], options, evaluator);
+                } else {
+                    if (state.gradientNorm) {
+                        state.gradientNorm.dispose();
+                        state.gradientNorm = undefined;
+                    }
                 }
                 lossScalar.dispose();
             }
@@ -247,11 +273,8 @@ export default class BasicTrainer {
         options?: Partial<TrainingOptions>,
         evaluator?: Evaluator
     ): Promise<void> {
-        const { onStep } = {
-            ...DEFAULT_OPTIONS,
-            ...options,
-        };
-        const keepGrads = options?.gradientMetrics || false;
+        const onStep = options?.onStep;
+        const keepGrads = this.metrics.has('gradientStatistics');
         const lossValue = (await lossScalar.data())[0];
         const state = this.lastState!;
         state.lastLoss = lossValue;
@@ -259,12 +282,27 @@ export default class BasicTrainer {
         state.trainingDuration += logEndTime - state.logStartTime;
 
         const entry: TrainingLogEntry = {
-            loss: state.lastLoss,
+            trainingMetrics: {
+                loss: state.lastLoss,
+                perplexity: this.metrics.has('perplexity') ? Math.exp(state.lastLoss) : undefined,
+            },
             step: state.step,
             time: Date.now() - state.logStartTime,
+            gradientNorm: state.gradientNorm ? (await state.gradientNorm.data())[1] : undefined,
             batchSize: batchSize,
-            learningRate: options?.advancedMetrics ? this.optimizer.lr : undefined,
+            learningRate: this.metrics.has('learningRate') ? this.optimizer.lr : undefined,
+            duration: state.trainingDuration,
+            totalSamples: state.totalSteps * batchSize,
+            samplesPerSecond: (state.totalSteps * batchSize) / (state.trainingDuration / 1000),
+            memoryUsage: this.metrics.has('memoryUsage') ? this.model.getProfiler()?.getPeakMemory() || 0 : undefined,
         };
+        if (this.metrics.has('tokensPerSecond')) {
+            entry.tokensPerSecond = entry.samplesPerSecond * this.model.config.blockSize;
+        }
+        if (state.gradientNorm) {
+            state.gradientNorm.dispose();
+            state.gradientNorm = undefined;
+        }
 
         this.model.trainingState = {
             steps: state.totalSteps,
@@ -273,7 +311,7 @@ export default class BasicTrainer {
             loss: state.lastLoss,
         };
 
-        if (options?.gradientMetrics && keepGrads && state.gradients) {
+        if (keepGrads && state.gradients) {
             const gradMetrics = new Map<string, TensorStatistics>();
             for (const [name, grad] of Object.entries(state.gradients)) {
                 gradMetrics.set(name, await createTensorStatistics(grad));
@@ -287,23 +325,20 @@ export default class BasicTrainer {
             try {
                 const valLoss = await evaluator.evaluate(5);
                 if (Array.isArray(valLoss)) {
-                    entry.valLoss = valLoss[0];
+                    entry.validationMetrics = { loss: valLoss[0] };
                 } else {
                     state.validationLosses.push(valLoss);
-                    entry.valLoss = valLoss;
+                    entry.validationMetrics = {
+                        loss: valLoss,
+                        perplexity: this.metrics.has('perplexity') ? Math.exp(valLoss) : undefined,
+                    };
                 }
             } catch (error) {
                 console.error('Validation error:', error);
             }
         }
         if (onStep) {
-            const progress: TrainingProgress = {
-                duration: state.trainingDuration,
-                totalSamples: state.totalSteps * entry.batchSize,
-                samplesPerSecond: (state.totalSteps * entry.batchSize) / (state.trainingDuration / 1000),
-                memory: options?.advancedMetrics ? this.model.getProfiler()?.getPeakMemory() || 0 : undefined,
-            };
-            await onStep(entry, progress);
+            await onStep(entry);
         }
 
         state.logStartTime = Date.now();
@@ -314,10 +349,14 @@ export default class BasicTrainer {
         options: Partial<TrainingOptions>,
         validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }> {
-        const { logInterval, maxSteps } = {
+        const { logInterval = 10, maxSteps = Infinity } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
+
+        if (options.metrics) {
+            this.setMetrics(options.metrics);
+        }
 
         const startTime = Date.now();
 
@@ -327,7 +366,7 @@ export default class BasicTrainer {
         await this.dummyPass();
         // this.model.trainable = true;
 
-        if (options?.advancedMetrics) {
+        if (options?.metrics?.includes('memoryUsage')) {
             if (!this.model.getProfiler()) {
                 this.model.setProfiler(new MemoryProfiler());
             }
@@ -345,7 +384,7 @@ export default class BasicTrainer {
                 if (result.done) break;
                 const batch = result.value;
                 const isLogStep = state.step % logInterval === 0;
-                const keepGrads = (options?.gradientMetrics || false) && isLogStep;
+                const keepGrads = (options?.metrics?.includes('gradientStatistics') || false) && isLogStep;
 
                 // Do the actual training step
                 const lossScalar = this.trainStep(state, batch, false, keepGrads);
@@ -357,6 +396,11 @@ export default class BasicTrainer {
 
                 if (isLogStep) {
                     await this.performLogging(lossScalar, batch.xs.shape[0], options, evaluator);
+                } else {
+                    if (state.gradientNorm) {
+                        state.gradientNorm.dispose();
+                        state.gradientNorm = undefined;
+                    }
                 }
                 lossScalar.dispose();
 

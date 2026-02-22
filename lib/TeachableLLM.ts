@@ -3,7 +3,7 @@ import type { Conversation, ITokeniser } from './tokeniser/type';
 import { saveModel, SaveOptions } from './loader/save';
 import { loadModel, LoadModelOptions } from './loader/load';
 import Generator, { IGenerateOptions } from './Generator';
-import Trainer, { ITrainerOptions, TrainingType } from './Trainer';
+import Trainer, { TrainingType } from './Trainer';
 import EE from 'eventemitter3';
 import { dummyPassTrainAsync, MemoryRequirements } from './utilities/dummy';
 import { CharTokeniser } from './main';
@@ -12,7 +12,7 @@ import BPETokeniser from './tokeniser/bpe';
 import Model, { ModelForwardAttributes } from './models/model';
 import createModelInstance from './models/factory';
 import { Task } from './training/tasks/Task';
-import { TrainingLogEntry, TrainingProgress } from './training/types';
+import { TrainingLogEntry, TrainingOptions } from './training/types';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded';
@@ -205,7 +205,7 @@ export default class TeachableLLM {
         return this._model.getNumParams();
     }
 
-    trainer(trainingType?: TrainingType, options?: ITrainerOptions): Trainer {
+    trainer(trainingType?: TrainingType, options?: TrainingOptions): Trainer {
         if (!this._model || !this._tokeniser) {
             throw new Error('model_or_tokeniser_not_initialized.');
         }
@@ -223,11 +223,11 @@ export default class TeachableLLM {
 
         trainer.on('start', () => this.setStatus('training'));
         trainer.on('stop', () => this.setStatus('ready'));
-        trainer.on('log', async (step: TrainingLogEntry, progress: TrainingProgress) => {
+        trainer.on('log', async (step: TrainingLogEntry) => {
             const listeners = this.ee.listeners('trainStep');
             for (const listener of listeners) {
                 // These listeners can be async, so we await them
-                await listener(step, progress);
+                await listener(step);
             }
         });
 
@@ -235,7 +235,7 @@ export default class TeachableLLM {
         return trainer;
     }
 
-    async train(text: Task[], options?: ITrainerOptions, trainingType?: TrainingType): Promise<void> {
+    async train(text: Task[], options?: TrainingOptions, trainingType?: TrainingType): Promise<void> {
         const trainer = this.trainer(trainingType, options);
         await trainer.prepare(text);
         await trainer.train();
@@ -282,7 +282,7 @@ export default class TeachableLLM {
 
     on(event: 'status', listener: (status: TeachableLLMStatus) => void): void;
     on(event: 'error', listener: (error: Error) => void): void;
-    on(event: 'trainStep', listener: (step: TrainingLogEntry, progress: TrainingProgress) => void): void;
+    on(event: 'trainStep', listener: (step: TrainingLogEntry) => void): void;
     on(event: 'loaded', listener: () => void): void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     on(event: TeachableLLMEvents, listener: (...args: any[]) => void): void {
@@ -296,7 +296,7 @@ export default class TeachableLLM {
 
     off(event: 'status', listener: (status: TeachableLLMStatus) => void): void;
     off(event: 'error', listener: (error: Error) => void): void;
-    off(event: 'trainStep', listener: (step: TrainingLogEntry, progress: TrainingProgress) => void): void;
+    off(event: 'trainStep', listener: (step: TrainingLogEntry) => void): void;
     off(event: 'loaded', listener: () => void): void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     off(event: TeachableLLMEvents, listener: (...args: any[]) => void): void {

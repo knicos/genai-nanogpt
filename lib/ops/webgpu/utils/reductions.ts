@@ -395,7 +395,7 @@ export function reduce(
     );
     const reducedTensor = engine().makeTensorFromTensorInfo(reduced);
 
-    if (program.outputShape.length === 1 && program.outputShape[0] === 1) {
+    if (program.outputShape.length === 1 && program.outputShape[0] <= 2) {
         return reducedTensor;
     }
 

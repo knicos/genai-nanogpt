@@ -69,7 +69,7 @@ describe('Norm squared', { timeout: 10000 }, () => {
         const expectedNorm = Math.sqrt(100 * 4 * 64 * 2 * 0.5 ** 2);
         const expectedScale = 0.5 / Math.max(expectedNorm, 1.0);
 
-        expect(data).toHaveLength(1);
+        expect(data).toHaveLength(2);
         expect(data[0]).toBeCloseTo(expectedScale, 3);
     });
 });

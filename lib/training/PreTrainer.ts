@@ -2,7 +2,8 @@ import Model, { ModelForwardAttributes } from '@base/models/model';
 import BasicTrainer from './BasicTrainer';
 import { ITokeniser } from '@base/tokeniser/type';
 import { DatasetBuilder } from './DatasetBuilder';
-import { AdamWOptimizer, AdamWOptimizerConfig } from './AdamW';
+import { AdamWOptimizer } from './AdamW';
+import { AdamWOptimizerConfig } from './types';
 
 const DEFAULT_OPT_CONFIG: Partial<AdamWOptimizerConfig> = {
     decaySteps: 60000,

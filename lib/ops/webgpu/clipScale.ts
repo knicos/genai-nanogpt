@@ -40,7 +40,9 @@ class ClipScaleProgram extends ReduceProgram {
         return `
             if (tid == 0) {
                 let cnorm = uniforms.clipNorm;
-                result[0] = (cnorm / max(cnorm, sqrt(bestValue))) * uniforms.scaling;
+                let gradNorm = sqrt(bestValue);
+                result[0] = (cnorm / max(cnorm, gradNorm)) * uniforms.scaling;
+                result[1] = gradNorm;
             }
         `;
     }
@@ -76,7 +78,7 @@ function clipScaleGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attr
 
     const reduceInfo: backend_util.ReduceInfo = {
         inSize: workgroupSize * workPerThread,
-        outSize: 1,
+        outSize: 2,
         batchSize: 1,
         windowSize: workgroupSize,
     };
