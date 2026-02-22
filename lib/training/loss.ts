@@ -12,3 +12,17 @@ export function calculateLoss(logits: Tensor, targets: Tensor, masked?: boolean,
         throw new Error(`Loss computation failed: ${error}`);
     }
 }
+
+export function calculateAccuracy(logits: Tensor, targets: Tensor): Tensor {
+    try {
+        const predictions = logits.argMax(-1);
+        const correct = predictions.equal(targets).cast('float32');
+        const accuracy = correct.mean();
+        predictions.dispose();
+        correct.dispose();
+        return accuracy;
+    } catch (error) {
+        console.error('Error computing accuracy:', error);
+        throw new Error(`Accuracy computation failed: ${error}`);
+    }
+}

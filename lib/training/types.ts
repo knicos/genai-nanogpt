@@ -80,4 +80,5 @@ export interface TrainingState {
     trainingDuration: number;
     gradients?: NamedTensorMap;
     gradientNorm?: Tensor;
+    accuracy?: Tensor;
 }

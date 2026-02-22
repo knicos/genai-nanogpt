@@ -1,10 +1,15 @@
 import { LazyIterator } from '@tensorflow/tfjs-data/dist/iterators/lazy_iterator';
 import { Dataset } from '@tensorflow/tfjs-data';
-import { tensor, Tensor, TensorContainer } from '@tensorflow/tfjs-core';
+import { tensor, Tensor, TensorContainer, tidy } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from '@base/models/model';
-import { calculateLoss } from './loss';
+import { calculateAccuracy, calculateLoss } from './loss';
 import { Conversation, ITokeniser } from '@base/main';
 import { buildSFTExample } from './SFTDatasetBuilder';
+
+interface Result {
+    loss: number;
+    accuracy: number;
+}
 
 export default class Evaluator {
     private iterator?: Promise<LazyIterator<TensorContainer>>;
@@ -43,21 +48,31 @@ export default class Evaluator {
         ys: Tensor,
         keepBatch: boolean,
         masked: boolean
-    ): Promise<number | number[]> {
-        const logits = this.model.forward({ training: false }, xs);
-        const loss = calculateLoss(logits, ys, masked, keepBatch);
-        logits.dispose();
+    ): Promise<Result | Result[]> {
+        const [loss, accuracy] = tidy(() => {
+            const logits = this.model.forward({ training: false }, xs);
+            const loss = calculateLoss(logits, ys, masked, keepBatch);
+            const accuracy = calculateAccuracy(logits, ys);
+            logits.dispose();
+            return [loss, accuracy];
+        });
 
         const lossValue = await loss!.array();
+        const accuracyValue = await accuracy!.array();
         const batchLoss = lossValue as number | number[];
+        const batchAccuracy = accuracyValue as number;
 
+        accuracy!.dispose();
         loss!.dispose();
 
-        return batchLoss;
+        return Array.isArray(batchLoss)
+            ? batchLoss.map((l) => ({ loss: l, accuracy: batchAccuracy }))
+            : { loss: batchLoss, accuracy: batchAccuracy };
     }
 
-    async evaluate(maxBatches = 100): Promise<number | number[]> {
+    async evaluate(maxBatches = 100): Promise<Result | Result[]> {
         let totalLoss = 0;
+        let totalAccuracy = 0;
         let batchCount = 0;
 
         if (this.iterator) {
@@ -69,17 +84,18 @@ export default class Evaluator {
                 const { xs, ys } = batch as { xs: Tensor; ys: Tensor };
 
                 //const logits = this.model.forward({ training: false }, xs);
-                const loss = await this.calculateBatchLoss(xs, ys, false, false);
+                const loss = (await this.calculateBatchLoss(xs, ys, false, false)) as Result;
                 xs.dispose();
                 ys.dispose();
 
-                totalLoss += loss as number;
+                totalLoss += loss.loss;
+                totalAccuracy += loss.accuracy;
                 batchCount++;
             }
 
-            return totalLoss / batchCount;
+            return { loss: totalLoss / batchCount, accuracy: totalAccuracy / batchCount };
         } else if (this.xs && this.ys) {
-            return this.calculateBatchLoss(this.xs, this.ys, true, true);
+            return this.calculateBatchLoss(this.xs, this.ys, true, true) as Promise<Result[]>;
         }
         throw new Error('No data available for evaluation');
     }

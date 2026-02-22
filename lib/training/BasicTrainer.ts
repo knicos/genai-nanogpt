@@ -7,7 +7,7 @@ import Model, { ModelForwardAttributes } from '@base/models/model';
 import { createTensorStatistics, TensorStatistics } from '../checks/weights';
 import { NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
 import { AdamWOptimizerConfig, TrainingLogEntry, TrainingMetrics, TrainingOptions, TrainingState } from './types';
-import { calculateLoss } from './loss';
+import { calculateAccuracy, calculateLoss } from './loss';
 import { AdamWOptimizer } from './AdamW';
 
 const DEFAULT_OPTIONS: TrainingOptions = {
@@ -121,6 +121,12 @@ export default class BasicTrainer {
                     xs
                 );
                 const loss = calculateLoss(logits, ys, this.maskedLoss);
+
+                if (this.metrics.has('accuracy')) {
+                    state.accuracy = calculateAccuracy(logits, ys);
+                    keep(state.accuracy);
+                }
+
                 logits.dispose();
                 const scaledLoss = loss.mul(scalar(this.optimizerConfig.lossScaling));
                 loss.dispose();
@@ -251,6 +257,10 @@ export default class BasicTrainer {
                         state.gradientNorm.dispose();
                         state.gradientNorm = undefined;
                     }
+                    if (state.accuracy) {
+                        state.accuracy.dispose();
+                        state.accuracy = undefined;
+                    }
                 }
                 lossScalar.dispose();
             }
@@ -285,6 +295,7 @@ export default class BasicTrainer {
             trainingMetrics: {
                 loss: state.lastLoss,
                 perplexity: this.metrics.has('perplexity') ? Math.exp(state.lastLoss) : undefined,
+                accuracy: state.accuracy ? (await state.accuracy.data())[0] : undefined,
             },
             step: state.step,
             time: Date.now() - state.logStartTime,
@@ -302,6 +313,10 @@ export default class BasicTrainer {
         if (state.gradientNorm) {
             state.gradientNorm.dispose();
             state.gradientNorm = undefined;
+        }
+        if (state.accuracy) {
+            state.accuracy.dispose();
+            state.accuracy = undefined;
         }
 
         this.model.trainingState = {
@@ -325,12 +340,13 @@ export default class BasicTrainer {
             try {
                 const valLoss = await evaluator.evaluate(5);
                 if (Array.isArray(valLoss)) {
-                    entry.validationMetrics = { loss: valLoss[0] };
+                    entry.validationMetrics = { loss: valLoss[0].loss, accuracy: valLoss[0].accuracy };
                 } else {
-                    state.validationLosses.push(valLoss);
+                    state.validationLosses.push(valLoss.loss);
                     entry.validationMetrics = {
-                        loss: valLoss,
-                        perplexity: this.metrics.has('perplexity') ? Math.exp(valLoss) : undefined,
+                        accuracy: valLoss.accuracy,
+                        loss: valLoss.loss,
+                        perplexity: this.metrics.has('perplexity') ? Math.exp(valLoss.loss) : undefined,
                     };
                 }
             } catch (error) {
@@ -400,6 +416,10 @@ export default class BasicTrainer {
                     if (state.gradientNorm) {
                         state.gradientNorm.dispose();
                         state.gradientNorm = undefined;
+                    }
+                    if (state.accuracy) {
+                        state.accuracy.dispose();
+                        state.accuracy = undefined;
                     }
                 }
                 lossScalar.dispose();
