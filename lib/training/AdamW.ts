@@ -41,6 +41,8 @@ export class AdamWOptimizer extends Optimizer {
     protected epsilon: number | null = null;
     protected lrScheduler: LRScheduler;
     protected clipNorm?: number;
+    protected orthGradEpsilon = 1e-30;
+    protected orthGrad: boolean;
 
     constructor(private config: AdamWOptimizerConfig) {
         super();
@@ -52,6 +54,8 @@ export class AdamWOptimizer extends Optimizer {
         this.weightDecay = config.weightDecay;
         this.lossScaling = config.lossScaling;
         this.clipNorm = config.clipNorm;
+        this.orthGrad = config.orthoGrad ?? false;
+
         if (config.epsilon === null || config.epsilon === undefined) {
             this.epsilon = engine().backend.epsilon();
         } else {
@@ -63,6 +67,23 @@ export class AdamWOptimizer extends Optimizer {
 
     get lr(): number {
         return this.learningRate;
+    }
+
+    private orthogonalizeGradient(weight: Tensor, gradient: Tensor): Tensor {
+        return tidy(() => {
+            const w = weight.reshape([-1]);
+            const g = gradient.reshape([-1]);
+
+            const wNormSq = w.mul(w).sum().add(this.orthGradEpsilon);
+            const proj = w.mul(g).sum().div(wNormSq);
+            const gOrth = g.sub(w.mul(proj));
+
+            const gNorm = g.norm();
+            const gOrthNorm = gOrth.norm().add(this.orthGradEpsilon);
+            const gOrthScaled = gOrth.mul(gNorm.div(gOrthNorm));
+
+            return gOrthScaled.reshape(gradient.shape);
+        });
     }
 
     updateConfig(newConfig: Partial<AdamWOptimizerConfig>) {
@@ -112,17 +133,23 @@ export class AdamWOptimizer extends Optimizer {
                     };
                 }
 
-                const gradient = Array.isArray(variableGradients)
+                const rawGradient = Array.isArray(variableGradients)
                     ? variableGradients[i].tensor
                     : variableGradients[name];
-                if (gradient == null) {
+                if (rawGradient == null) {
                     return;
                 }
+
+                const gradient = this.orthGrad ? this.orthogonalizeGradient(value, rawGradient) : rawGradient;
 
                 const moments = this.accumulatedMoments[i].variable;
 
                 const newMoments = adamMoments(moments, gradient, this.beta1, this.beta2, scaling);
                 moments.assign(newMoments);
+
+                if (this.orthGrad) {
+                    gradient.dispose();
+                }
 
                 const newValue = adamAdjust(
                     newMoments,

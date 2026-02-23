@@ -12,7 +12,7 @@ import { AdamWOptimizer } from './AdamW';
 
 const DEFAULT_OPTIONS: TrainingOptions = {
     logInterval: 1,
-    maxSteps: 1000,
+    maxEpochs: 100,
     sftMode: 'full',
     batchSize: 32,
 };
@@ -24,7 +24,8 @@ const DEFAULT_OPT_CONFIG: AdamWOptimizerConfig = {
     epsilon: 1e-8,
     weightDecay: 0.01,
     warmupSteps: 100,
-    decaySteps: 10000,
+    decayEpochs: 100,
+    epochSteps: 10000,
     minLearningRate: 1e-5,
     lossScaling: 1.0,
 };
@@ -365,10 +366,12 @@ export default class BasicTrainer {
         options: Partial<TrainingOptions>,
         validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
     ): Promise<{ losses: number[]; validationLosses: number[] }> {
-        const { logInterval = 10, maxSteps = Infinity } = {
+        const { logInterval = 10, maxEpochs = Infinity } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
+
+        const maxSteps = maxEpochs * (options?.epochSteps || 1000);
 
         if (options.metrics) {
             this.setMetrics(options.metrics);

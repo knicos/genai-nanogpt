@@ -6,7 +6,8 @@ import { AdamWOptimizer } from './AdamW';
 import { AdamWOptimizerConfig } from './types';
 
 const DEFAULT_OPT_CONFIG: Partial<AdamWOptimizerConfig> = {
-    decaySteps: 60000,
+    decayEpochs: 100,
+    epochSteps: 10000,
     warmupSteps: 1000,
     minLearningRate: 3e-5,
     weightDecay: 0.1,

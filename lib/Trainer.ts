@@ -155,7 +155,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     async prepare(tasks: Task[] | Uint16Array = []): Promise<void> {
         const options = this.options;
         if (this.trainingType === 'pretraining' && this.trainer instanceof PreTrainer) {
-            const { trainDataset, validationDataset, size } = await createTrainValidationSplit(
+            const { trainDataset, validationDataset, size, trainState } = await createTrainValidationSplit(
                 tasks,
                 this.trainer.tokenizer,
                 this.trainer.datasetBuilder,
@@ -168,6 +168,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             this.trainDataset = trainDataset;
             this.validationDataset = validationDataset;
             this.totalSamples = totalSamples;
+            this.options.epochSteps = Math.ceil(trainState.shuffledIndexes.length / (options?.batchSize || 32));
+            this.trainer.updateOptimizer(this.options);
         } else if (this.trainingType === 'sft' && this.trainer instanceof SFTTrainer) {
             if (tasks instanceof Uint16Array) {
                 throw new Error('SFT training requires Task[] input');
@@ -179,6 +181,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             );
             this.trainDataset = trainDataset;
             this.totalSamples = tasks.reduce((acc, conv) => acc + conv.length, 0);
+            this.options.epochSteps = Math.ceil(this.totalSamples / (options?.batchSize || 32));
+            this.trainer.updateOptimizer(this.options);
         }
     }
 

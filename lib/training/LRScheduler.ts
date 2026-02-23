@@ -35,14 +35,15 @@ export default class LRScheduler {
         }
 
         // Clamp to min LR for steps >= decaySteps
-        if (step >= this.config.decaySteps || this.config.decaySteps <= this.config.warmupSteps) {
+        const decaySteps = this.config.epochSteps * this.config.decayEpochs;
+        if (step >= decaySteps || decaySteps <= this.config.warmupSteps) {
             this.learningRate = this.config.minLearningRate;
             this.step++;
             return this.config.minLearningRate;
         }
 
         // Cosine decay for steps [warmupSteps, decaySteps - 1]
-        const decayRatio = (step - this.config.warmupSteps) / (this.config.decaySteps - this.config.warmupSteps);
+        const decayRatio = (step - this.config.warmupSteps) / (decaySteps - this.config.warmupSteps);
         const coeff = 0.5 * (1.0 + Math.cos(Math.PI * decayRatio));
         const newLR = this.config.minLearningRate + coeff * (this.startLearningRate - this.config.minLearningRate);
 

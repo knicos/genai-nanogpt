@@ -29,8 +29,9 @@ export interface TrainingLogEntry {
 
 export interface LRSchedulerConfig {
     warmupSteps: number;
-    decaySteps: number;
+    decayEpochs: number;
     minLearningRate: number;
+    epochSteps: number;
 }
 
 export interface AdamWOptimizerConfig extends LRSchedulerConfig {
@@ -41,6 +42,7 @@ export interface AdamWOptimizerConfig extends LRSchedulerConfig {
     weightDecay: number;
     lossScaling: number;
     clipNorm?: number;
+    orthoGrad?: boolean;
 }
 
 export type TrainingMetrics =
@@ -56,7 +58,7 @@ export type TrainingMetrics =
 
 export interface TrainingOptions extends Partial<AdamWOptimizerConfig> {
     batchSize: number; // Batch size for training
-    maxSteps?: number; // Maximum training steps
+    maxEpochs?: number; // Maximum number of epochs
     logInterval?: number; // Interval for logging training progress
     prompt?: string; // Prompt for generating text during training
     validationSplit?: number; // Fraction of data to use for validation
