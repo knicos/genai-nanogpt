@@ -4,17 +4,13 @@ const BYTES_PER_PARAMETER = 4; // Assuming float32
 
 export function estimateParameterCount(config: GPTConfig): number {
     const embeddingParams = config.vocabSize * config.nEmbed;
-    const attentionParams =
-        config.nLayer *
-        (4 * config.nEmbed * config.nEmbed + // qkv + proj
-            2 * config.nEmbed); // layer norms
+    const attentionParams = config.nLayer * (4 * config.nEmbed * config.nEmbed); // qkv + proj
     const mlpParams =
         config.nLayer *
         (config.mlpFactor * config.nEmbed * config.nEmbed + // fc
             config.nEmbed * config.mlpFactor * config.nEmbed); // proj
-    const finalParams = config.nEmbed;
 
-    return embeddingParams + attentionParams + mlpParams + finalParams;
+    return embeddingParams + attentionParams + mlpParams;
 }
 
 export function estimateMemoryUsage(config: GPTConfig): number {

@@ -170,6 +170,7 @@ export default class NanoGPTV1 extends Model<ModelForwardAttributes, GPTConfigV1
     }
 
     dispose() {
+        this.weightStore.dispose();
         this.wte.dispose();
         if (this.wpe) this.wpe.dispose();
         this.blocks.forEach((block) => block.dispose());

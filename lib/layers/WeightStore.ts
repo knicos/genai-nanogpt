@@ -115,6 +115,7 @@ export default class WeightStore {
 
     public dispose(): void {
         this._variables.forEach((variable) => {
+            console.log('Disposing variable', variable?.name);
             variable?.dispose();
         });
         this._variables.clear();

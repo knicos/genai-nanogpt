@@ -22,6 +22,7 @@ export default abstract class BaseLayer<
     public weightStore: WeightStore;
     public readonly children: BaseLayer[] = [];
     private profiler?: MemoryProfiler;
+    private ownVariables = new Set<string>();
 
     constructor(config: CONFIG, parent?: BaseLayer) {
         this.config = config;
@@ -55,6 +56,14 @@ export default abstract class BaseLayer<
 
     public addVariable(name: string, variable?: Variable) {
         this.weightStore.addVariable(name, variable);
+        this.ownVariables.add(name);
+        if (this.parent) {
+            this.parent.addChildVariable(name);
+        }
+    }
+
+    public addChildVariable(name: string) {
+        this.ownVariables.add(name);
     }
 
     get variables(): Variable[] {
@@ -62,7 +71,7 @@ export default abstract class BaseLayer<
     }
 
     get trainableVariables(): Variable[] {
-        return this.weightStore.trainableVariables;
+        return this.weightStore.trainableVariables.filter((v) => this.ownVariables.has(v.name));
     }
 
     public getVariable(name: string): Tensor {

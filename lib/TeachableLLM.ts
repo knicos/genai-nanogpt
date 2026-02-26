@@ -231,6 +231,10 @@ export default class TeachableLLM {
             }
         });
 
+        if (this._trainer && this._trainer !== trainer) {
+            this._trainer.dispose();
+        }
+
         this._trainer = trainer;
         return trainer;
     }
@@ -276,6 +280,10 @@ export default class TeachableLLM {
     }
 
     dispose() {
+        if (this._trainer) {
+            this._trainer.dispose();
+            this._trainer = null;
+        }
         this._model?.dispose();
         this.ee.removeAllListeners();
     }

@@ -69,6 +69,7 @@ export interface TrainingOptions extends Partial<AdamWOptimizerConfig> {
     sftMode: 'full' | 'lora' | 'last-layer'; // Mode for SFT training, if applicable
     maskedLoss?: boolean; // Whether to use masked loss (e.g., for language modeling)
     metrics?: TrainingMetrics[]; // Metrics to compute during training
+    contextScaling?: number; // Factor to scale the context length for training (e.g., 0.5 to use half the context length)
     onStep?: (log: TrainingLogEntry) => void; // Callback for each training step
 }
 

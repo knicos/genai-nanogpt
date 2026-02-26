@@ -32,6 +32,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         sftMode: 'full',
         logInterval: 10,
     };
+    protected tokenizer: ITokeniser;
 
     constructor(
         model: Model<ModelForwardAttributes>,
@@ -49,14 +50,42 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         super();
 
         if (modelOrCopy instanceof Trainer) {
-            this.trainer = modelOrCopy.trainer;
-            this.trainingType = modelOrCopy.trainingType;
-            this.options = (tokeniser as TrainingOptions) ?? modelOrCopy.options;
-            this.trainer.updateOptimizer(this.options);
-            this.log = modelOrCopy.log;
-            this.progress = modelOrCopy.progress;
-            this.totalSamples = modelOrCopy.totalSamples;
-            // Don't copy the datasets
+            const newOptions = tokeniser ? (tokeniser as TrainingOptions) : modelOrCopy.options;
+            const oldOptions = modelOrCopy.options;
+
+            let needsReset = false;
+            if (modelOrCopy.trainingType === 'sft' && newOptions.sftMode !== oldOptions.sftMode) {
+                needsReset = true;
+            }
+            if (trainingType !== modelOrCopy.trainingType) {
+                needsReset = true;
+            }
+
+            // Sometimes need to get a new optimizer
+            if (needsReset) {
+                if (modelOrCopy.trainingType === 'sft') {
+                    this.trainer = new SFTTrainer(modelOrCopy.model, modelOrCopy.tokenizer, newOptions);
+                } else {
+                    this.trainer = new PreTrainer(modelOrCopy.model, modelOrCopy.tokenizer, newOptions);
+                }
+                this.trainingType = trainingType;
+                this.options = newOptions;
+                this.tokenizer = modelOrCopy.tokenizer;
+            } else {
+                this.trainer = modelOrCopy.trainer;
+                this.trainingType = trainingType;
+                this.options = newOptions;
+                this.trainer.updateOptimizer(this.options);
+                this.log = modelOrCopy.log;
+                this.progress = modelOrCopy.progress;
+                this.totalSamples = modelOrCopy.totalSamples;
+                this.tokenizer = modelOrCopy.tokenizer;
+
+                if (newOptions.batchSize === oldOptions.batchSize) {
+                    this.trainDataset = modelOrCopy.trainDataset;
+                    this.validationDataset = modelOrCopy.validationDataset;
+                }
+            }
             return;
         }
 
@@ -77,6 +106,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             this.trainer = new PreTrainer(modelOrCopy, tokeniser as ITokeniser, options);
         }
         this.trainingType = trainingType;
+        this.tokenizer = tokeniser as ITokeniser;
     }
 
     get model(): Model<ModelForwardAttributes> {
