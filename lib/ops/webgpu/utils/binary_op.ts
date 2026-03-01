@@ -124,3 +124,85 @@ export class BinaryOpProgram implements WebGPUProgram {
         return userCode;
     }
 }
+
+export class BinaryOpScalarProgram implements WebGPUProgram {
+    dispatch: [number, number, number];
+    dispatchLayout: { x: number[] };
+    outputComponent: number;
+    op: BinaryOpType;
+    outputShape: number[];
+    shaderKey: string;
+    size = true;
+    variableNames = ['A', 'B'];
+    workgroupSize: [number, number, number];
+    variableComponents: number[];
+
+    constructor(op: BinaryOpType, aShape: number[]) {
+        this.outputShape = aShape;
+        this.dispatchLayout = flatDispatchLayout(this.outputShape);
+        this.op = op;
+
+        const aDivisibleBy4 = aShape.length > 0 && aShape[aShape.length - 1] % 4 === 0;
+        if (aDivisibleBy4) {
+            this.outputComponent = 4;
+            this.variableComponents = [4, 1];
+        } else {
+            throw new Error('16-bit float binary ops require inner dimension to be multiple of 4');
+        }
+
+        this.shaderKey = `binary_scal_${op}_${this.variableComponents}`;
+        // TODO(jiajia.qin@intel.com): Heuristically select a good work group
+        // size.
+        this.workgroupSize = [128, 1, 1];
+
+        this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize, [
+            this.outputComponent,
+            1,
+            1,
+        ]);
+    }
+
+    getUserCode(): string {
+        const dType = this.outputComponent === 4 ? 'vec4<f32>' : 'f32';
+        const opFnStr = `
+    fn binaryOperation(a : ${dType}, b : ${dType}) -> ${dType} {
+      ${getBinaryOpString(this.op, this.outputComponent === 4)}
+    };
+    `;
+
+        // NOTE: Always assumes vectors of 4 for inputs and output for 16-bit float ops.
+
+        const userCode = `
+       ${opFnStr}
+       ${main('index')} {
+         if (index < uniforms.size) {
+            let a = A[index];
+            let b = B[0];
+
+            let v4a1 = vec4<f32>(
+                unpack2x16float(u32(a.x)),
+                unpack2x16float(u32(a.y))
+            );
+            let v4a2 = vec4<f32>(
+                unpack2x16float(u32(a.z)),
+                unpack2x16float(u32(a.w))
+            );
+
+            let v4res1 = binaryOperation(v4a1, vec4<f32>(b));
+            let v4res2 = binaryOperation(v4a2, vec4<f32>(b));
+
+            let res = vec4<i32>(
+                i32(pack2x16float(v4res1.xy)),
+                i32(pack2x16float(v4res1.zw)),
+                i32(pack2x16float(v4res2.xy)),
+                i32(pack2x16float(v4res2.zw))
+            );
+
+            result[index] = res;
+         }
+       }
+       `;
+
+        return userCode;
+    }
+}

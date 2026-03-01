@@ -1,9 +1,15 @@
-import { afterEach, describe, it } from 'vitest';
+import { afterAll, afterEach, describe, it } from 'vitest';
 import Generator from './Generator';
 import NanoGPT from './models/NanoGPTV1';
 import CharTokeniser from './tokeniser/CharTokeniser';
 import * as tf from '@tensorflow/tfjs';
 import { Conversation } from './main';
+import { create, globals } from 'webgpu';
+import { selectBackend } from '@base/backend';
+
+Object.assign(globalThis, globals);
+const navigator = { gpu: create([]) };
+Object.assign(globalThis.navigator, navigator);
 
 const CHARS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't'];
 
@@ -11,15 +17,19 @@ describe('Generator', () => {
     afterEach(() => {
         tf.disposeVariables();
     });
+    afterAll(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (globalThis as any).navigator;
+    });
 
     it('should generate text based on a prompt', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20, // Example vocab size
             nEmbed: 64, // Example embedding size
             nLayer: 1, // Example number of layers
             nHead: 2, // Example number of attention heads
             blockSize: 32, // Example block size
-            dropout: 0.1, // Example dropout rate
         });
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
@@ -34,13 +44,13 @@ describe('Generator', () => {
     });
 
     it('generates from an empty conversation', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20, // Example vocab size
             nEmbed: 64, // Example embedding size
             nLayer: 1, // Example number of layers
             nHead: 2, // Example number of attention heads
             blockSize: 32, // Example block size
-            dropout: 0.1, // Example dropout rate
         });
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
@@ -54,13 +64,13 @@ describe('Generator', () => {
     });
 
     it('generates from a user conversation', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20, // Example vocab size
             nEmbed: 64, // Example embedding size
             nLayer: 1, // Example number of layers
             nHead: 2, // Example number of attention heads
             blockSize: 32, // Example block size
-            dropout: 0.1, // Example dropout rate
         });
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
@@ -74,13 +84,13 @@ describe('Generator', () => {
     });
 
     it('generates from a long user conversation', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20, // Example vocab size
             nEmbed: 64, // Example embedding size
             nLayer: 1, // Example number of layers
             nHead: 2, // Example number of attention heads
             blockSize: 32, // Example block size
-            dropout: 0.1, // Example dropout rate
         });
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
@@ -97,13 +107,13 @@ describe('Generator', () => {
     });
 
     it('appends to end of conversation', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20, // Example vocab size
             nEmbed: 64, // Example embedding size
             nLayer: 1, // Example number of layers
             nHead: 2, // Example number of attention heads
             blockSize: 32, // Example block size
-            dropout: 0.1, // Example dropout rate
         });
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
@@ -120,13 +130,13 @@ describe('Generator', () => {
     });
 
     it('supports topP', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20, // Example vocab size
             nEmbed: 64, // Example embedding size
             nLayer: 1, // Example number of layers
             nHead: 2, // Example number of attention heads
             blockSize: 32, // Example block size
-            dropout: 0.1, // Example dropout rate
         });
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
@@ -141,13 +151,13 @@ describe('Generator', () => {
     });
 
     it('can handle an untrained tokeniser', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20, // Example vocab size
             nEmbed: 64, // Example embedding size
             nLayer: 1, // Example number of layers
             nHead: 2, // Example number of attention heads
             blockSize: 32, // Example block size
-            dropout: 0.1, // Example dropout rate
         });
         const tokeniser = new CharTokeniser(20);
         const generator = new Generator(model, tokeniser);
@@ -165,13 +175,13 @@ describe('Generator', () => {
     });
 
     it('should emit tokens during generation', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20,
             nEmbed: 64,
             nLayer: 1,
             nHead: 4,
             blockSize: 32,
-            dropout: 0.1,
         });
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
@@ -189,13 +199,13 @@ describe('Generator', () => {
     });
 
     it('should emit tokens with attention when requested', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20,
             nEmbed: 64,
             nLayer: 1,
             nHead: 2,
             blockSize: 32,
-            dropout: 0.1,
         });
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
@@ -218,13 +228,13 @@ describe('Generator', () => {
     });
 
     it('emits attention with RoPE', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20,
             nEmbed: 64,
             nLayer: 1,
             nHead: 2,
             blockSize: 32,
-            dropout: 0.1,
             useRope: true,
         });
         const tokeniser = new CharTokeniser(CHARS);
@@ -246,13 +256,13 @@ describe('Generator', () => {
     });
 
     it('should emit probabilities when requested', async ({ expect }) => {
+        await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20,
             nEmbed: 64,
             nLayer: 1,
             nHead: 2,
             blockSize: 32,
-            dropout: 0.1,
         });
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);

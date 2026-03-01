@@ -7,13 +7,16 @@ import {
     Tensor,
     TensorInfo,
 } from '@tensorflow/tfjs-core';
-import { BinaryOpProgram, BinaryOpType } from './utils/binary_op';
+import { BinaryOpProgram, BinaryOpScalarProgram, BinaryOpType } from './utils/binary_op';
 
 function mul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { a, b } = args.inputs as { a: Tensor; b: Tensor };
     const backend = args.backend as WebGPUBackend;
 
-    const program = new BinaryOpProgram(BinaryOpType.MUL, a.shape, b.shape);
+    const program =
+        b.shape.length === 0
+            ? new BinaryOpScalarProgram(BinaryOpType.MUL, a.shape)
+            : new BinaryOpProgram(BinaryOpType.MUL, a.shape, b.shape);
 
     const result = backend.runWebGPUProgram(program, [a, b], 'packedF16');
     return result;

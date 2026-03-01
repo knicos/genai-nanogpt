@@ -70,6 +70,9 @@ export interface TrainingOptions extends Partial<AdamWOptimizerConfig> {
     maskedLoss?: boolean; // Whether to use masked loss (e.g., for language modeling)
     metrics?: TrainingMetrics[]; // Metrics to compute during training
     contextScaling?: number; // Factor to scale the context length for training (e.g., 0.5 to use half the context length)
+    labelSmoothing?: number; // Amount of label smoothing to apply during loss calculation
+    dropout?: number; // Dropout rate to apply during training
+    layerDrop?: number; // Layer drop rate to apply during training
     onStep?: (log: TrainingLogEntry) => void; // Callback for each training step
 }
 

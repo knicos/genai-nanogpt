@@ -3,6 +3,7 @@ import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { GPTConfig } from '@base/main';
 import { matMul16 } from '@base/ops/matMul16';
 import { reshape16 } from '@base/ops/reshape16';
+import { dropout } from '@base/ops/dropout';
 
 export interface MLPConfig {
     activation?: 'gelu' | 'relu2';
@@ -49,7 +50,7 @@ export default class MLP extends BaseLayer {
         }
     }
 
-    forward(_: ForwardAttributes, x: Tensor): Tensor {
+    forward(attr: ForwardAttributes, x: Tensor): Tensor {
         return tidy(() => {
             this.startMemory();
             const [B, T, C] = x.shape;
@@ -64,6 +65,11 @@ export default class MLP extends BaseLayer {
 
             const projected = reshape16(out2d, [B!, T!, C!]);
             this.endMemory('MLP');
+
+            if (attr.dropout && attr.dropout > 0) {
+                return dropout(projected, attr.dropout);
+            }
+
             return projected;
         });
     }

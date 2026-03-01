@@ -40,6 +40,9 @@ export default class BasicTrainer {
     protected maskedLoss = false;
     protected optimizerConfig: AdamWOptimizerConfig;
     protected metrics = new Set<TrainingMetrics>();
+    protected _labelSmoothing = 0.0;
+    protected _layerDrop = 0.0;
+    protected _dropout = 0.0;
 
     constructor(
         model: Model<ModelForwardAttributes>,
@@ -66,6 +69,18 @@ export default class BasicTrainer {
 
     setMixedPrecision(enabled: boolean): void {
         this._mixedPrecision = enabled;
+    }
+
+    setLabelSmoothing(smoothing: number): void {
+        this._labelSmoothing = smoothing;
+    }
+
+    setDropout(dropout: number): void {
+        this._dropout = dropout;
+    }
+
+    setLayerDrop(layerDrop: number): void {
+        this._layerDrop = layerDrop;
     }
 
     setLearningRate(learningRate: number): void {
@@ -118,10 +133,12 @@ export default class BasicTrainer {
                         training: true,
                         checkpointing: this._gradientCheckpointing,
                         mixedPrecision: this._mixedPrecision,
+                        dropout: this._dropout,
+                        layerDrop: this._layerDrop,
                     },
                     xs
                 );
-                const loss = calculateLoss(logits, ys, this.maskedLoss);
+                const loss = calculateLoss(logits, ys, this.maskedLoss, false, this._labelSmoothing);
 
                 if (this.metrics.has('accuracy')) {
                     state.accuracy = calculateAccuracy(logits, ys);

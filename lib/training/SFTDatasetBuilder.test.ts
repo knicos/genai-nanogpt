@@ -108,7 +108,7 @@ function buildExpectedExample(
 describe('SFTDatasetBuilder', () => {
     it('creates SFT dataset with masked labels', async ({ expect }) => {
         const tokenizer = makeMockTokenizer();
-        const blockSize = 12;
+        const blockSize = 32;
         const ignoreIndex = -100;
 
         const builder = new SFTDatasetBuilder(tokenizer, blockSize);
@@ -117,6 +117,8 @@ describe('SFTDatasetBuilder', () => {
             [
                 { role: 'user', content: 'hi' },
                 { role: 'assistant', content: 'ok' },
+                { role: 'user', content: 'fine' },
+                { role: 'assistant', content: 'no' },
             ],
         ];
 
@@ -134,6 +136,11 @@ describe('SFTDatasetBuilder', () => {
         const ys = (await value.ys.array()) as number[][];
 
         const expected = buildExpectedExample(conversations[0], ignoreIndex, tokenizer, blockSize);
+
+        console.log('Expected xs:', expected.xs);
+        console.log('Expected ys:', expected.ys);
+        console.log('Actual xs:', xs[0]);
+        console.log('Actual ys:', ys[0]);
 
         expect(xs[0]).toEqual(expected.xs);
         expect(ys[0]).toEqual(expected.ys);

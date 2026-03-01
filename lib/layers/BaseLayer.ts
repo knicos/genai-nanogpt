@@ -11,6 +11,8 @@ export interface ForwardAttributes {
     ropeCache?: RoPECache;
     outputEmbeddings?: boolean;
     embeddings?: { name: string; tensor: Tensor }[];
+    dropout?: number; // Optional dropout rate to apply during forward pass
+    layerDrop?: number; // Optional layer drop rate to apply during forward pass
 }
 
 export default abstract class BaseLayer<

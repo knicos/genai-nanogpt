@@ -3,6 +3,8 @@ import type { Conversation, ITokeniser } from '../tokeniser/type';
 import { Dataset, generator } from '@tensorflow/tfjs-data';
 import { Task } from '@base/training/tasks/Task';
 
+const COMPLETION_MASKING = true;
+
 export function buildSFTExample(
     conversation: Conversation[],
     ignoreIndex: number,
@@ -10,7 +12,7 @@ export function buildSFTExample(
     blockSize: number
 ): { xs: Int32Array; ys: Int32Array } | null {
     const tokens: number[] = [tokenizer.bosToken];
-    const mask: boolean[] = [false];
+    const unmask: boolean[] = [!COMPLETION_MASKING];
 
     const roleToStart = {
         user: tokenizer.getSpecialTokenIndex('<|user_start|>'),
@@ -32,7 +34,7 @@ export function buildSFTExample(
         }
 
         tokens.push(start);
-        mask.push(false);
+        unmask.push(!COMPLETION_MASKING);
 
         const isAssistant = fragment.role === 'assistant';
 
@@ -40,15 +42,15 @@ export function buildSFTExample(
         for (const t of contentTokens) {
             tokens.push(t);
             const isSpecial = tokenizer.isSpecialToken(t);
-            mask.push(isAssistant && !isSpecial);
+            unmask.push(COMPLETION_MASKING ? isAssistant && !isSpecial : true);
         }
 
         tokens.push(end);
-        mask.push(isAssistant); // Unmask end token only for assistant role
+        unmask.push(COMPLETION_MASKING ? isAssistant : true); // Unmask end token only for assistant role
     }
 
     tokens.push(tokenizer.eosToken);
-    mask.push(false);
+    unmask.push(!COMPLETION_MASKING);
 
     // Ensure length is blockSize + 1 for xs/ys shift
     const targetLen = blockSize + 1;
@@ -57,16 +59,16 @@ export function buildSFTExample(
         const padToken = tokenizer.getSpecialTokenIndex('<pad>')!;
         for (let i = 0; i < padCount; i++) {
             tokens.push(padToken);
-            mask.push(false);
+            unmask.push(false);
         }
     } else if (tokens.length > targetLen) {
         tokens.length = targetLen;
-        mask.length = targetLen;
+        unmask.length = targetLen;
     }
 
     const xs = new Int32Array(tokens.slice(0, blockSize));
     const ysRaw = tokens.slice(1, blockSize + 1);
-    const maskShifted = mask.slice(1, blockSize + 1);
+    const maskShifted = unmask.slice(1, blockSize + 1);
 
     const ys = new Int32Array(ysRaw.length);
     let hasUnmasked = false;

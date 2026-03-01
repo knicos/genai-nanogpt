@@ -93,6 +93,9 @@ export default class NanoGPTV2 extends Model<ModelForwardAttributes, GPTConfigV2
 
             // Transformer blocks
             for (let i = 0; i < this.blocks.length; i++) {
+                if (attrs.layerDrop && Math.random() < attrs.layerDrop * (i / this.blocks.length)) {
+                    continue; // Skip this layer
+                }
                 const block = this.blocks[i];
                 const seed = Math.random() * 1e9;
                 const blockAttrs = {

@@ -12,6 +12,8 @@ import { dot16 } from '@base/ops/dot16';
 import { reshape16 } from '@base/ops/reshape16';
 import { isPackedTensor } from '@base/utilities/packed';
 import { qkv } from '@base/ops/qkv';
+import { dropout } from '@base/ops/dropout';
+import { normRMS } from '@base/ops/normRMS';
 
 export interface KVCache {
     k?: Tensor; // [B, nHead, T_cache, headDim]
@@ -142,8 +144,12 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             // The rope operator ensures the cache is large enough
             const pastLenInitial = attr.pastKV ? attr.pastKV.cumulativeLength : 0;
             const ropeCache = attr.ropeCache;
-            const q = ropeCache ? rope(qI, ropeCache, pastLenInitial) : qI;
-            const kNew = ropeCache ? rope(kNewI, ropeCache, pastLenInitial) : kNewI;
+            const ropedQ = ropeCache ? rope(qI, ropeCache, pastLenInitial) : qI;
+            const ropedKNew = ropeCache ? rope(kNewI, ropeCache, pastLenInitial) : kNewI;
+            const q = normRMS(ropedQ);
+            ropedQ.dispose();
+            const kNew = normRMS(ropedKNew);
+            ropedKNew.dispose();
 
             if (ropeCache) {
                 qI.dispose();
@@ -197,7 +203,11 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
                     keep(attScores.slice([0, 0, 0, 0], [1, -1, -1, -1]).reshape([H, T_cur, -1]))
                 );
             }
+
             this.endMemory(`CausalSelfAttention`);
+            if (attr.dropout && attr.dropout > 0) {
+                return dropout(output, attr.dropout);
+            }
             return output;
         });
     }

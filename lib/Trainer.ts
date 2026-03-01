@@ -283,6 +283,9 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
 
         this.trainer.setGradientCheckpointing(options?.gradientCheckpointing || false);
         this.trainer.setMixedPrecision(options?.mixedPrecision || false);
+        this.trainer.setLabelSmoothing(options?.labelSmoothing || 0.0);
+        this.trainer.setDropout(options?.dropout || 0);
+        this.trainer.setLayerDrop(options?.layerDrop || 0);
         this.configureModel(options);
 
         await this.trainer.trainOnDataset(
