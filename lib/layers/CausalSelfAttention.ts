@@ -12,8 +12,8 @@ import { dot16 } from '@base/ops/dot16';
 import { reshape16 } from '@base/ops/reshape16';
 import { isPackedTensor } from '@base/utilities/packed';
 import { qkv } from '@base/ops/qkv';
-import { dropout } from '@base/ops/dropout';
 import { normRMS } from '@base/ops/normRMS';
+import { dropout16 } from '@base/ops/dropout16';
 
 export interface KVCache {
     k?: Tensor; // [B, nHead, T_cache, headDim]
@@ -206,7 +206,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
 
             this.endMemory(`CausalSelfAttention`);
             if (attr.dropout && attr.dropout > 0) {
-                return dropout(output, attr.dropout);
+                return dropout16(output, attr.dropout);
             }
             return output;
         });

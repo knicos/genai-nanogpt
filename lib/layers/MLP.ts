@@ -3,7 +3,7 @@ import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { GPTConfig } from '@base/main';
 import { matMul16 } from '@base/ops/matMul16';
 import { reshape16 } from '@base/ops/reshape16';
-import { dropout } from '@base/ops/dropout';
+import { dropout16 } from '@base/ops/dropout16';
 
 export interface MLPConfig {
     activation?: 'gelu' | 'relu2';
@@ -67,7 +67,7 @@ export default class MLP extends BaseLayer {
             this.endMemory('MLP');
 
             if (attr.dropout && attr.dropout > 0) {
-                return dropout(projected, attr.dropout);
+                return dropout16(projected, attr.dropout);
             }
 
             return projected;
