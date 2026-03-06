@@ -30,6 +30,8 @@ export interface TransformersTokeniser {
     merges: [string, string][];
 }
 
+export type ModelPhase = 'untrained' | 'pretrained' | 'finetuned';
+
 export interface TransformersMetadata {
     name?: string;
     version: number;
@@ -37,5 +39,6 @@ export interface TransformersMetadata {
     training?: TrainingState;
     reference?: string; // Reference model
     url?: string; // Original URL if loaded from there
+    phase?: ModelPhase;
     [key: string]: unknown;
 }

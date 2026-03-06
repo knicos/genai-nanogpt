@@ -28,7 +28,7 @@ export default abstract class Model<
 > extends BaseLayer<T, C> {
     public lossScaling = 128;
     public trainingState: TrainingState | null = null;
-    public metaData?: TransformersMetadata;
+    public metaData: TransformersMetadata = { version: 2, application: '@genai-fi/nanogpt' };
     private loraLayer?: LoRA;
 
     /*constructor(config: GPTConfig) {

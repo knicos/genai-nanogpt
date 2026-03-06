@@ -76,6 +76,7 @@ export async function saveModel(
                 name: options?.name,
                 training: model.trainingState || undefined,
                 reference: model.metaData?.url || undefined,
+                phase: model.metaData?.phase || undefined,
             },
             undefined,
             4

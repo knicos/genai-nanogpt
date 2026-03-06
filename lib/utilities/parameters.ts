@@ -2,6 +2,15 @@ import { GPTConfig } from '@base/models/config';
 
 const BYTES_PER_PARAMETER = 4; // Assuming float32
 
+export function estimateLayerParameters(config: GPTConfig): number {
+    const attentionParams = 4 * config.nEmbed * config.nEmbed; // qkv + proj
+    const mlpParams =
+        config.mlpFactor * config.nEmbed * config.nEmbed + // fc
+        config.nEmbed * config.mlpFactor * config.nEmbed; // proj
+
+    return attentionParams + mlpParams;
+}
+
 export function estimateParameterCount(config: GPTConfig): number {
     const embeddingParams = config.vocabSize * config.nEmbed;
     const attentionParams = config.nLayer * (4 * config.nEmbed * config.nEmbed); // qkv + proj
