@@ -252,7 +252,8 @@ export default class TeachableLLM {
         });
 
         if (this._trainer && this._trainer !== trainer) {
-            this._trainer.dispose();
+            // this._trainer.dispose();
+            this._trainer.removeAllListeners();
         }
 
         this._trainer = trainer;
