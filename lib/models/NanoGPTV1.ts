@@ -37,6 +37,7 @@ export default class NanoGPTV1 extends Model<ModelForwardAttributes, GPTConfigV1
             activation: 'gelu',
             hiddenFactor: this.config.mlpFactor,
             useGamma: true,
+            useQKNorm: false,
         };
 
         // Token embeddings

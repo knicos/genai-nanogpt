@@ -22,15 +22,19 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
 
     it('generates a correctly shaped output', async ({ expect }) => {
         await selectBackend('webgpu');
-        const layer = new CausalSelfAttention(0, {
-            modelType: 'GenAI_NanoGPT_v2',
-            vocabSize: 20,
-            nEmbed: 16,
-            nHead: 2,
-            nLayer: 1,
-            blockSize: 4,
-            mlpFactor: 4,
-        });
+        const layer = new CausalSelfAttention(
+            0,
+            {
+                modelType: 'GenAI_NanoGPT_v2',
+                vocabSize: 20,
+                nEmbed: 16,
+                nHead: 2,
+                nLayer: 1,
+                blockSize: 4,
+                mlpFactor: 4,
+            },
+            { useQKNorm: true }
+        );
 
         expect(layer).toBeInstanceOf(CausalSelfAttention);
 
@@ -43,15 +47,19 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
 
     it('can accept dropout', async ({ expect }) => {
         await selectBackend('webgpu');
-        const layer = new CausalSelfAttention(0, {
-            modelType: 'GenAI_NanoGPT_v2',
-            vocabSize: 20,
-            nEmbed: 16,
-            nHead: 2,
-            nLayer: 1,
-            blockSize: 4,
-            mlpFactor: 4,
-        });
+        const layer = new CausalSelfAttention(
+            0,
+            {
+                modelType: 'GenAI_NanoGPT_v2',
+                vocabSize: 20,
+                nEmbed: 16,
+                nHead: 2,
+                nLayer: 1,
+                blockSize: 4,
+                mlpFactor: 4,
+            },
+            {}
+        );
 
         expect(layer).toBeInstanceOf(CausalSelfAttention);
 
@@ -64,15 +72,19 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
 
     it('can generate attention scores', async ({ expect }) => {
         await selectBackend('webgpu');
-        const layer = new CausalSelfAttention(0, {
-            modelType: 'GenAI_NanoGPT_v2',
-            vocabSize: 20,
-            nEmbed: 16,
-            nHead: 2,
-            nLayer: 1,
-            blockSize: 4,
-            mlpFactor: 4,
-        });
+        const layer = new CausalSelfAttention(
+            0,
+            {
+                modelType: 'GenAI_NanoGPT_v2',
+                vocabSize: 20,
+                nEmbed: 16,
+                nHead: 2,
+                nLayer: 1,
+                blockSize: 4,
+                mlpFactor: 4,
+            },
+            {}
+        );
 
         const input = tf.randomNormal([1, 4, 16]);
         const attr = {
@@ -88,15 +100,19 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
 
     it('can use a KV cache', async ({ expect }) => {
         await selectBackend('webgpu');
-        const layer = new CausalSelfAttention(0, {
-            modelType: 'GenAI_NanoGPT_v2',
-            vocabSize: 20,
-            nEmbed: 16,
-            nHead: 2,
-            nLayer: 1,
-            blockSize: 4,
-            mlpFactor: 4,
-        });
+        const layer = new CausalSelfAttention(
+            0,
+            {
+                modelType: 'GenAI_NanoGPT_v2',
+                vocabSize: 20,
+                nEmbed: 16,
+                nHead: 2,
+                nLayer: 1,
+                blockSize: 4,
+                mlpFactor: 4,
+            },
+            {}
+        );
 
         const input = tf.randomNormal([1, 1, 16]);
         const cache: KVCache = {
@@ -128,15 +144,19 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
         await selectBackend('webgpu');
         const input = tf.randomNormal([1, 4, 16]);
 
-        const layer = new CausalSelfAttention(0, {
-            modelType: 'GenAI_NanoGPT_v2',
-            vocabSize: 20,
-            nEmbed: 16,
-            nHead: 2,
-            nLayer: 1,
-            blockSize: 4,
-            mlpFactor: 4,
-        });
+        const layer = new CausalSelfAttention(
+            0,
+            {
+                modelType: 'GenAI_NanoGPT_v2',
+                vocabSize: 20,
+                nEmbed: 16,
+                nHead: 2,
+                nLayer: 1,
+                blockSize: 4,
+                mlpFactor: 4,
+            },
+            {}
+        );
         layer.call({ training: false }, input); // Initialize the layer
 
         // Touch all variables to simulate training
@@ -148,15 +168,19 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
         const originalOutput = layer.call({ training: false }, input) as tf.Tensor;
         layer.dispose();
 
-        const newLayer = new CausalSelfAttention(0, {
-            modelType: 'GenAI_NanoGPT_v2',
-            vocabSize: 20,
-            nEmbed: 16,
-            nHead: 2,
-            nLayer: 1,
-            blockSize: 4,
-            mlpFactor: 4,
-        });
+        const newLayer = new CausalSelfAttention(
+            0,
+            {
+                modelType: 'GenAI_NanoGPT_v2',
+                vocabSize: 20,
+                nEmbed: 16,
+                nHead: 2,
+                nLayer: 1,
+                blockSize: 4,
+                mlpFactor: 4,
+            },
+            {}
+        );
         newLayer.call({ training: false }, input); // Initialize the layer
         newLayer.weightStore.loadWeights(weightsMap, false);
 
@@ -180,7 +204,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
             mlpFactor: 4,
         };
         const ropeCache = new RoPECache(config);
-        const layer = new CausalSelfAttention(0, config);
+        const layer = new CausalSelfAttention(0, config, {});
 
         const input = tf.randomNormal([1, 4, 16]);
         const target = tf.randomNormal([1, 4, 16]);
@@ -205,15 +229,19 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
 
     it('supports mixed precision', async ({ expect }) => {
         await selectBackend('webgpu');
-        const layer = new CausalSelfAttention(0, {
-            modelType: 'GenAI_NanoGPT_v2',
-            vocabSize: 20,
-            nEmbed: 64,
-            nHead: 2,
-            nLayer: 1,
-            blockSize: 4,
-            mlpFactor: 4,
-        });
+        const layer = new CausalSelfAttention(
+            0,
+            {
+                modelType: 'GenAI_NanoGPT_v2',
+                vocabSize: 20,
+                nEmbed: 64,
+                nHead: 2,
+                nLayer: 1,
+                blockSize: 4,
+                mlpFactor: 4,
+            },
+            {}
+        );
 
         expect(layer).toBeInstanceOf(CausalSelfAttention);
 

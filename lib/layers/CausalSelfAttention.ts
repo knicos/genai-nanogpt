@@ -33,6 +33,10 @@ interface AttentionForwardAttributes extends ForwardAttributes {
     seed?: number; // Optional seed for dropout randomness
 }
 
+export interface CausalSelfAttentionConfig {
+    useQKNorm?: boolean;
+}
+
 // Multi-head self-attention implementation
 export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttributes> {
     private divisor: number;
@@ -42,7 +46,12 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
     private ATTN: string;
     private PROJ: string;
 
-    constructor(index: number, config: GPTConfig, parent?: BaseLayer) {
+    constructor(
+        index: number,
+        config: GPTConfig,
+        private readonly attentionConfig: CausalSelfAttentionConfig,
+        parent?: BaseLayer
+    ) {
         super(config, parent);
         this.index = index;
         this.units = config.nEmbed * 3;
@@ -146,11 +155,11 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             const ropeCache = attr.ropeCache;
             const ropedQ = ropeCache ? rope(qI, ropeCache, pastLenInitial) : qI;
             const ropedKNew = ropeCache ? rope(kNewI, ropeCache, pastLenInitial) : kNewI;
-            const q = normRMS(ropedQ);
-            ropedQ.dispose();
-            const kNew = normRMS(ropedKNew);
-            ropedKNew.dispose();
-
+            const doNorm = this.attentionConfig.useQKNorm ?? false;
+            const q = doNorm ? normRMS(ropedQ) : ropedQ;
+            if (doNorm) ropedQ.dispose();
+            const kNew = doNorm ? normRMS(ropedKNew) : ropedKNew;
+            if (doNorm) ropedKNew.dispose();
             if (ropeCache) {
                 qI.dispose();
                 kNewI.dispose();
@@ -196,8 +205,6 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             if (shouldOutputAttention && attr.attentionScores && attr.attentionScores.attentionOut !== undefined) {
                 const H = attScores.shape[1]!;
                 const T_cur = attScores.shape[2]!;
-
-                console.log('Outputting attention scores shape:', attScores.shape);
 
                 attr.attentionScores.attentionOut?.push(
                     keep(attScores.slice([0, 0, 0, 0], [1, -1, -1, -1]).reshape([H, T_cur, -1]))

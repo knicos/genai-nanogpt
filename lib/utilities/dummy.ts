@@ -18,13 +18,11 @@ export interface MemoryRequirements {
 }
 
 export async function dummyPassTrainAsync(model: Model<ModelForwardAttributes>): Promise<MemoryRequirements> {
-    console.log('Starting dummy training pass for memory profiling...');
     const startMemInfo = memory() as ExtendedMemoryInfo;
     const startBytes =
         startMemInfo.numBytesInGPUAllocated ?? startMemInfo.numBytesAllocatedInGPU ?? startMemInfo.numBytes;
 
     await dummyPassAsync(model);
-    console.log('Forward pass complete. Starting backward pass...');
     // Send a dummy input to initialize the model
     const dummyInput = zeros([1, model.config.blockSize], 'int32');
 
@@ -60,8 +58,6 @@ export async function dummyPassTrainAsync(model: Model<ModelForwardAttributes>):
         const endMemInfo = memory() as ExtendedMemoryInfo;
         const endBytes = endMemInfo.numBytesInGPUAllocated ?? endMemInfo.numBytesAllocatedInGPU ?? endMemInfo.numBytes;
         memoryReqs.perBatch = endBytes - startBytes - memoryReqs.gradients;
-
-        console.log('Dummy training memory requirements:', memoryReqs);
 
         await lossValue.data(); // Just to wait
         lossValue.dispose();

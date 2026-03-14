@@ -272,10 +272,11 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         }
 
         if (attrs.embeddings) {
-            const filtered =
+            /*const filtered =
                 options?.embeddings === 'all'
                     ? attrs.embeddings
-                    : attrs.embeddings.filter((e) => e.name.startsWith('block_output_'));
+                    : attrs.embeddings.filter((e) => e.name.startsWith('block_output_'));*/
+            const filtered = attrs.embeddings; // No filter
             const promises = filtered.map(async (e) => {
                 const seqLen = e.tensor.shape[1]!;
                 const lastStep = e.tensor.slice([0, seqLen - 1, 0], [e.tensor.shape[0], 1, e.tensor.shape[2]!]);
@@ -288,11 +289,15 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
                     squeezed.dispose();
                     const softmaxed = softmax(projected, -1);
                     projected.dispose();
-                    return { name: e.name, tensor: (await softmaxed.array()) as number[][] };
+                    const result = { name: e.name, tensor: (await softmaxed.array()) as number[][] };
+                    softmaxed.dispose();
+                    return result;
                 } else if (options?.embeddings === 'logits') {
                     const projected = this.model.project(squeezed);
                     squeezed.dispose();
-                    return { name: e.name, tensor: (await projected.array()) as number[][] };
+                    const result = { name: e.name, tensor: (await projected.array()) as number[][] };
+                    projected.dispose();
+                    return result;
                 } else {
                     const arr = (await squeezed.array()) as number[][];
                     squeezed.dispose();
@@ -424,7 +429,6 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         this.initialPrompt = prompt || null;
         if (this.lastToken === -1) {
             this.outputConversation = (this.initialPrompt || []).slice();
-            console.log('Setting conversation in generator.', prompt);
         } else if (prompt && prompt.length > this.outputConversation.length) {
             // If the conversation is now longer, update it
             this.outputConversation = (this.initialPrompt || []).slice();

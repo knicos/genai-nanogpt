@@ -4,7 +4,6 @@ import Model, { ModelForwardAttributes } from './model';
 import NanoGPTV2 from './NanoGPTV2';
 
 export default function createModelInstance(config: GPTConfig): Model<ModelForwardAttributes, GPTConfig> {
-    console.log(`Creating model instance with config: ${JSON.stringify(config, undefined, 4)}`);
     const modelType = config.modelType || 'GenAI_NanoGPT_v1';
     switch (modelType) {
         case 'GenAI_NanoGPT_v1':

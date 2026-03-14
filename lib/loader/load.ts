@@ -77,8 +77,6 @@ async function zipLoadCommon(
             },
         };
     } else {
-        console.log('Loading as reference', metaData.reference, metaData.url);
-
         if (zipFile.file('manifest.json')) {
             return loadOldModel(zipFile, metaData);
         } else {

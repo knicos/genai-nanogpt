@@ -20,8 +20,6 @@ export default class LoRA {
 
         this.scale = scalar(alpha / rank);
 
-        console.log('Attaching LoRA with rank', rank, 'and alpha', alpha, variables);
-
         if (this.weightStore.onWeightRead) {
             throw new Error('LoRA cannot be applied to a WeightStore that already has a onWeightRead hook.');
         }
