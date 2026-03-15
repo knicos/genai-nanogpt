@@ -42,7 +42,7 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
         this.specialTokenSet.add(index);
     }
 
-    abstract train(text: string[]): Promise<number>;
+    abstract train(text: string[], cb?: (vocab: number) => void): Promise<number>;
     abstract getVocab(): string[];
     abstract getMerges(): [string, string][];
     abstract destroy(): void;

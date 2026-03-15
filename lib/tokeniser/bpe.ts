@@ -185,7 +185,7 @@ export default class BPETokeniser extends BaseTokeniser {
         return this.vocabIndex.get('') ?? 1;
     }
 
-    public async train(text: string[]): Promise<number> {
+    public async train(text: string[], cb?: (vocab: number) => void): Promise<number> {
         const pretokens = text.map((t) => parseTokens(t)).flat(1);
         const preTokenSet = new Set<string>(pretokens);
 
@@ -206,6 +206,7 @@ export default class BPETokeniser extends BaseTokeniser {
 
         const state = initPairs(tokens);
 
+        let lastYield = performance.now();
         while (this.vocab.size < this.targetSize && this.merges.length < this.targetSize) {
             //state = initPairs(state.tokens);
             const pair = bestPair(state);
@@ -217,6 +218,16 @@ export default class BPETokeniser extends BaseTokeniser {
             this.vocab.add(pair.a + pair.b);
 
             mergeTokens(state, pair);
+
+            // Yield if more than 40ms has passed
+            const now = performance.now();
+            if (now - lastYield > 40) {
+                await new Promise(requestAnimationFrame);
+                lastYield = performance.now();
+                if (cb) {
+                    cb(this.vocab.size);
+                }
+            }
         }
 
         pretokensArray.forEach((token, i) => {

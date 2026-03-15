@@ -69,9 +69,9 @@ export async function tokensFromTasks(
         if (now - lastYield > 40) {
             await new Promise(requestAnimationFrame);
             lastYield = performance.now();
-        }
-        if (cb) {
-            cb(state.total);
+            if (cb) {
+                cb(state.total);
+            }
         }
     }
 
