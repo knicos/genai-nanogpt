@@ -65,6 +65,7 @@ export interface IGenerateOptions extends GenerateOptions {
     noCache?: boolean;
     allowSpecial?: boolean;
     nonConversational?: boolean;
+    continuation?: boolean;
 }
 
 /**
@@ -98,9 +99,17 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
         options?: IGenerateOptions
     ): Promise<Tensor> {
         if (prompt) {
-            let tokenisedPrompt = options?.nonConversational
-                ? await tokeniser.encodeAsSequence(prompt, true)
-                : await tokeniser.encodeConversation(prompt, true);
+            const isAssistant = prompt.length > 0 && prompt[prompt.length - 1].role === 'assistant';
+            let tokenisedPrompt: number[] = [];
+            if (options?.nonConversational) {
+                if (isAssistant && options?.continuation) {
+                    tokenisedPrompt = tokeniser.encode(prompt[prompt.length - 1].content);
+                } else {
+                    tokenisedPrompt = tokeniser.encodeAsSequence(prompt, true);
+                }
+            } else {
+                tokenisedPrompt = tokeniser.encodeConversation(prompt, true);
+            }
             if (tokenisedPrompt.length > this.model.config.blockSize) {
                 tokenisedPrompt = tokenisedPrompt.slice(-this.model.config.blockSize);
             }
