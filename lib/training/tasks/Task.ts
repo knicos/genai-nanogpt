@@ -1,4 +1,5 @@
 import { Conversation, ITokeniser } from '@base/main';
+import { yieldIfNeeded } from '@base/utilities/yielder';
 
 export abstract class Task {
     abstract get length(): number;
@@ -46,9 +47,9 @@ export async function tokensFromTasks(
     tokenizer: ITokeniser,
     cb?: (tokens: number) => void
 ): Promise<Uint16Array> {
-    const estimatedTokens = (await Promise.all(tasks.map((task) => task.estimateTokens(tokenizer)))).reduce(
-        (sum, val) => sum + val,
-        0
+    const estimatedTokens = Math.min(
+        (await Promise.all(tasks.map((task) => task.estimateTokens(tokenizer)))).reduce((sum, val) => sum + val, 0),
+        tokenizer.vocabSize * 10000
     );
 
     const allTokens = [new Uint16Array(estimatedTokens)];
@@ -65,14 +66,7 @@ export async function tokensFromTasks(
             break;
         }
         // Yield if more than 40ms has passed
-        const now = performance.now();
-        if (now - lastYield > 40) {
-            await new Promise(requestAnimationFrame);
-            lastYield = performance.now();
-            if (cb) {
-                cb(state.total);
-            }
-        }
+        lastYield = await yieldIfNeeded(lastYield, cb, state.total);
     }
 
     if (allTokens.length === 1) {

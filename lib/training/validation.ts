@@ -29,19 +29,32 @@ export async function createTrainValidationSplit(
         }
     }
 
-    const indexArray = Array.from({ length: allTokens.length }, (_, i) => i);
-    const trainIndexes = indexArray.filter(
-        (i) => !validationMask.has(Math.floor(i / (datasetBuilder.blockSize * PAGE_FACTOR)))
+    const trainIndexes = new Uint32Array(
+        allTokens.length - validationMask.size * datasetBuilder.blockSize * PAGE_FACTOR
     );
-    const validationIndexes = indexArray.filter((i) =>
-        validationMask.has(Math.floor(i / (datasetBuilder.blockSize * PAGE_FACTOR)))
-    );
+    const validationIndexes = new Uint32Array(validationMask.size * datasetBuilder.blockSize * PAGE_FACTOR);
+
+    let trainIdx = 0;
+    let valIdx = 0;
+    for (let i = 0; i < allTokens.length; i++) {
+        const pageIndex = Math.floor(i / (datasetBuilder.blockSize * PAGE_FACTOR));
+        if (validationMask.has(pageIndex)) {
+            if (valIdx < validationIndexes.length) {
+                validationIndexes[valIdx++] = i;
+            }
+        } else {
+            if (trainIdx < trainIndexes.length) {
+                trainIndexes[trainIdx++] = i;
+            }
+        }
+    }
 
     const { dataset: trainDataset, state: trainState } = await datasetBuilder.createTextDataset(
         allTokens,
         batchSize,
         shuffle(trainIndexes)
     );
+
     const { dataset: validationDataset, state: validationState } = await datasetBuilder.createTextDataset(
         allTokens,
         batchSize,

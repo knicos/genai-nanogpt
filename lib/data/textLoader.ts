@@ -2,6 +2,7 @@ import papa from 'papaparse';
 import { loadParquet } from './parquet';
 import { loadPDF } from './pdf';
 import { loadDOCX } from './docx';
+import zip from 'jszip';
 
 export interface DataOptions {
     maxSize?: number;
@@ -39,6 +40,8 @@ function getFileType(file: string): string {
             return 'application/pdf';
         case 'docx':
             return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        case 'zip':
+            return 'application/zip';
         default:
             return 'unknown';
     }
@@ -79,6 +82,20 @@ export default async function loadTextData(file: File, options?: DataOptions): P
                     return line;
                 }
             });
+    }
+    if (type === 'application/zip') {
+        const zipFile = await zip.loadAsync(file);
+        // Loop files and call loadTextData on each, then concatenate results
+        const results: string[] = [];
+        for (const fileName of Object.keys(zipFile.files)) {
+            const zipEntry = zipFile.file(fileName);
+            if (zipEntry) {
+                const blob = await zipEntry.async('blob');
+                const nestedResults = await loadTextData(new File([blob], fileName), options);
+                results.push(...nestedResults);
+            }
+        }
+        return results;
     }
     if (type === 'text/csv') {
         const data = await file.text();

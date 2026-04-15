@@ -1,3 +1,4 @@
+import { yieldIfNeeded } from '@base/utilities/yielder';
 import parseTokens from '../utilities/tokenParse';
 import BaseTokeniser, { SPECIALS } from './BaseTokeniser';
 
@@ -166,7 +167,7 @@ export default class BPETokeniser extends BaseTokeniser {
     }
 
     public get trained(): boolean {
-        return this.vocab.size > SPECIALS.length && this.vocab.size <= this.targetSize && this.merges.length > 0;
+        return this.vocab.size > SPECIALS.length && this.vocab.size <= this.targetSize;
     }
 
     public get vocabSize(): number {
@@ -186,7 +187,12 @@ export default class BPETokeniser extends BaseTokeniser {
     }
 
     public async train(text: string[], cb?: (vocab: number) => void): Promise<number> {
+        let lastYield = performance.now();
+
         const pretokens = text.map((t) => parseTokens(t)).flat(1);
+
+        lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
+
         const preTokenSet = new Set<string>(pretokens);
 
         this.vocab = new Set();
@@ -206,7 +212,34 @@ export default class BPETokeniser extends BaseTokeniser {
 
         const state = initPairs(tokens);
 
-        let lastYield = performance.now();
+        lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
+
+        if (this.vocab.size >= this.targetSize) {
+            console.warn('Initial vocab size is greater than or equal to target size. No merges will be performed.');
+
+            // Truncate vocab to target size using only most frequent characters
+            const charCounts = new Map<string, number>();
+            pretokens.forEach((token) => {
+                Array.from(token).forEach((char) => {
+                    charCounts.set(char, (charCounts.get(char) || 0) + 1);
+                });
+            });
+
+            const sortedChars = Array.from(charCounts.entries()).sort((a, b) => b[1] - a[1]);
+            this.vocab = new Set();
+            this.addSpecialTokens();
+            const selectedChars = sortedChars.slice(0, this.targetSize - this.vocab.size).map(([char]) => char);
+            selectedChars.forEach((char) => this.vocab.add(char));
+            this.vocabIndex.clear();
+            let i = 0;
+            for (const v of this.vocab.keys()) {
+                this.vocabIndex.set(v, i++);
+            }
+
+            this.emit('trainStatus', 'trained');
+            return this.vocab.size;
+        }
+
         while (this.vocab.size < this.targetSize && this.merges.length < this.targetSize) {
             //state = initPairs(state.tokens);
             const pair = bestPair(state);
@@ -220,14 +253,7 @@ export default class BPETokeniser extends BaseTokeniser {
             mergeTokens(state, pair);
 
             // Yield if more than 40ms has passed
-            const now = performance.now();
-            if (now - lastYield > 40) {
-                await new Promise(requestAnimationFrame);
-                lastYield = performance.now();
-                if (cb) {
-                    cb(this.vocab.size);
-                }
-            }
+            lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
         }
 
         pretokensArray.forEach((token, i) => {

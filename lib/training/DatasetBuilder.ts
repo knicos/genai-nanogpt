@@ -4,15 +4,15 @@ import { Dataset, generator } from '@tensorflow/tfjs-data';
 
 export const PAGE_FACTOR = 8;
 
-export async function flattenTokens(textData: Conversation[][], tokenizer: ITokeniser): Promise<number[]> {
+export async function flattenTokens(textData: Conversation[][], tokenizer: ITokeniser): Promise<Uint16Array> {
     // Process ALL text into one token array first
     const tokenisedTexts = await Promise.all(textData.map((text) => tokenizer.encodeConversation(text)));
 
     const flatTokens = tokenisedTexts.flat();
-    return flatTokens;
+    return new Uint16Array(flatTokens);
 }
 
-export function shuffle(array: number[]): number[] {
+export function shuffle(array: Uint32Array): Uint32Array {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [array[i], array[j]] = [array[j], array[i]];
@@ -21,7 +21,7 @@ export function shuffle(array: number[]): number[] {
 }
 
 export interface DatasetState {
-    shuffledIndexes: number[];
+    shuffledIndexes: Uint32Array;
     step: number;
 }
 
@@ -39,14 +39,14 @@ export class DatasetBuilder {
     public async createTextDataset(
         flatTokens: Uint16Array,
         batchSize = 32,
-        indexes?: number[]
+        indexes?: Uint32Array
     ): Promise<{ dataset: Dataset<{ xs: Tensor; ys: Tensor }>; state: DatasetState }> {
         if (flatTokens.length < this.blockSize + 1) {
             throw new Error(`Not enough tokens (${flatTokens.length}) for block size ${this.blockSize}`);
         }
 
         const state: DatasetState = {
-            shuffledIndexes: [],
+            shuffledIndexes: new Uint32Array(flatTokens.length),
             step: 0,
         };
 
@@ -54,7 +54,10 @@ export class DatasetBuilder {
             state.shuffledIndexes = indexes;
             // shuffle(state.shuffledIndexes);
         } else {
-            state.shuffledIndexes = Array.from({ length: flatTokens.length }, (_, i) => i);
+            state.shuffledIndexes = new Uint32Array(flatTokens.length);
+            for (let i = 0; i < flatTokens.length; i++) {
+                state.shuffledIndexes[i] = i;
+            }
             shuffle(state.shuffledIndexes);
         }
 
