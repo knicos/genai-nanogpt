@@ -16,6 +16,19 @@ import createDeviceInformation, { DeviceInformation } from './utils/deviceInfo';
 class Norm2Program extends ReduceProgram {
     shaderKey = 'norm2';
     atomic = true;
+    utilityFunctions = `
+        fn atomicAddF32(sum: ptr<storage, atomic<i32>, read_write>, value: f32) -> f32 {
+            var old = atomicLoad(sum);
+            loop {
+                let new_value = value + bitcast<f32>(old);
+                let exchange_result = atomicCompareExchangeWeak(sum, old, bitcast<i32>(new_value));
+                if (exchange_result.exchanged) {
+                    return new_value;
+                }
+                old = exchange_result.old_value;
+            }
+        }
+    `;
 
     constructor(deviceInfo: DeviceInformation, reduceInfo: backend_util.ReduceInfo, workgroupSize: number) {
         super(
@@ -42,7 +55,7 @@ class Norm2Program extends ReduceProgram {
     protected override getWriteSnippet(): string {
         return `
             if (tid == 0) {
-                atomicAdd(&result[uniforms.index], i32(bestValue * 100.0f));
+                atomicAddF32(&result[uniforms.index], bestValue);
             }
         `;
     }

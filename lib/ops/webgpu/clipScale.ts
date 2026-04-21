@@ -30,9 +30,9 @@ class ClipScaleProgram extends ReduceProgram {
         this.uniforms += 'scaling: f32, clipNorm: f32';
     }
 
-    protected override getPreprocessSnippet(): string {
+    protected override getReadSnippet(): string {
         return `
-            candidate = candidate / 100.0f;
+            return bitcast<f32>(u32(x[index]));
         `;
     }
 
@@ -40,7 +40,7 @@ class ClipScaleProgram extends ReduceProgram {
         return `
             if (tid == 0) {
                 let cnorm = uniforms.clipNorm;
-                let gradNorm = sqrt(bestValue);
+                let gradNorm = sqrt(max(bestValue, 0.0));
                 result[0] = (cnorm / max(cnorm, gradNorm)) * uniforms.scaling;
                 result[1] = gradNorm;
             }

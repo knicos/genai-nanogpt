@@ -19,6 +19,7 @@ interface ReduceShaderParams extends ReduceParams {
     reducedSnippet?: string;
     outputSnippet: string;
     inputReadSnippet?: string;
+    utilityFunctions?: string;
 }
 
 function createReduceSnippet(subgroups: boolean, variable: boolean, workgroupSizeX: number, pair: boolean): string {
@@ -89,6 +90,7 @@ function createReductionShader16_elementwise(params: ReduceShaderParams): string
             }
 
            ${sharedMemorySnippet}
+           ${params.utilityFunctions ?? ''}
     
            ${main('index')} {
                 let outputIndex = index / ${reduceSize};
@@ -145,7 +147,8 @@ function createReductionShader16_flatten(params: ReduceShaderParams): string {
                 }
             }
 
-           ${sharedMemorySnippet}
+            ${sharedMemorySnippet}
+            ${params.utilityFunctions ?? ''}
     
            ${main('index')} {
                 let outputIndex = index / ${reduceSize};
@@ -208,6 +211,7 @@ function createReductionShader32(params: ReduceShaderParams): string {
             }
 
            ${sharedMemorySnippet}
+              ${params.utilityFunctions ?? ''}
     
            ${main('index')} {
                 let outputIndex = index / ${params.workgroupSizeX};
@@ -274,6 +278,7 @@ export class ReduceProgram implements WebGPUProgram {
     subgroupBuiltins = false;
     deviceInfo: DeviceInformation;
     params: ReduceParams;
+    utilityFunctions?: string;
 
     constructor(
         deviceInfo: DeviceInformation,
@@ -354,6 +359,7 @@ export class ReduceProgram implements WebGPUProgram {
                   inputSnippet: this.getPreprocessSnippet(),
                   outputSnippet: this.getWriteSnippet(),
                   reducedSnippet: this.getPostprocessSnippet(),
+                  utilityFunctions: this.utilityFunctions,
               })
             : createReductionShader32({
                   ...this.params,
@@ -364,6 +370,7 @@ export class ReduceProgram implements WebGPUProgram {
                   inputSnippet: this.getPreprocessSnippet(),
                   outputSnippet: this.getWriteSnippet(),
                   reducedSnippet: this.getPostprocessSnippet(),
+                  utilityFunctions: this.utilityFunctions,
               });
 
         return shader;
