@@ -80,6 +80,8 @@ export interface IGenerator extends EE<'start' | 'stop' | 'tokens'> {
     getEmbeddingsData(): { name: string; tensor: number[][] }[][];
     getTokens(): number[];
     getLastLoss(): number | null;
+    dispose(): void;
+    reset(): void;
 }
 
 /**
