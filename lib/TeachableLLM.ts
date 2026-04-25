@@ -2,7 +2,7 @@ import { GPTConfig, validateConfig } from './models/config';
 import type { Conversation, ITokeniser } from './tokeniser/type';
 import { saveModel, SaveOptions } from './loader/save';
 import { loadModel, LoadModelOptions } from './loader/load';
-import Generator, { IGenerateOptions } from './Generator';
+import Generator, { IGenerateOptions, IGenerator } from './Generator';
 import Trainer, { TrainingType } from './Trainer';
 import EE from 'eventemitter3';
 import { dummyPassTrainAsync, MemoryRequirements } from './utilities/dummy';
@@ -277,7 +277,7 @@ export default class TeachableLLM {
         return tokenCount;
     }
 
-    generator(): Generator {
+    generator(): IGenerator {
         if (!this._model || !this._tokeniser) {
             throw new Error('model_or_tokeniser_not_initialized.');
         }

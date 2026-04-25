@@ -68,11 +68,25 @@ export interface IGenerateOptions extends GenerateOptions {
     continuation?: boolean;
 }
 
+export interface IGenerator extends EE<'start' | 'stop' | 'tokens'> {
+    generate(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;
+    generate(options?: IGenerateOptions): Promise<Conversation[]>;
+    step(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;
+    step(options?: IGenerateOptions): Promise<Conversation[]>;
+    stop(): void;
+    getConversation(): Conversation[];
+    getAttentionData(): number[][][][][];
+    getProbabilitiesData(): number[][][];
+    getEmbeddingsData(): { name: string; tensor: number[][] }[][];
+    getTokens(): number[];
+    getLastLoss(): number | null;
+}
+
 /**
  * Text generator using a NanoGPT model and a tokeniser.
  * This uses the forward method of the model to generate text token by token, including options for temperature, top-k, and top-p sampling.
  */
-export default class Generator extends EE<'start' | 'stop' | 'tokens'> {
+export default class Generator extends EE<'start' | 'stop' | 'tokens'> implements IGenerator {
     private active = false;
     private cache: KVCache[] | null = null;
     private initialPrompt: string | Conversation[] | null = null;
