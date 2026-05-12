@@ -124,9 +124,9 @@ describe('Generator', () => {
         output = (await generator.generate(output, { maxLength: 50 })) as Conversation[];
 
         expect(output).toBeDefined();
-        expect(output).toHaveLength(3);
-        expect(output[2].role).toBe('assistant');
-        expect(output[2].content.length).toBe(50);
+        expect(output).toHaveLength(2);
+        expect(output[1].role).toBe('assistant');
+        expect(output[1].content.length).toBe(100);
     });
 
     it('supports topP', async ({ expect }) => {
@@ -274,5 +274,25 @@ describe('Generator', () => {
 
         expect(emittedProbabilities.length).toBeGreaterThan(0);
         expect(emittedProbabilities[0].length).toBeGreaterThan(0);
+    });
+
+    it('should emit last multinomial random value', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const model = new NanoGPT({
+            vocabSize: 20,
+            nEmbed: 64,
+            nLayer: 1,
+            nHead: 2,
+            blockSize: 32,
+        });
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
+        await generator.generate(prompt, { maxLength: 10, includeProbabilities: true });
+
+        const lastMultinomialRand = generator.getLastMultinomialRand();
+
+        expect(lastMultinomialRand).not.toBeNull();
     });
 });

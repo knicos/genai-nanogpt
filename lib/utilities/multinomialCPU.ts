@@ -1,8 +1,8 @@
 import { tensor2d, Tensor2D } from '@tensorflow/tfjs-core';
 
-export default function multinomialCPU(probs: number[]): Tensor2D {
+export default function multinomialCPU(probs: number[], randomNumber?: number): Tensor2D {
     let cdf = 0;
-    const rand = Math.random();
+    const rand = randomNumber ?? Math.random();
     for (let i = 0; i < probs.length; i++) {
         cdf += probs[i];
         if (rand < cdf) {

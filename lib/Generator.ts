@@ -80,6 +80,7 @@ export interface IGenerator extends EE<'start' | 'stop' | 'tokens'> {
     getEmbeddingsData(): { name: string; tensor: number[][] }[][];
     getTokens(): number[];
     getLastLoss(): number | null;
+    getLastMultinomialRand(): number | null;
     dispose(): void;
     reset(): void;
 }
@@ -100,6 +101,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
     private embeddingsData: { name: string; tensor: number[][] }[][] = [];
     private tokens: number[] = [];
     private lastLoss: number | null = null;
+    private lastMultinomialRand: number | null = null;
 
     constructor(
         private readonly model: Model<ModelForwardAttributes>,
@@ -182,7 +184,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
         idx: Tensor,
         cache?: KVCache[],
         options?: GenerateOptions
-    ): Promise<{ output: Tensor; probabilities?: number[][]; attention?: Tensor[]; loss?: number }> {
+    ): Promise<{
+        output: Tensor;
+        probabilities?: number[][];
+        attention?: Tensor[];
+        loss?: number;
+        multinomialRand: number;
+    }> {
         const temperature = options?.temperature ?? 1.0;
         const tK = options?.topK;
         const tP = options?.topP;
@@ -262,6 +270,8 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
         let nextToken: Tensor;
         let probabilities: number[][] | undefined;
 
+        const rand = Math.random();
+
         if (tP) {
             // Top-p (nucleus) sampling
             const probs = softmax(logits);
@@ -276,7 +286,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
             }
 
             // Do the multinomial on the CPU
-            nextToken = multinomialCPU(renormProbs);
+            nextToken = multinomialCPU(renormProbs, rand);
         } else if (tK) {
             const { values: topKValues, indices: topKIndices } = topk(logits, tK);
             // FIXME: Broken in Tensorflow.js for WebGPU backend
@@ -345,7 +355,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
             loss.dispose();
         }
 
-        return { output: nextToken, probabilities, attention: attrs.attentionScores?.attentionOut, loss: lossValue };
+        return {
+            output: nextToken,
+            probabilities,
+            attention: attrs.attentionScores?.attentionOut,
+            loss: lossValue,
+            multinomialRand: rand,
+        };
     }
 
     /** Generate multiple tokens in a loop and produce text */
@@ -358,7 +374,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
             this.outputConversation[this.outputConversation.length - 1].role !== 'assistant'
         ) {
             this.outputConversation.push({ role: 'assistant', content: '', _timestamp: Date.now() });
-            this.resetCache();
+            this.resetCache(!options?.noCache);
         }
 
         let inputTensor =
@@ -379,10 +395,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
                 probabilities,
                 attention,
                 loss,
+                multinomialRand,
             } = await this._generateToken(inputTensor, this.cache ? this.cache : undefined, {
                 ...options,
                 usePadding: !this.cache,
             });
+
+            this.lastMultinomialRand = multinomialRand;
 
             if (loss !== undefined) {
                 this.lastLoss = loss;
@@ -419,15 +438,19 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
         return this.outputConversation;
     }
 
-    private resetCache() {
+    private resetCache(remake?: boolean) {
         if (this.cache) {
             this.cache.forEach((c) => {
                 if (c) {
                     if (c.k) c.k.dispose();
                     if (c.v) c.v.dispose();
+                    c.k = undefined;
+                    c.v = undefined;
                 }
             });
-            this.cache = null;
+            if (!remake) {
+                this.cache = null;
+            }
         }
         this.lastToken = -1;
     }
@@ -541,5 +564,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
 
     public getLastLoss(): number | null {
         return this.lastLoss;
+    }
+
+    public getLastMultinomialRand(): number | null {
+        return this.lastMultinomialRand;
     }
 }
