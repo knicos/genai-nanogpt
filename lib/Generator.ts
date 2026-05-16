@@ -290,6 +290,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
         } else if (tK) {
             const { values: topKValues, indices: topKIndices } = topk(logits, tK);
             // FIXME: Broken in Tensorflow.js for WebGPU backend
+            console.warn('Using broken multinomial');
             const sampledIdx = multinomial(topKValues, 1);
             nextToken = gather(topKIndices, sampledIdx, 1);
 
@@ -298,6 +299,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
             sampledIdx.dispose();
         } else {
             // FIXME: Broken in Tensorflow.js for WebGPU backend
+            console.warn('Using broken multinomial');
             nextToken = multinomial(logits, 1);
             if (options?.includeProbabilities) {
                 const probs = softmax(logits);
@@ -446,6 +448,8 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens'> implement
                     if (c.v) c.v.dispose();
                     c.k = undefined;
                     c.v = undefined;
+                    c.cumulativeLength = 0;
+                    c.length = 0;
                 }
             });
             if (!remake) {
