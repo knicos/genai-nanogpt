@@ -1,8 +1,10 @@
 import { Conversation, ITokeniser } from '@base/main';
 import { Task } from './Task';
+import { shuffle } from '../DatasetBuilder';
 
 export default class ConversationTask extends Task {
     private rawConvo: Conversation[][];
+    private shuffledIndices: Uint32Array | null = null;
     private index = 0;
 
     get length(): number {
@@ -22,7 +24,7 @@ export default class ConversationTask extends Task {
         if (this.index >= this.rawConvo.length) {
             return null;
         }
-        const conv = this.rawConvo[this.index];
+        const conv = this.rawConvo[this.shuffledIndices ? this.shuffledIndices[this.index] : this.index];
         this.index++;
         return conv;
     }
@@ -36,14 +38,15 @@ export default class ConversationTask extends Task {
         return tokens;
     }
 
-    getRandomConversation(): Conversation[] {
-        const i = Math.floor(Math.random() * this.rawConvo.length);
-        return this.rawConvo[i];
-    }
-
-    getRandomTokens(tokeniser: ITokeniser): number[] {
-        const i = Math.floor(Math.random() * this.rawConvo.length);
-        return tokeniser.encodeConversation(this.rawConvo[i]);
+    shuffle() {
+        if (!this.shuffledIndices) {
+            this.shuffledIndices = new Uint32Array(this.rawConvo.length);
+            for (let i = 0; i < this.rawConvo.length; i++) {
+                this.shuffledIndices[i] = i;
+            }
+        }
+        shuffle(this.shuffledIndices);
+        this.index = 0;
     }
 
     async estimateTokens(tokeniser: ITokeniser): Promise<number> {

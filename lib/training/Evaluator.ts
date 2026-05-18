@@ -15,12 +15,15 @@ export default class Evaluator {
     private iterator?: Promise<LazyIterator<TensorContainer>>;
     private xs?: Tensor;
     private ys?: Tensor;
+    private masked = false;
 
     constructor(
         private model: Model<ModelForwardAttributes>,
         dataset: Dataset<TensorContainer> | Conversation[][],
-        tokeniser?: ITokeniser
+        tokeniser?: ITokeniser,
+        masked?: boolean
     ) {
+        this.masked = !!masked;
         if (Array.isArray(dataset)) {
             if (!tokeniser) {
                 throw new Error('Tokeniser is required when dataset is an array of conversations');
@@ -84,7 +87,7 @@ export default class Evaluator {
                 const { xs, ys } = batch as { xs: Tensor; ys: Tensor };
 
                 //const logits = this.model.forward({ training: false }, xs);
-                const loss = (await this.calculateBatchLoss(xs, ys, false, false)) as Result;
+                const loss = (await this.calculateBatchLoss(xs, ys, false, this.masked)) as Result;
                 xs.dispose();
                 ys.dispose();
 

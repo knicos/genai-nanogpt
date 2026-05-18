@@ -35,14 +35,9 @@ export default class StartSentenceTask extends Task {
         return conv ? tokeniser.encodeConversation(conv) : null;
     }
 
-    getRandomConversation(): Conversation[] {
-        const i = Math.floor(Math.random() * this.rawText.length);
-        return this.conversationFromString(this.rawText[i]);
-    }
-
-    getRandomTokens(tokeniser: ITokeniser): number[] {
-        const conv = this.getRandomConversation();
-        return tokeniser.encodeConversation(conv);
+    shuffle() {
+        // NOP
+        this.index = 0;
     }
 
     private conversationFromString(text: string): Conversation[] {

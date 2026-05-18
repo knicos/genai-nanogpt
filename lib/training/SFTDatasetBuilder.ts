@@ -112,11 +112,19 @@ export class SFTDatasetBuilder {
         const tokeniser = this.tokenizer;
         const blockSize = this.blockSize;
 
+        for (const task of conversations) {
+            task.shuffle();
+        }
+
         const gen = function* () {
             while (true) {
                 const taskI = Math.floor(Math.random() * conversations.length);
                 const task = conversations[taskI];
-                const conversation = task.getRandomConversation();
+                const conversation = task.nextConversation();
+                if (!conversation) {
+                    task.shuffle();
+                    continue;
+                }
                 const example = buildSFTExample(conversation, ignoreIndex, tokeniser, blockSize);
                 if (example) {
                     yield example;

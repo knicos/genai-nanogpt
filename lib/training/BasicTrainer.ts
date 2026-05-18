@@ -252,7 +252,9 @@ export default class BasicTrainer {
         this.running = true;
         state.logStartTime = startTime;
 
-        const evaluator = validationDataset ? new Evaluator(this.model, validationDataset) : undefined;
+        const evaluator = validationDataset
+            ? new Evaluator(this.model, validationDataset, undefined, this.maskedLoss)
+            : undefined;
         const iterator = await dataset.iterator();
 
         try {
@@ -411,7 +413,9 @@ export default class BasicTrainer {
         this.running = true;
         state.logStartTime = startTime;
 
-        const evaluator = validationDataset ? new Evaluator(this.model, validationDataset) : undefined;
+        const evaluator = validationDataset
+            ? new Evaluator(this.model, validationDataset, undefined, this.maskedLoss)
+            : undefined;
         const iterator = await dataset.iterator();
 
         try {

@@ -9,6 +9,7 @@ import { TrainingOptions, TrainingLogEntry } from './training/types';
 import { createTrainValidationSplit } from './training/validation';
 import SFTTrainer from './training/SFTTrainer';
 import { AdamWOptimizer } from './training/AdamW';
+import splitValidation from './training/tasks/splitter';
 
 interface TrainingProgress {
     lastLog: TrainingLogEntry;
@@ -204,11 +205,21 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             if (tasks instanceof Uint16Array) {
                 throw new Error('SFT training requires Task[] input');
             }
+
+            const splitTasks = splitValidation(tasks, options?.validationSplit || 0.1);
+
             const trainDataset = await this.trainer.datasetBuilder.createSFTDataset(
-                tasks,
+                [splitTasks.training],
                 options?.batchSize || 32,
                 -100
             );
+            const validationDataset = await this.trainer.datasetBuilder.createSFTDataset(
+                [splitTasks.validation],
+                options?.batchSize || 32,
+                -100
+            );
+
+            this.validationDataset = validationDataset;
             this.trainDataset = trainDataset;
             this.totalSamples = tasks.reduce((acc, conv) => acc + conv.length, 0);
             this.options.epochSteps = Math.ceil(this.totalSamples / (options?.batchSize || 32));

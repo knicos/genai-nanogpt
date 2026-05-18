@@ -7,8 +7,7 @@ export abstract class Task {
     abstract nextConversation(): Conversation[] | null;
     abstract nextTokens(tokeniser: ITokeniser): number[] | null;
     abstract estimateTokens(tokeniser: ITokeniser): Promise<number>;
-    abstract getRandomConversation(): Conversation[];
-    abstract getRandomTokens(tokeniser: ITokeniser): number[];
+    abstract shuffle(): void;
 }
 
 function roundRobinData(
