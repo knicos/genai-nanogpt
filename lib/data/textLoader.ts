@@ -3,6 +3,7 @@ import { loadParquet } from './parquet';
 import { loadPDF } from './pdf';
 import { loadDOCX } from './docx';
 import zip from 'jszip';
+import { Conversation } from '../tokeniser/type';
 
 export interface DataOptions {
     maxSize?: number;
@@ -47,6 +48,19 @@ function getFileType(file: string): string {
     }
 }
 
+function isConversation(obj: unknown): obj is Conversation[] {
+    if (!Array.isArray(obj)) return false;
+    const first = obj[0];
+    return (
+        typeof first === 'object' &&
+        first !== null &&
+        'role' in first &&
+        'content' in first &&
+        typeof first.role === 'string' &&
+        typeof first.content === 'string'
+    );
+}
+
 export default async function loadTextData(file: File, options?: DataOptions): Promise<string[]> {
     const type = file.type !== '' ? file.type : getFileType(file.name);
     if (type === 'application/parquet') {
@@ -77,6 +91,9 @@ export default async function loadTextData(file: File, options?: DataOptions): P
             .map((line) => {
                 try {
                     const obj = JSON.parse(line);
+                    if (isConversation(obj)) {
+                        return obj.map((turn) => `${turn.content}`).join('\n');
+                    }
                     return typeof obj === 'string' ? obj : 'text' in obj ? obj.text : JSON.stringify(obj);
                 } catch {
                     return line;
