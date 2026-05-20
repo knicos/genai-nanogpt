@@ -42,7 +42,7 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
         this.specialTokenSet.add(index);
     }
 
-    abstract train(text: string[], cb?: (vocab: number) => void): Promise<number>;
+    abstract train(text: Conversation[][], cb?: (vocab: number) => void): Promise<number>;
     abstract getVocab(): string[];
     abstract getMerges(): [string, string][];
     abstract destroy(): void;
@@ -116,7 +116,7 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
 
     abstract decode(tokens: number[]): string;
 
-    decodeConversation(tokens: number[]): Conversation[] {
+    decodeConversation(tokens: number[] | Uint16Array): Conversation[] {
         const conversation: Conversation[] = [];
 
         let index = 0;
@@ -130,12 +130,23 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
                 role = 'assistant';
             } else if (token === this.getSpecialTokenIndex('<|system_start|>')) {
                 role = 'system';
+            } else if (token === this.bosToken) {
+                // skip
+            } else if (token === this.eosToken) {
+                role = null;
+            } else {
+                role = 'text';
+                index--; // Step back to include this token in content
             }
 
             if (role) {
                 index++;
                 const contentTokens: number[] = [];
-                while (index < tokens.length && tokens[index] !== this.getSpecialTokenIndex(`<|${role}_end|>`)) {
+                while (
+                    index < tokens.length &&
+                    tokens[index] !== this.getSpecialTokenIndex(`<|${role}_end|>`) &&
+                    tokens[index] !== this.eosToken
+                ) {
                     contentTokens.push(tokens[index]);
                     index++;
                 }

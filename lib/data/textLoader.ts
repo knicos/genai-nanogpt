@@ -61,7 +61,7 @@ function isConversation(obj: unknown): obj is Conversation[] {
     );
 }
 
-export default async function loadTextData(file: File, options?: DataOptions): Promise<string[]> {
+export default async function loadTextData(file: File, options?: DataOptions): Promise<Conversation[][]> {
     const type = file.type !== '' ? file.type : getFileType(file.name);
     if (type === 'application/parquet') {
         return loadParquet(file, options?.maxSize, options?.column);
@@ -76,9 +76,13 @@ export default async function loadTextData(file: File, options?: DataOptions): P
         const data = await file.text();
         const json = JSON.parse(data);
         if (Array.isArray(json)) {
-            return json.map((item) =>
-                typeof item === 'string' ? item : 'text' in item ? item.text : JSON.stringify(item)
-            );
+            return json.map((item) => [
+                typeof item === 'string'
+                    ? { role: 'text', content: item }
+                    : 'text' in item
+                      ? { role: 'text', content: item.text }
+                      : { role: 'text', content: JSON.stringify(item) },
+            ]);
         } else {
             throw new Error('Expected JSON array');
         }
@@ -92,18 +96,24 @@ export default async function loadTextData(file: File, options?: DataOptions): P
                 try {
                     const obj = JSON.parse(line);
                     if (isConversation(obj)) {
-                        return obj.map((turn) => `${turn.content}`).join('\n');
+                        return obj;
                     }
-                    return typeof obj === 'string' ? obj : 'text' in obj ? obj.text : JSON.stringify(obj);
+                    return [
+                        typeof obj === 'string'
+                            ? { role: 'text', content: obj }
+                            : 'text' in obj
+                              ? { role: 'text', content: obj.text }
+                              : { role: 'text', content: JSON.stringify(obj) },
+                    ];
                 } catch {
-                    return line;
+                    return [{ role: 'text', content: line }];
                 }
             });
     }
     if (type === 'application/zip') {
         const zipFile = await zip.loadAsync(file);
         // Loop files and call loadTextData on each, then concatenate results
-        const results: string[] = [];
+        const results: Conversation[][] = [];
         for (const fileName of Object.keys(zipFile.files)) {
             const zipEntry = zipFile.file(fileName);
             if (zipEntry) {
@@ -116,7 +126,7 @@ export default async function loadTextData(file: File, options?: DataOptions): P
     }
     if (type === 'text/csv') {
         const data = await file.text();
-        return new Promise<string[]>((resolve, reject) => {
+        return new Promise<Conversation[][]>((resolve, reject) => {
             papa.parse<string[]>(data, {
                 header: false,
                 skipEmptyLines: true,
@@ -129,7 +139,7 @@ export default async function loadTextData(file: File, options?: DataOptions): P
                         const column = checkForTextColumn(results.data[0], options?.column || 'text');
                         const hasHeader = options?.hasHeader ?? checkFirstRowIsHeader(results.data[0]);
                         const filtered = hasHeader ? results.data.slice(1) : results.data;
-                        resolve(filtered.map((row) => row[column]));
+                        resolve(filtered.map((row) => [{ role: 'text', content: row[column] }]));
                     }
                 },
                 error: (error: unknown) => {
@@ -138,7 +148,7 @@ export default async function loadTextData(file: File, options?: DataOptions): P
             });
         });
     } else if (type === 'text/plain') {
-        return [await file.text()];
+        return [[{ role: 'text', content: await file.text() }]];
     }
     throw new Error(`Unsupported file type: ${type}`);
 }

@@ -1,4 +1,5 @@
 import BaseTokeniser, { SPECIALS } from './BaseTokeniser';
+import { Conversation } from './type';
 
 const specialTokens = ['<eos>', '<unk>'];
 
@@ -105,8 +106,8 @@ export default class CharTokeniser extends BaseTokeniser {
         this.vocab = [];
     }
 
-    public async train(text: string[]): Promise<number> {
-        const flatText = text.map((t) => t.split('')).flat();
+    public async train(text: Conversation[][]): Promise<number> {
+        const flatText = text.map((t) => t.map((c) => c.content.split(''))).flat(2);
         const charSet = new Set(flatText);
         const charArray = Array.from(charSet);
         const firstPadIndex = this.vocab.indexOf('', this.unkToken + 1);

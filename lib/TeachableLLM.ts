@@ -266,7 +266,7 @@ export default class TeachableLLM {
         await trainer.train();
     }
 
-    async trainTokeniser(text: string[]): Promise<number> {
+    async trainTokeniser(text: Conversation[][]): Promise<number> {
         if (!this._tokeniser) {
             throw new Error('tokeniser_not_initialized.');
         }

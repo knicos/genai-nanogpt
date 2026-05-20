@@ -1,6 +1,7 @@
 import { yieldIfNeeded } from '@base/utilities/yielder';
 import parseTokens from '../utilities/tokenParse';
 import BaseTokeniser, { SPECIALS } from './BaseTokeniser';
+import { Conversation } from './type';
 
 interface TokenPair {
     a: string;
@@ -186,10 +187,10 @@ export default class BPETokeniser extends BaseTokeniser {
         return this.vocabIndex.get('') ?? 1;
     }
 
-    public async train(text: string[], cb?: (vocab: number) => void): Promise<number> {
+    public async train(text: Conversation[][] = [], cb?: (vocab: number) => void): Promise<number> {
         let lastYield = performance.now();
 
-        const pretokens = text.map((t) => parseTokens(t)).flat(1);
+        const pretokens = text.map((t) => t.map((c) => parseTokens(c.content))).flat(2);
 
         lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
 

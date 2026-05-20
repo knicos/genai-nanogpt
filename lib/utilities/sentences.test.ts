@@ -8,6 +8,11 @@ Object.assign(globalThis.navigator, navigator);
 import { selectBackend } from '@base/backend';
 import TeachableLLM from '@base/TeachableLLM';
 import { sentenceEmbeddings } from './sentences';
+import { Conversation } from '@base/tokeniser/type';
+
+function textToConversations(texts: string[]): Conversation[][] {
+    return texts.map((text) => [{ role: 'text', content: text }]);
+}
 
 describe('Sentence embeddings', { timeout: 60000 }, () => {
     afterAll(() => {
@@ -30,7 +35,7 @@ describe('Sentence embeddings', { timeout: 60000 }, () => {
             vocabSize: 20,
         });
 
-        await model.trainTokeniser(sentences);
+        await model.trainTokeniser(textToConversations(sentences));
 
         const embeddings = await sentenceEmbeddings(model, sentences);
         expect(embeddings.length).toBe(1);
@@ -56,7 +61,7 @@ describe('Sentence embeddings', { timeout: 60000 }, () => {
             vocabSize: 20,
         });
 
-        await model.trainTokeniser(sentences);
+        await model.trainTokeniser(textToConversations(sentences));
 
         const embeddings = await sentenceEmbeddings(model, sentences);
         expect(embeddings.length).toBe(1);
@@ -87,7 +92,7 @@ describe('Sentence embeddings', { timeout: 60000 }, () => {
             vocabSize: 20,
         });
 
-        await model.trainTokeniser(sentences);
+        await model.trainTokeniser(textToConversations(sentences));
 
         const embeddings = await sentenceEmbeddings(model, sentences);
         expect(embeddings.length).toBe(sentences.length);

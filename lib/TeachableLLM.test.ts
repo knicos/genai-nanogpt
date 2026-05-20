@@ -81,7 +81,11 @@ describe('TeachableLLM Tests', () => {
 
         await vi.waitFor(() => expect(model.status).toBe('awaitingTokens'));
 
-        await model.tokeniser.train(['a', 'b', 'c']);
+        await model.tokeniser.train([
+            [{ role: 'text', content: 'a' }],
+            [{ role: 'text', content: 'b' }],
+            [{ role: 'text', content: 'c' }],
+        ]);
 
         await vi.waitFor(() => expect(model.status).toBe('ready'));
 

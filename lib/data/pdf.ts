@@ -1,6 +1,8 @@
+import type { Conversation } from '../tokeniser/type';
+
 const MAX_SIZE = 100 * 1024 * 1024; // 60 MB
 
-export async function loadPDF(file: Blob | Uint8Array, maxSize = MAX_SIZE): Promise<string[]> {
+export async function loadPDF(file: Blob | Uint8Array, maxSize = MAX_SIZE): Promise<Conversation[][]> {
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
     if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
@@ -14,7 +16,7 @@ export async function loadPDF(file: Blob | Uint8Array, maxSize = MAX_SIZE): Prom
     const pdf = await loadingTask.promise;
     const numPages = pdf.numPages;
 
-    const result: string[] = [];
+    const result: Conversation[][] = [];
     let totalSize = 0;
     for (let i = 1; i <= numPages; i++) {
         const page = await pdf.getPage(i);
@@ -22,7 +24,7 @@ export async function loadPDF(file: Blob | Uint8Array, maxSize = MAX_SIZE): Prom
         const textItems = textContent.items as { str: string }[];
         const filtered = textItems.filter((item) => item.str.trim().length > 10);
         const pageText = filtered.map((item) => item.str).join(' ');
-        result.push(pageText);
+        result.push([{ role: 'text', content: pageText }]);
         totalSize += pageText.length;
         if (totalSize > maxSize) break;
     }

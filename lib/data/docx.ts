@@ -1,6 +1,7 @@
 import jszip from 'jszip';
+import type { Conversation } from '../tokeniser/type';
 
-export async function loadDOCX(file: Blob | Uint8Array): Promise<string[]> {
+export async function loadDOCX(file: Blob | Uint8Array): Promise<Conversation[][]> {
     const zip = await jszip.loadAsync(file);
 
     const doc = await zip.file('word/document.xml')?.async('string');
@@ -8,7 +9,10 @@ export async function loadDOCX(file: Blob | Uint8Array): Promise<string[]> {
     if (!doc) throw new Error('Failed to load document.xml');
 
     const text = extractTextFromDOCX(doc);
-    return text.split('\n').filter((line) => line.trim().length > 10);
+    return text
+        .split('\n')
+        .filter((line) => line.trim().length > 10)
+        .map((line) => [{ role: 'text', content: line }]);
 }
 
 function extractTextFromDOCX(xml: string): string {

@@ -1,9 +1,11 @@
+import type { Conversation } from '../tokeniser/type';
+
 const MAX_SIZE = 100 * 1024 * 1024; // 60 MB
 
-export async function loadParquet(file: File, maxSize = MAX_SIZE, column = 'text'): Promise<string[]> {
+export async function loadParquet(file: File, maxSize = MAX_SIZE, column = 'text'): Promise<Conversation[][]> {
     const pq = await import('@dsnp/parquetjs');
     const reader = await pq.ParquetReader.openBuffer(Buffer.from(await file.arrayBuffer()));
-    const result: string[] = [];
+    const result: Conversation[][] = [];
     const cursor = reader.getCursor([[column]]);
 
     let totalSize = 0;
@@ -16,7 +18,7 @@ export async function loadParquet(file: File, maxSize = MAX_SIZE, column = 'text
         if (record[column].length === 0) {
             continue;
         }
-        result.push(record[column]);
+        result.push([{ role: 'text', content: record[column] }]);
         totalSize += record[column].length;
         if (totalSize > maxSize) {
             break;

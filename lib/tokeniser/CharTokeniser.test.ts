@@ -3,17 +3,21 @@ import CharTokeniser from './CharTokeniser';
 import { SPECIALS } from './BaseTokeniser';
 import { Conversation } from './type';
 
+function textToConversations(texts: string[]): Conversation[][] {
+    return texts.map((text) => [{ role: 'text', content: text }]);
+}
+
 describe('CharTokeniser Tests', () => {
     it('can decode tokens back to text', async ({ expect }) => {
         const charTokeniser = new CharTokeniser(100);
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        await charTokeniser.train(textData);
+        await charTokeniser.train(textToConversations(textData));
 
-        const tokens = await charTokeniser.tokenise(textData, true);
+        const tokens = charTokeniser.tokenise(textData, true);
         const eosTokens = tokens.map((t) => [...t, charTokeniser.eosToken]);
-        const decodedText = await charTokeniser.detokenise(eosTokens);
+        const decodedText = charTokeniser.detokenise(eosTokens);
 
         expect(decodedText.map((t) => t.trim())).toEqual(textData.map((t) => t + '<eos>'));
     });
@@ -23,7 +27,7 @@ describe('CharTokeniser Tests', () => {
 
         const textData = ['short', 'sort'];
 
-        await charTokeniser.train(textData);
+        await charTokeniser.train(textToConversations(textData));
 
         expect(charTokeniser.vocabSize).toBe(20);
         expect(charTokeniser.vocab.length).toBe(20);
@@ -37,7 +41,7 @@ describe('CharTokeniser Tests', () => {
 
         const textData = ['a', 'b', 'c', 'c', 'a', 'b', 'd', 'd', 'e', 'e', 'f', 'g'];
 
-        await charTokeniser.train(textData);
+        await charTokeniser.train(textToConversations(textData));
 
         expect(charTokeniser.vocabSize).toBe(SPECIALS.length + 3);
         expect(charTokeniser.vocab).not.toContain('f');
@@ -51,7 +55,7 @@ describe('CharTokeniser Tests', () => {
 
         const textData = ['a', 'b', 'c', 'c', 'a', 'b', 'd', 'd', 'e', 'e', 'f', 'g'];
 
-        await charTokeniser.train(textData);
+        await charTokeniser.train(textToConversations(textData));
 
         const tokens = (await charTokeniser.tokenise(textData)).flat();
 
@@ -64,11 +68,11 @@ describe('CharTokeniser Tests', () => {
         const textData1 = ['hello world', 'hello again'];
         const textData2 = ['short', 'sort'];
 
-        await charTokeniser.train(textData1);
+        await charTokeniser.train(textToConversations(textData1));
 
         const vocabAfterFirstTrain = [...charTokeniser.vocab];
 
-        await charTokeniser.train(textData2);
+        await charTokeniser.train(textToConversations(textData2));
 
         const vocabAfterSecondTrain = [...charTokeniser.vocab];
 
@@ -93,9 +97,9 @@ describe('CharTokeniser Tests', () => {
             { role: 'system', content: 'This is a system message.' },
         ];
 
-        await charTokeniser.train(conversation.map((c) => c.content));
+        await charTokeniser.train([conversation]);
 
-        const encoded = await charTokeniser.encodeConversation(conversation);
+        const encoded = charTokeniser.encodeConversation(conversation);
 
         expect(encoded[0]).toBe(charTokeniser.bosToken);
         expect(encoded[encoded.length - 1]).toBe(charTokeniser.eosToken);
@@ -103,7 +107,7 @@ describe('CharTokeniser Tests', () => {
         expect(encoded).toContain(charTokeniser.getSpecialTokenIndex('<|assistant_start|>')!);
         expect(encoded).toContain(charTokeniser.getSpecialTokenIndex('<|assistant_end|>')!);
 
-        const decoded = await charTokeniser.decodeConversation(encoded);
+        const decoded = charTokeniser.decodeConversation(encoded);
 
         expect(decoded).toEqual(conversation);
     });

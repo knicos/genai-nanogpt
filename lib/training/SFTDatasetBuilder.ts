@@ -18,12 +18,14 @@ export function buildSFTExample(
         user: tokenizer.getSpecialTokenIndex('<|user_start|>'),
         assistant: tokenizer.getSpecialTokenIndex('<|assistant_start|>'),
         system: tokenizer.getSpecialTokenIndex('<|system_start|>'),
+        text: undefined,
     } as const;
 
     const roleToEnd = {
         user: tokenizer.getSpecialTokenIndex('<|user_end|>'),
         assistant: tokenizer.getSpecialTokenIndex('<|assistant_end|>'),
         system: tokenizer.getSpecialTokenIndex('<|system_end|>'),
+        text: undefined,
     } as const;
 
     for (const fragment of conversation) {
