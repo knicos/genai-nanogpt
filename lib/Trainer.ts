@@ -207,21 +207,31 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                 throw new Error('SFT training requires Task[] input');
             }
 
-            const splitTasks = splitValidation(tasks, options?.validationSplit || 0.1);
+            if (options?.validationSplit && options.validationSplit > 0) {
+                const splitTasks = splitValidation(tasks, options?.validationSplit);
 
-            const trainDataset = await this.trainer.datasetBuilder.createSFTDataset(
-                [splitTasks.training],
-                options?.batchSize || 32,
-                -100
-            );
-            const validationDataset = await this.trainer.datasetBuilder.createSFTDataset(
-                [splitTasks.validation],
-                options?.batchSize || 32,
-                -100
-            );
+                const trainDataset = await this.trainer.datasetBuilder.createSFTDataset(
+                    [splitTasks.training],
+                    options?.batchSize || 32,
+                    -100
+                );
+                const validationDataset = await this.trainer.datasetBuilder.createSFTDataset(
+                    [splitTasks.validation],
+                    options?.batchSize || 32,
+                    -100
+                );
 
-            this.validationDataset = validationDataset;
-            this.trainDataset = trainDataset;
+                this.validationDataset = validationDataset;
+                this.trainDataset = trainDataset;
+            } else {
+                const trainDataset = await this.trainer.datasetBuilder.createSFTDataset(
+                    tasks,
+                    options?.batchSize || 32,
+                    -100
+                );
+
+                this.trainDataset = trainDataset;
+            }
             this.totalSamples = tasks.reduce((acc, conv) => acc + conv.length, 0);
             this.options.epochSteps = Math.ceil(this.totalSamples / (options?.batchSize || 32));
             this.trainer.updateOptimizer(this.options);
