@@ -328,4 +328,27 @@ describe('Generator', () => {
         expect(model.hasLoRA()).toBe(true);
         expect(model.lora?.name).toBe('test-lora');
     });
+
+    it('should queue generator jobs', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const model = new NanoGPT({
+            vocabSize: 20, // Example vocab size
+            nEmbed: 64, // Example embedding size
+            nLayer: 1, // Example number of layers
+            nHead: 2, // Example number of attention heads
+            blockSize: 32, // Example block size
+        });
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
+        const promises = [
+            generator.generate(prompt, { maxLength: 50 }),
+            generator.generate(prompt, { maxLength: 50 }),
+            generator.generate(prompt, { maxLength: 50 }),
+        ];
+        expect(generator.getQueueLength()).toBe(2); // 1 running, 2 queued
+        const results = await Promise.all(promises);
+        expect(results).toHaveLength(3);
+    });
 });

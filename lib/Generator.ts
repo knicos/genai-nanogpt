@@ -38,6 +38,13 @@ export interface GenerateOptions {
     loraName?: string;
 }
 
+interface JobItem {
+    prompt?: Conversation[];
+    options?: IGenerateOptions;
+    resolve: (value: Conversation[] | PromiseLike<Conversation[]>) => void;
+    reject: (reason?: unknown) => void;
+}
+
 export function isConversation(data: unknown): data is Conversation[] {
     return Array.isArray(data);
 }
@@ -103,6 +110,8 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
     private tokens: number[] = [];
     private lastLoss: number | null = null;
     private lastMultinomialRand: number | null = null;
+    private jobQueue: JobItem[] = [];
+    private processingJob = false;
 
     constructor(
         private readonly model: Model<ModelForwardAttributes>,
@@ -540,6 +549,37 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         } else if (typeof promptOrOptions === 'object') {
             options = promptOrOptions;
         }
+
+        if (this.processingJob) {
+            if (this.jobQueue.length > 10) {
+                throw new Error('Job queue is too long, rejecting new job');
+            }
+            return new Promise<Conversation[]>((resolve, reject) => {
+                this.jobQueue.push({ prompt, options, resolve, reject });
+            });
+        }
+
+        this.processingJob = true;
+        try {
+            const result = await this.startJob(prompt, options);
+            this.processingJob = false;
+
+            // Process next job in the queue
+            if (this.jobQueue.length > 0) {
+                const nextJob = this.jobQueue.shift()!;
+                this.generate(nextJob.prompt || [], nextJob.options)
+                    .then(nextJob.resolve)
+                    .catch(nextJob.reject);
+            }
+
+            return result;
+        } catch (error) {
+            this.processingJob = false;
+            throw error;
+        }
+    }
+
+    private async startJob(prompt?: Conversation[], options?: IGenerateOptions) {
         this.initialise(prompt, options);
         this.active = true;
         if (options?.maxLength !== 1) this.emit('start');
@@ -548,6 +588,10 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         this.active = false;
         this.emit('stop');
         return r;
+    }
+
+    public getQueueLength() {
+        return this.jobQueue.length;
     }
 
     public stop() {
