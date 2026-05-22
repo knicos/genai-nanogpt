@@ -35,6 +35,7 @@ export interface GenerateOptions {
     includeProbabilities?: boolean;
     embeddings?: 'embedding' | 'logits' | 'softmax' | 'all';
     targets?: number[];
+    loraName?: string;
 }
 
 export function isConversation(data: unknown): data is Conversation[] {
@@ -505,6 +506,12 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             ? this.tokeniser
             : new CharTokeniser(padArray(CHARS, this.tokeniser.vocabSize));
         this.actualTokeniser = tokeniser;
+
+        if (options?.loraName) {
+            this.model.attachLoRA(options.loraName);
+        } else if (this.model.hasLoRA()) {
+            this.model.detachLoRA();
+        }
     }
 
     async step(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;

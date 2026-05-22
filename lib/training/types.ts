@@ -66,6 +66,7 @@ export interface TrainingOptions extends Partial<AdamWOptimizerConfig> {
     mixedPrecision?: boolean; // Whether to use mixed precision training
     trainableWeights?: string[]; // List of weight names to train (supports glob patterns)
     loraConfig?: LoRAConfig; // LoRA configuration for training
+    loraName?: string;
     sftMode: 'full' | 'lora' | 'last-layer'; // Mode for SFT training, if applicable
     maskedLoss?: boolean; // Whether to use masked loss (e.g., for language modeling)
     metrics?: TrainingMetrics[]; // Metrics to compute during training

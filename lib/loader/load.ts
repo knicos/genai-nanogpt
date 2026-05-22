@@ -41,11 +41,11 @@ async function mergeConfigs(zipFile: zip, model: Model<ModelForwardAttributes>):
     const configData = await file.async('string');
     const config = JSON.parse(configData) as TransformersConfig;
 
-    if (config.loraConfig) {
+    if (config.loraName) {
         if (model.hasLoRA()) {
             throw new Error('Model already has LoRA attached');
         }
-        model.attachLoRA(config.loraConfig);
+        model.attachLoRA(config.loraName);
     }
 }
 
@@ -65,8 +65,8 @@ async function zipLoadCommon(
         await mergeConfigs(zipFile, refModel.model);
 
         // Finally attach LoRA here.
-        if (refModel.model.config.loraConfig) {
-            refModel.model.attachLoRA(refModel.model.config.loraConfig);
+        if (refModel.model.config.loraName) {
+            refModel.model.attachLoRA(refModel.model.config.loraName);
         }
 
         return {
@@ -81,8 +81,8 @@ async function zipLoadCommon(
             return loadOldModel(zipFile, metaData);
         } else {
             const result = await loadZipFile(zipFile, metaData);
-            if (result.model.config.loraConfig) {
-                result.model.attachLoRA(result.model.config.loraConfig);
+            if (result.model.config.loraName) {
+                result.model.attachLoRA(result.model.config.loraName);
             }
             return result;
         }

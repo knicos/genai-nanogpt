@@ -30,34 +30,110 @@ export default abstract class Model<
     public trainingState: TrainingState | null = null;
     public metaData: TransformersMetadata = { version: 2, application: '@genai-fi/nanogpt' };
     private loraLayer?: LoRA;
+    private loraMap = new Map<string, LoRA>();
 
-    /*constructor(config: GPTConfig) {
+    constructor(config: C) {
         super(config);
         if (config.loraConfig) {
-            console.log('Attaching LoRA layer with config:', config.loraConfig);
-            this.attachLoRA(config.loraConfig);
+            console.log(config.loraConfig);
+            config.loraConfig.forEach((loraConfig, name) => {
+                this.createLoRA(name, loraConfig);
+            });
         }
-    }*/
+    }
 
-    attachLoRA(loraConfig: LoRAConfig) {
-        if (this.loraLayer) {
-            throw new Error('LoRA is already attached to this model.');
+    createLoRA(name: string, loraConfig: LoRAConfig) {
+        if (this.loraMap.has(name)) {
+            //throw new Error(`LoRA with name ${name} already exists.`);
+            return;
         }
-        this.config.loraConfig = loraConfig;
-        this.loraLayer = new LoRA(this.weightStore, loraConfig.alpha, loraConfig.rank, loraConfig.variables);
+        const lora = new LoRA(name, this.weightStore, loraConfig.alpha, loraConfig.rank, loraConfig.variables);
+        this.loraMap.set(name, lora);
+
+        this.config.loraConfig = this.config.loraConfig || new Map<string, LoRAConfig>();
+        this.config.loraConfig.set(name, loraConfig);
+        console.log(`Created LoRA ${name} with rank ${loraConfig.rank} and alpha ${loraConfig.alpha}`);
+    }
+
+    deleteLoRA(name: string) {
+        const lora = this.loraMap.get(name);
+        if (!lora) {
+            throw new Error(`No LoRA with name ${name} exists.`);
+        }
+        if (this.loraLayer === lora) {
+            this.detachLoRA();
+        }
+        lora.dispose();
+        this.loraMap.delete(name);
+
+        if (this.config.loraConfig) {
+            this.config.loraConfig.delete(name);
+        }
+    }
+
+    renameLoRA(oldName: string, newName: string) {
+        if (!this.loraMap.has(oldName)) {
+            throw new Error(`No LoRA with name ${oldName} exists.`);
+        }
+        if (this.loraMap.has(newName)) {
+            throw new Error(`LoRA with name ${newName} already exists.`);
+        }
+        const lora = this.loraMap.get(oldName)!;
+        this.loraMap.set(newName, lora);
+        this.loraMap.delete(oldName);
+        if (this.config.loraConfig) {
+            this.config.loraConfig.delete(oldName);
+            this.config.loraConfig.set(newName, {
+                rank: lora.rank,
+                alpha: lora.alpha,
+                variables: Array.from(lora.variables),
+            });
+        }
+    }
+
+    mergeLoRA(name: string) {
+        const lora = this.loraMap.get(name);
+        if (!lora) {
+            throw new Error(`No LoRA with name ${name} exists.`);
+        }
+        lora.merge();
+        this.deleteLoRA(name);
+    }
+
+    attachLoRA(name: string) {
+        if (this.loraLayer) {
+            if (this.loraLayer.name === name) {
+                return; // Already attached
+            }
+            this.detachLoRA();
+        }
+        const lora = this.loraMap.get(name);
+        if (!lora) {
+            throw new Error(`No LoRA with name ${name} exists.`);
+        }
+        lora.attach();
+        this.loraLayer = lora;
+        this.config.loraName = name;
     }
 
     detachLoRA() {
         if (!this.loraLayer) {
             throw new Error('No LoRA layer is attached to this model.');
         }
-        this.loraLayer.dispose();
+        this.loraLayer.detach();
         this.loraLayer = undefined;
-        delete this.config.loraConfig;
+        this.config.loraName = undefined;
     }
 
-    hasLoRA(): boolean {
+    hasLoRA(name?: string): boolean {
+        if (name) {
+            return this.loraMap.has(name);
+        }
         return !!this.loraLayer;
+    }
+
+    listLoRAs(): string[] {
+        return Array.from(this.loraMap.keys());
     }
 
     get lora(): LoRA | null {

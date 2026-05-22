@@ -1,4 +1,4 @@
-import { GPTConfig } from '@base/models/config';
+import { GPTConfig, LoRAConfig } from '@base/models/config';
 import { ITokeniser } from '@base/tokeniser/type';
 import CharTokeniser from '@base/tokeniser/CharTokeniser';
 import BPETokeniser from '@base/tokeniser/bpe';
@@ -32,7 +32,8 @@ export function mapTransformersConfigToGPTConfig(config: TransformersConfig): GP
             nHead: config.num_attention_heads,
             nEmbed: config.hidden_size,
             mlpFactor: config.mlpFactor,
-            loraConfig: config.loraConfig,
+            loraConfig: config.loraConfig ? new Map<string, LoRAConfig>(Object.entries(config.loraConfig)) : undefined,
+            loraName: config.loraName,
             windowSize: config.windowSize,
         };
     }

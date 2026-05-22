@@ -57,7 +57,8 @@ export async function saveModel(
             num_attention_heads: model.config.nHead,
             block_size: model.config.blockSize,
             mlpFactor: model.config.mlpFactor,
-            loraConfig: model.config.loraConfig,
+            loraConfig: model.config.loraConfig ? Object.fromEntries(model.config.loraConfig) : undefined,
+            loraName: model.config.loraName,
             windowSize: model.config.windowSize,
         };
     }

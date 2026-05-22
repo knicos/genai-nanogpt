@@ -295,4 +295,37 @@ describe('Generator', () => {
 
         expect(lastMultinomialRand).not.toBeNull();
     });
+
+    it('can attach a LoRA', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const model = new NanoGPT({
+            vocabSize: 20, // Example vocab size
+            nEmbed: 64, // Example embedding size
+            nLayer: 1, // Example number of layers
+            nHead: 2, // Example number of attention heads
+            blockSize: 32, // Example block size
+        });
+
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
+        // Dummy pass
+        await generator.generate(prompt, { maxLength: 50 });
+
+        model.createLoRA('test-lora', {
+            rank: 4,
+            alpha: 8,
+            variables: ['*'],
+        });
+
+        const output = await generator.generate(prompt, { maxLength: 50, loraName: 'test-lora' });
+        expect(output).toBeDefined();
+        expect(output).toHaveLength(2);
+        expect(output[0].content).toContain(prompt[0].content);
+        expect(output[1].role).toBe('assistant');
+        expect(output[1].content.length).toBeGreaterThan(0);
+        expect(model.hasLoRA()).toBe(true);
+        expect(model.lora?.name).toBe('test-lora');
+    });
 });

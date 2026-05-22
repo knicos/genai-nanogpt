@@ -13,7 +13,8 @@ export interface GPTConfigBase {
     nHead: number;
     nEmbed: number;
     mlpFactor: number;
-    loraConfig?: LoRAConfig;
+    loraConfig?: Map<string, LoRAConfig>;
+    loraName?: string;
 }
 
 export interface GPTConfigV1 extends GPTConfigBase {
@@ -67,15 +68,20 @@ export function validateConfig(config: unknown): asserts config is GPTConfig {
             throw new Error('Invalid config: "loraConfig" must be an object.');
         }
 
-        assertNumber(config.loraConfig, 'rank');
-        assertNumber(config.loraConfig, 'alpha');
-
-        if (
-            !Array.isArray(config.loraConfig.variables) ||
-            !config.loraConfig.variables.every((v) => typeof v === 'string')
-        ) {
-            throw new Error('Invalid config: "loraConfig.variables" must be a string array.');
+        const values = Object.values(config.loraConfig);
+        if (!values.every((v) => isObject(v))) {
+            throw new Error('Invalid config: each entry in "loraConfig" must be an object.');
         }
+        if (!values.every((v) => 'rank' in v && 'alpha' in v && 'variables' in v)) {
+            throw new Error('Invalid config: each LoRA config must have "rank", "alpha", and "variables" fields.');
+        }
+        values.forEach((v) => {
+            assertNumber(v, 'rank');
+            assertNumber(v, 'alpha');
+            if (!Array.isArray(v.variables) || !v.variables.every((x) => typeof x === 'string')) {
+                throw new Error('Invalid config: "variables" must be a string array.');
+            }
+        });
     }
 
     // Discriminated union checks

@@ -9,7 +9,8 @@ export interface TransformersConfigBase {
     num_attention_heads: number;
     block_size: number;
     mlpFactor: number;
-    loraConfig?: LoRAConfig;
+    loraConfig?: Record<string, LoRAConfig>;
+    loraName?: string;
 }
 
 export interface TransformersConfigV1 extends TransformersConfigBase {
