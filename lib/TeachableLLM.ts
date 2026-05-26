@@ -367,7 +367,7 @@ export default class TeachableLLM {
     on(event: 'phase', listener: (phase: ModelPhase) => void): void;
     on(event: 'error', listener: (error: Error) => void): void;
     on(event: 'trainStep', listener: (step: TrainingLogEntry) => void): void;
-    on(event: 'loaded', listener: () => void): void;
+    on(event: 'loaded' | 'changeLoRA', listener: () => void): void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     on(event: TeachableLLMEvents, listener: (...args: any[]) => void): void {
         if (event === 'loaded' && this.loaded) {
@@ -382,7 +382,7 @@ export default class TeachableLLM {
     off(event: 'phase', listener: (phase: ModelPhase) => void): void;
     off(event: 'error', listener: (error: Error) => void): void;
     off(event: 'trainStep', listener: (step: TrainingLogEntry) => void): void;
-    off(event: 'loaded', listener: () => void): void;
+    off(event: 'loaded' | 'changeLoRA', listener: () => void): void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     off(event: TeachableLLMEvents, listener: (...args: any[]) => void): void {
         this.ee.off(event, listener);
