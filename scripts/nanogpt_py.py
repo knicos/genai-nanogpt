@@ -6,6 +6,8 @@ import csv
 import fnmatch
 import json
 import math
+import os
+import random
 from contextlib import nullcontext
 import signal
 import sys
@@ -370,6 +372,110 @@ def _load_token_ids(path: Path) -> List[int]:
     if not isinstance(tokens, list):
         raise ValueError(f"Unsupported token ids payload in {path}")
     return [int(t) for t in tokens]
+
+
+def _save_training_state(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}") if path.suffix else Path(str(path) + f".tmp.{os.getpid()}")
+    torch.save(payload, tmp)
+    tmp.replace(path)
+
+
+def _load_training_state(path: Path) -> Dict[str, Any]:
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Unsupported resume payload in {path}")
+    return payload
+
+
+def _move_optimizer_state_to_device(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
+    for state in optimizer.state.values():
+        for key, value in list(state.items()):
+            if isinstance(value, torch.Tensor):
+                state[key] = value.to(device=device, non_blocking=True)
+
+
+def _values_match(a: Any, b: Any) -> bool:
+    if isinstance(a, float) or isinstance(b, float):
+        try:
+            return abs(float(a) - float(b)) <= 1e-12
+        except Exception:
+            return False
+    return a == b
+
+
+def _collect_resume_mismatches(saved: Any, current: Any, prefix: str = "") -> List[str]:
+    mismatches: List[str] = []
+    if isinstance(saved, dict) and isinstance(current, dict):
+        keys = sorted(set(saved.keys()) | set(current.keys()))
+        for key in keys:
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if key not in saved:
+                mismatches.append(f"{path}: missing in resume sidecar")
+                continue
+            if key not in current:
+                mismatches.append(f"{path}: unknown in current run")
+                continue
+            mismatches.extend(_collect_resume_mismatches(saved[key], current[key], path))
+        return mismatches
+
+    if isinstance(saved, list) and isinstance(current, list):
+        if len(saved) != len(current):
+            mismatches.append(f"{prefix}: list length mismatch ({len(saved)} != {len(current)})")
+            return mismatches
+        for i, (sv, cv) in enumerate(zip(saved, current)):
+            item_path = f"{prefix}[{i}]"
+            mismatches.extend(_collect_resume_mismatches(sv, cv, item_path))
+        return mismatches
+
+    if not _values_match(saved, current):
+        mismatches.append(f"{prefix}: resume={saved!r}, current={current!r}")
+    return mismatches
+
+
+def _build_resume_fingerprint(
+    args: argparse.Namespace,
+    model: NanoGPTV2,
+    tokenizer: CharTokenizer | BPETokenizer,
+    *,
+    effective_block_size: int,
+    epoch_steps: int,
+    chosen_optimizer_impl: str,
+    selected_mp_dtype: str,
+    enable_cuda_amp: bool,
+) -> Dict[str, Any]:
+    return {
+        "model_config": model.config.to_transformers_config(),
+        "tokenizer": {
+            "vocab_size": len(tokenizer.get_vocab()),
+            "type": "char" if isinstance(tokenizer, CharTokenizer) else "bpe",
+        },
+        "training": {
+            "effective_block_size": int(effective_block_size),
+            "batch_size": int(args.batch_size),
+            "validation_split": float(args.validation_split),
+            "context_scaling": float(args.context_scaling),
+            "optimizer_impl": str(chosen_optimizer_impl),
+            "attention_backend": str(args.attention_backend),
+            "mixed_precision": bool(enable_cuda_amp),
+            "mixed_precision_dtype": str(selected_mp_dtype),
+            "gradient_checkpointing": bool(args.gradient_checkpointing),
+            "trainable_weights": sorted(str(p) for p in (args.trainable_weights or [])),
+            "learning_rate": float(args.learning_rate),
+            "min_learning_rate": float(args.min_learning_rate),
+            "warmup_steps": int(args.warmup_steps),
+            "decay_epochs": int(args.decay_epochs),
+            "epoch_steps": int(epoch_steps),
+            "beta1": float(args.beta1),
+            "beta2": float(args.beta2),
+            "epsilon": float(args.epsilon),
+            "weight_decay": float(args.weight_decay),
+            "label_smoothing": float(args.label_smoothing),
+            "dropout": float(args.dropout),
+            "layer_drop": float(args.layer_drop),
+            "clip_norm": float(args.clip_norm) if args.clip_norm is not None else None,
+        },
+    }
 
 
 def _extract_vocab_from_payload(payload: object) -> List[str]:
@@ -759,16 +865,35 @@ def cmd_prepare_data(args: argparse.Namespace) -> None:
         )
 
 
-def _split_train_validation(tokens: List[int], block_size: int, validation_split: float) -> tuple[List[int], List[int]]:
+def _split_train_validation(
+    tokens: List[int],
+    block_size: int,
+    validation_split: float,
+    forced_val_pages: Sequence[int] | None = None,
+) -> tuple[List[int], List[int], Dict[str, Any]]:
     if validation_split <= 0.0:
-        return tokens, []
+        return tokens, [], {
+            "validation_split": float(validation_split),
+            "page_size": int(block_size * 8),
+            "total_pages": 0,
+            "val_pages": [],
+            "split_rng_state_before": None,
+        }
 
     page_size = block_size * 8
     total_pages = max(1, len(tokens) // max(page_size, 1))
     val_pages = max(1, int(total_pages * validation_split))
 
-    perm = torch.randperm(total_pages).tolist()
-    val_set = set(perm[:val_pages])
+    split_rng_state_before = torch.get_rng_state().cpu()
+    if forced_val_pages is not None:
+        val_set = {int(v) for v in forced_val_pages if 0 <= int(v) < total_pages}
+        if len(val_set) == 0:
+            perm = torch.randperm(total_pages).tolist()
+            val_set = set(perm[:val_pages])
+        split_rng_state_before = None
+    else:
+        perm = torch.randperm(total_pages).tolist()
+        val_set = set(perm[:val_pages])
 
     train_tokens: List[int] = []
     val_tokens: List[int] = []
@@ -778,7 +903,15 @@ def _split_train_validation(tokens: List[int], block_size: int, validation_split
             val_tokens.append(t)
         else:
             train_tokens.append(t)
-    return train_tokens, val_tokens
+
+    split_info = {
+        "validation_split": float(validation_split),
+        "page_size": int(page_size),
+        "total_pages": int(total_pages),
+        "val_pages": sorted(int(v) for v in val_set),
+        "split_rng_state_before": split_rng_state_before,
+    }
+    return train_tokens, val_tokens, split_info
 
 
 def _set_trainable_weights(model: torch.nn.Module, patterns: Sequence[str] | None) -> None:
@@ -960,7 +1093,34 @@ def cmd_train(args: argparse.Namespace) -> None:
     if len(tokens) < effective_block_size + 2:
         raise ValueError("Training text is too short for the model block size")
 
-    train_tokens, val_tokens = _split_train_validation(tokens, effective_block_size, args.validation_split)
+    resume_path = Path(args.resume_state_file) if args.resume_state_file else None
+    resume_payload: Dict[str, Any] | None = None
+    resume_training: Dict[str, Any] | None = None
+    forced_val_pages: Sequence[int] | None = None
+    if resume_path is not None and resume_path.is_file():
+        _log(f"Resume state found: {resume_path}", args.quiet)
+        resume_payload = _load_training_state(resume_path)
+        training_obj = resume_payload.get("training")
+        if isinstance(training_obj, dict):
+            resume_training = training_obj
+            split_obj = training_obj.get("data_split")
+            if isinstance(split_obj, dict) and isinstance(split_obj.get("val_pages"), list):
+                forced_val_pages = [int(v) for v in split_obj["val_pages"]]
+        expected_model = resume_payload.get("model_output")
+        if isinstance(expected_model, str) and expected_model and expected_model != str(args.output):
+            _log(
+                f"warning: resume sidecar model_output={expected_model} differs from --output={args.output}",
+                args.quiet,
+            )
+    elif resume_path is not None:
+        _log(f"Resume state path not found, starting fresh: {resume_path}", args.quiet)
+
+    train_tokens, val_tokens, split_info = _split_train_validation(
+        tokens,
+        effective_block_size,
+        args.validation_split,
+        forced_val_pages=forced_val_pages,
+    )
     train_tokens_tensor = torch.tensor(train_tokens, dtype=torch.long, device=device)
     val_tokens_tensor = (
         torch.tensor(val_tokens, dtype=torch.long, device=device)
@@ -1076,12 +1236,88 @@ def cmd_train(args: argparse.Namespace) -> None:
         _log("Ignoring --loss-scaling for bf16 mixed precision", args.quiet)
         manual_loss_scale = 1.0
 
+    resume_fingerprint = _build_resume_fingerprint(
+        args,
+        model,
+        tokenizer,
+        effective_block_size=effective_block_size,
+        epoch_steps=epoch_steps,
+        chosen_optimizer_impl=chosen_optimizer_impl,
+        selected_mp_dtype=selected_mp_dtype,
+        enable_cuda_amp=enable_cuda_amp,
+    )
+
+    if resume_payload is not None:
+        saved_fingerprint = resume_payload.get("fingerprint")
+        if not isinstance(saved_fingerprint, dict):
+            raise ValueError(
+                "Resume sidecar is missing compatibility fingerprint. "
+                "Please start fresh without --resume-state-file, or regenerate the sidecar with the current trainer."
+            )
+        mismatches = _collect_resume_mismatches(saved_fingerprint, resume_fingerprint)
+        if mismatches:
+            details = "\n".join(f" - {line}" for line in mismatches[:20])
+            more = len(mismatches) - 20
+            if more > 0:
+                details += f"\n - ... and {more} more mismatch(es)"
+            raise ValueError(
+                "Resume sidecar does not match current model/hyperparameters. "
+                "Refusing to restore training state.\n"
+                f"{details}"
+            )
+
+    resumed_steps = 0
+    if resume_training is not None:
+        opt_state = resume_training.get("optimizer_state_dict")
+        if isinstance(opt_state, dict):
+            optimizer.load_state_dict(opt_state)
+            _move_optimizer_state_to_device(optimizer, device)
+            _log("Restored optimizer state from resume sidecar", args.quiet)
+
+        sched_state = resume_training.get("scheduler")
+        if isinstance(sched_state, dict):
+            sched_step = sched_state.get("step")
+            sched_lr = sched_state.get("learning_rate")
+            if isinstance(sched_step, int):
+                scheduler.step = int(sched_step)
+            if isinstance(sched_lr, (int, float)):
+                scheduler.learning_rate = float(sched_lr)
+
+        scaler_state = resume_training.get("scaler_state_dict")
+        if use_grad_scaler and isinstance(scaler_state, dict):
+            scaler.load_state_dict(scaler_state)
+            _log("Restored GradScaler state from resume sidecar", args.quiet)
+
+        restored_best = resume_training.get("best_checkpoint_val_loss")
+        if isinstance(restored_best, (int, float)):
+            meta["best_checkpoint_val_loss"] = float(restored_best)
+
+        rng_state = resume_training.get("rng_state")
+        if isinstance(rng_state, dict):
+            torch_state = rng_state.get("torch")
+            if isinstance(torch_state, torch.Tensor):
+                torch.set_rng_state(torch_state)
+            cuda_states = rng_state.get("cuda")
+            if device.type == "cuda" and isinstance(cuda_states, list) and len(cuda_states) > 0:
+                try:
+                    torch.cuda.set_rng_state_all([s for s in cuda_states if isinstance(s, torch.Tensor)])
+                except Exception as exc:
+                    _log(f"warning: failed to restore CUDA RNG state: {exc}", args.quiet)
+            py_state = rng_state.get("python_random")
+            if isinstance(py_state, tuple):
+                random.setstate(py_state)
+
+        restored_steps = resume_training.get("completed_steps", 0)
+        if isinstance(restored_steps, int) and restored_steps > 0:
+            resumed_steps = int(restored_steps)
+            _log(f"Resuming training from step {resumed_steps}", args.quiet)
+
     metrics = set((args.metrics or "").split(",")) if isinstance(args.metrics, str) else set()
     metrics = {m.strip() for m in metrics if m.strip()}
 
     start = time.time()
     control: Dict[str, bool] = {"save_requested": False, "stop_requested": False}
-    completed_steps = 0
+    completed_steps = resumed_steps
     last_saved_step = -1
     interrupted = False
     best_checkpoint_val_loss = float("inf")
@@ -1113,6 +1349,38 @@ def cmd_train(args: argparse.Namespace) -> None:
             save_meta["best_checkpoint_val_loss"] = float(best_checkpoint_val_loss)
 
         save_model_zip(args.output, model, tokenizer, meta=save_meta, name=args.name)
+        if resume_path is not None:
+            rng_state_payload: Dict[str, Any] = {
+                "torch": torch.get_rng_state().cpu(),
+                "python_random": random.getstate(),
+            }
+            if device.type == "cuda":
+                try:
+                    rng_state_payload["cuda"] = [s.cpu() for s in torch.cuda.get_rng_state_all()]
+                except Exception:
+                    rng_state_payload["cuda"] = []
+
+            sidecar_payload: Dict[str, Any] = {
+                "version": 1,
+                "model_output": str(args.output),
+                "saved_at": float(time.time()),
+                "fingerprint": resume_fingerprint,
+                "training": {
+                    "completed_steps": int(step_value),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "scheduler": {
+                        "step": int(scheduler.step),
+                        "learning_rate": float(scheduler.learning_rate),
+                    },
+                    "scaler_state_dict": scaler.state_dict() if use_grad_scaler else None,
+                    "best_checkpoint_val_loss": float(best_checkpoint_val_loss)
+                    if math.isfinite(best_checkpoint_val_loss)
+                    else float("inf"),
+                    "rng_state": rng_state_payload,
+                    "data_split": split_info,
+                },
+            }
+            _save_training_state(resume_path, sidecar_payload)
         last_saved_step = step_value
         print(f"Saved checkpoint ({reason}) at step {step_value}: {args.output}")
 
@@ -1136,7 +1404,7 @@ def cmd_train(args: argparse.Namespace) -> None:
     signal.signal(signal.SIGTERM, _signal_handler)
 
     try:
-        step = 0
+        step = resumed_steps
         while True:
             step += 1
             x, y = _build_batch(train_tokens_tensor, effective_block_size, args.batch_size, device)
@@ -1267,6 +1535,9 @@ def cmd_train(args: argparse.Namespace) -> None:
             _save_checkpoint("signal_interrupt", completed_steps, interrupted_state=True)
         print(f"Training interrupted at step {completed_steps}. Last checkpoint: {args.output}")
         return
+
+    if total_steps is not None and completed_steps >= total_steps and resumed_steps >= total_steps:
+        _log(f"Requested steps already completed in resume state ({completed_steps}/{total_steps})", args.quiet)
 
     _save_checkpoint("final", completed_steps)
     print(f"Training complete. Saved: {args.output}")
@@ -1469,6 +1740,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_train.add_argument("--csv-no-header", action="store_false", dest="csv_has_header", help="Force CSV no header")
     p_train.set_defaults(csv_has_header=None)
     p_train.add_argument("--output", required=True, help="Output model zip")
+    p_train.add_argument(
+        "--resume-state-file",
+        default=None,
+        help="Optional sidecar training state file for seamless resume (optimizer/scheduler/scaler/RNG)",
+    )
     p_train.add_argument("--steps", type=int, default=0, help="Training steps cap (0 means no step cap)")
     p_train.add_argument("--max-epochs", type=int, default=0, help="Epoch cap when --steps <= 0 (0 means no epoch cap)")
     p_train.add_argument("--batch-size", type=int, default=8, help="Batch size")

@@ -35,7 +35,6 @@ export default abstract class Model<
     constructor(config: C) {
         super(config);
         if (config.loraConfig) {
-            console.log(config.loraConfig);
             config.loraConfig.forEach((loraConfig, name) => {
                 this.createLoRA(name, loraConfig);
             });
@@ -52,7 +51,6 @@ export default abstract class Model<
 
         this.config.loraConfig = this.config.loraConfig || new Map<string, LoRAConfig>();
         this.config.loraConfig.set(name, loraConfig);
-        console.log(`Created LoRA ${name} with rank ${loraConfig.rank} and alpha ${loraConfig.alpha}`);
     }
 
     deleteLoRA(name: string) {

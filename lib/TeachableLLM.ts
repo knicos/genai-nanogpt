@@ -1,4 +1,4 @@
-import { GPTConfig, validateConfig } from './models/config';
+import { GPTConfig, LoRAConfig, validateConfig } from './models/config';
 import type { Conversation, ITokeniser } from './tokeniser/type';
 import { saveModel, SaveOptions } from './loader/save';
 import { loadModel, LoadModelOptions } from './loader/load';
@@ -16,7 +16,7 @@ import { TrainingLogEntry, TrainingOptions } from './training/types';
 import { ModelPhase } from './loader/types';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
-type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded' | 'phase';
+type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded' | 'phase' | 'changeLoRA';
 
 interface TeachableLLMMeta {
     name?: string;
@@ -95,6 +95,60 @@ export default class TeachableLLM {
 
     get busy(): boolean {
         return this._status === 'busy' || this._status === 'training';
+    }
+
+    createLoRA(name: string, loraConfig: LoRAConfig) {
+        if (!this._model) {
+            throw new Error('model_not_initialized.');
+        }
+        this._model.createLoRA(name, loraConfig);
+        this.ee.emit('changeLoRA');
+    }
+
+    deleteLoRA(name: string) {
+        if (!this._model) {
+            throw new Error('model_not_initialized.');
+        }
+        this._model.deleteLoRA(name);
+        this.ee.emit('changeLoRA');
+    }
+
+    renameLoRA(oldName: string, newName: string) {
+        if (!this._model) {
+            throw new Error('model_not_initialized.');
+        }
+        this._model.renameLoRA(oldName, newName);
+        this.ee.emit('changeLoRA');
+    }
+
+    attachLoRA(name: string) {
+        if (!this._model) {
+            throw new Error('model_not_initialized.');
+        }
+        this._model.attachLoRA(name);
+        this.ee.emit('changeLoRA');
+    }
+
+    detachLoRA() {
+        if (!this._model) {
+            throw new Error('model_not_initialized.');
+        }
+        this._model.detachLoRA();
+        this.ee.emit('changeLoRA');
+    }
+
+    hasLoRA(name?: string): boolean {
+        if (!this._model) {
+            throw new Error('model_not_initialized.');
+        }
+        return this._model.hasLoRA(name);
+    }
+
+    listLoRAs(): string[] {
+        if (!this._model) {
+            throw new Error('model_not_initialized.');
+        }
+        return this._model.listLoRAs();
     }
 
     public estimateTrainingMemoryUsage(batchSize: number): number {
