@@ -21,7 +21,7 @@ import topP from './utilities/topP';
 import { sparseSoftmaxCrossEntropy } from './training/sparseCrossEntropy';
 import { SPECIALS } from './tokeniser/BaseTokeniser';
 
-interface GeneratorConversation extends Conversation {
+export interface GeneratorConversation extends Conversation {
     _completed?: boolean;
     _timestamp?: number;
 }
@@ -131,7 +131,8 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             let tokenisedPrompt: number[] = [];
             if (options?.nonConversational) {
                 if (isAssistant && options?.continuation) {
-                    tokenisedPrompt = tokeniser.encode(prompt[prompt.length - 1].content);
+                    tokenisedPrompt = [tokeniser.bosToken, ...tokeniser.encode(prompt[prompt.length - 1].content)];
+                    //tokenisedPrompt = tokeniser.encode(prompt[prompt.length - 1].content);
                 } else {
                     tokenisedPrompt = tokeniser.encodeAsSequence(prompt, true);
                 }
@@ -378,21 +379,30 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
 
     /** Generate multiple tokens in a loop and produce text */
     private async _generate(options?: IGenerateOptions): Promise<Conversation[]> {
+        let appended = false;
+
         // Begin a new assistant response in conversation
         if (
-            this.lastToken < 0 ||
+            //this.lastToken < 0 ||
             this.outputConversation.length === 0 ||
             this.outputConversation[this.outputConversation.length - 1]._completed ||
             this.outputConversation[this.outputConversation.length - 1].role !== 'assistant'
         ) {
             this.outputConversation.push({ role: 'assistant', content: '', _timestamp: Date.now() });
+            appended = true;
+            this.resetCache(!options?.noCache);
+        } else if (this.lastToken < 0) {
             this.resetCache(!options?.noCache);
         }
 
         let inputTensor =
             this.lastToken >= 0 && this.cache
                 ? tensor2d([this.lastToken], [1, 1], 'int32')
-                : await this.tokenisePrompt(this.actualTokeniser, this.outputConversation.slice(0, -1), options);
+                : await this.tokenisePrompt(
+                      this.actualTokeniser,
+                      appended ? this.outputConversation.slice(0, -1) : this.outputConversation,
+                      options
+                  );
 
         const maxTokens = options?.maxLength ?? 1000;
 
@@ -441,6 +451,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             if (newText === null) {
                 this.outputConversation[this.outputConversation.length - 1]._completed = true;
                 break;
+            }
+            if (i === maxTokens - 1) {
+                this.outputConversation[this.outputConversation.length - 1]._completed = true;
             }
 
             this.outputConversation[this.outputConversation.length - 1].content += newText;

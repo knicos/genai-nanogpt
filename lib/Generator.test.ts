@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, it } from 'vitest';
-import Generator from './Generator';
+import Generator, { GeneratorConversation } from './Generator';
 import NanoGPT from './models/NanoGPTV1';
 import CharTokeniser from './tokeniser/CharTokeniser';
 import * as tf from '@tensorflow/tfjs';
@@ -121,12 +121,36 @@ describe('Generator', () => {
         const prompt: Conversation[] = [{ role: 'user', content: 'hello there' }];
         let output = (await generator.generate(prompt, { maxLength: 50 })) as Conversation[];
         //output.push({ role: 'user', content: 'how are you' });
+        (output as GeneratorConversation[])[output.length - 1]._completed = false;
         output = (await generator.generate(output, { maxLength: 50 })) as Conversation[];
 
         expect(output).toBeDefined();
         expect(output).toHaveLength(2);
         expect(output[1].role).toBe('assistant');
         expect(output[1].content.length).toBe(100);
+    });
+
+    it('appends new conversation', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const model = new NanoGPT({
+            vocabSize: 20, // Example vocab size
+            nEmbed: 64, // Example embedding size
+            nLayer: 1, // Example number of layers
+            nHead: 2, // Example number of attention heads
+            blockSize: 32, // Example block size
+        });
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const prompt: Conversation[] = [{ role: 'user', content: 'hello there' }];
+        let output = (await generator.generate(prompt, { maxLength: 50 })) as Conversation[];
+        //output.push({ role: 'user', content: 'how are you' });
+        output = (await generator.generate(output, { maxLength: 50 })) as Conversation[];
+
+        expect(output).toBeDefined();
+        expect(output).toHaveLength(3);
+        expect(output[2].role).toBe('assistant');
+        expect(output[2].content.length).toBe(50);
     });
 
     it('supports topP', async ({ expect }) => {
@@ -321,10 +345,10 @@ describe('Generator', () => {
 
         const output = await generator.generate(prompt, { maxLength: 50, loraName: 'test-lora' });
         expect(output).toBeDefined();
-        expect(output).toHaveLength(2);
+        expect(output).toHaveLength(3);
         expect(output[0].content).toContain(prompt[0].content);
-        expect(output[1].role).toBe('assistant');
-        expect(output[1].content.length).toBeGreaterThan(0);
+        expect(output[2].role).toBe('assistant');
+        expect(output[2].content.length).toBeGreaterThan(0);
         expect(model.hasLoRA()).toBe(true);
         expect(model.lora?.name).toBe('test-lora');
     });
