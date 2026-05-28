@@ -452,7 +452,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                 this.outputConversation[this.outputConversation.length - 1]._completed = true;
                 break;
             }
-            if (i === maxTokens - 1) {
+            if (i === maxTokens - 1 && maxTokens > 1) {
                 this.outputConversation[this.outputConversation.length - 1]._completed = true;
             }
 
