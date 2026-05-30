@@ -1,3 +1,4 @@
+import { yieldIfNeeded } from '@base/utilities/yielder';
 import BaseTokeniser, { SPECIALS } from './BaseTokeniser';
 import { Conversation } from './type';
 
@@ -107,8 +108,21 @@ export default class CharTokeniser extends BaseTokeniser {
     }
 
     public async train(text: Conversation[][]): Promise<number> {
-        const flatText = text.map((t) => t.map((c) => c.content.split(''))).flat(2);
-        const charSet = new Set(flatText);
+        //const flatText = text.map((t) => t.map((c) => c.content.split(''))).flat(2);
+        const charSet = new Set<string>();
+        let lastYield = performance.now();
+
+        // Build charset
+        for (const conversation of text) {
+            conversation.forEach((fragment) => {
+                for (const char of fragment.content) {
+                    charSet.add(char);
+                }
+            });
+
+            lastYield = await yieldIfNeeded(lastYield);
+        }
+
         const charArray = Array.from(charSet);
         const firstPadIndex = this.vocab.indexOf('', this.unkToken + 1);
         const actualSize = this.vocabSize - specialTokens.length;
@@ -122,8 +136,12 @@ export default class CharTokeniser extends BaseTokeniser {
         if (charArray.length > actualSize) {
             // Remove least common characters if we exceed the vocab size
             const counts = new Map<string, number>();
-            flatText.forEach((char) => {
-                counts.set(char, (counts.get(char) || 0) + 1);
+            text.forEach((conversation) => {
+                conversation.forEach((fragment) => {
+                    for (const char of fragment.content) {
+                        counts.set(char, (counts.get(char) || 0) + 1);
+                    }
+                });
             });
             charArray.sort((a, b) => (counts.get(a) || 0) - (counts.get(b) || 0));
             charArray.splice(0, charArray.length - actualSize);

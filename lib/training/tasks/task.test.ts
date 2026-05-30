@@ -23,10 +23,7 @@ describe('Task', () => {
         const tasks = [task1, task2];
 
         const tokeniser = new CharTokeniser(200);
-        tokeniser.train(data1.concat(data2));
-
-        console.log('Vocab:', tokeniser.getVocab());
-
+        await tokeniser.train(data1.concat(data2));
         const tokens = await tokensFromTasks(tasks, tokeniser);
 
         expect(tokens.length).toBeGreaterThan(data1.length + data2.length); // Should be more tokens than sentences
@@ -50,7 +47,7 @@ describe('Task', () => {
         const tasks = [task1];
 
         const tokeniser = new CharTokeniser(200);
-        tokeniser.train(data1);
+        await tokeniser.train(data1);
 
         const tokens = await tokensFromTasks(tasks, tokeniser);
 
@@ -82,7 +79,7 @@ describe('Task', () => {
         const tasks = [task1, task2];
 
         const tokeniser = new CharTokeniser(200);
-        tokeniser.train(data1.concat(data2));
+        await tokeniser.train(data1.concat(data2));
 
         const tokens = await tokensFromTasks(tasks, tokeniser);
 

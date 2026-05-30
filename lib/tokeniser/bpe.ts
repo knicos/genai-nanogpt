@@ -190,9 +190,18 @@ export default class BPETokeniser extends BaseTokeniser {
     public async train(text: Conversation[][] = [], cb?: (vocab: number) => void): Promise<number> {
         let lastYield = performance.now();
 
-        const pretokens = text.map((t) => t.map((c) => parseTokens(c.content))).flat(2);
+        const preTokensDeep = new Array<string[][]>(text.length);
+        for (let i = 0; i < text.length; i++) {
+            const conversation = text[i];
+            const parsedConvervation = new Array<string[]>(conversation.length);
+            for (let j = 0; j < conversation.length; j++) {
+                parsedConvervation[j] = parseTokens(conversation[j].content);
+            }
+            lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
+            preTokensDeep[i] = parsedConvervation;
+        }
 
-        lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
+        const pretokens = preTokensDeep.flat(2);
 
         const preTokenSet = new Set<string>(pretokens);
 
