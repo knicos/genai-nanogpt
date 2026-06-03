@@ -27,7 +27,7 @@ export default class SFTTrainer extends BasicTrainer {
     ) {
         super(model, tokenizer, { ...DEFAULT_OPT_CONFIG, ...optConfig }, optimizer);
 
-        this.optimizerConfig.minLearningRate = this.optimizerConfig.learningRate / 10;
+        this.optimizerConfig.minLearningRate = optConfig?.minLearningRate ?? this.optimizerConfig.learningRate / 20;
         this.updateOptimizer();
         this.datasetBuilder = new SFTDatasetBuilder(tokenizer, model.config.blockSize);
         this.maskedLoss = true;

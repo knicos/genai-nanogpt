@@ -14,11 +14,13 @@ export interface ModelForwardAttributes extends ForwardAttributes {
     skipLogits?: boolean; // Whether to output embeddings instead of logits
 }
 
-interface TrainingState {
+export interface TrainingState {
     steps: number;
     learningRate: number;
     batchSize: number;
     loss: number;
+    tokensProcessed: number;
+    duration: number;
 }
 
 // Abstract base class for models

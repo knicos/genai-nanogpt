@@ -107,7 +107,8 @@ export default class CharTokeniser extends BaseTokeniser {
         this.vocab = [];
     }
 
-    public async train(text: Conversation[][]): Promise<number> {
+    public async train(text: Conversation[][], cb?: (vocab: number) => void, datasetID?: string): Promise<number> {
+        this.datasetID = datasetID;
         //const flatText = text.map((t) => t.map((c) => c.content.split(''))).flat(2);
         const charSet = new Set<string>();
         let lastYield = performance.now();
@@ -120,7 +121,7 @@ export default class CharTokeniser extends BaseTokeniser {
                 }
             });
 
-            lastYield = await yieldIfNeeded(lastYield);
+            lastYield = await yieldIfNeeded(lastYield, cb, 0);
         }
 
         const charArray = Array.from(charSet);
@@ -128,6 +129,7 @@ export default class CharTokeniser extends BaseTokeniser {
         const actualSize = this.vocabSize - specialTokens.length;
 
         if (firstPadIndex === -1) {
+            this.generateID();
             return this.vocabSize; // No space left to add new characters
         }
 
@@ -170,6 +172,7 @@ export default class CharTokeniser extends BaseTokeniser {
             this.cache.set(token, index);
         });
 
+        this.generateID();
         this.emit('trainStatus', 'trained');
         return this.vocabSize;
     }

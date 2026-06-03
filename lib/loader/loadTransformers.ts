@@ -1,13 +1,11 @@
 import { GPTConfig, LoRAConfig } from '@base/models/config';
-import { ITokeniser } from '@base/tokeniser/type';
 import CharTokeniser from '@base/tokeniser/CharTokeniser';
 import BPETokeniser from '@base/tokeniser/bpe';
 import { load_safetensors } from '@base/utilities/safetensors';
 import { disposeVariables, Tensor } from '@tensorflow/tfjs-core';
 import { dummyPassAsync } from '@base/utilities/dummy';
 import createModelInstance from '@base/models/factory';
-import Model, { ModelForwardAttributes } from '@base/models/model';
-import { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './types';
+import { LoadResult, TransformersConfig, TransformersMetadata, TransformersTokeniser } from './types';
 
 export function mapTransformersConfigToGPTConfig(config: TransformersConfig): GPTConfig {
     let modelConfig: GPTConfig;
@@ -46,7 +44,7 @@ export default async function loadTransformers(
     tokeniser: TransformersTokeniser,
     metadata: TransformersMetadata,
     weightData: ArrayBuffer
-): Promise<{ model: Model<ModelForwardAttributes, GPTConfig>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
+): Promise<LoadResult> {
     const modelConfig = mapTransformersConfigToGPTConfig(config);
 
     const tokeniserType = tokeniser.type ?? 'char';
@@ -55,6 +53,10 @@ export default async function loadTransformers(
         tokeniserType === 'char'
             ? new CharTokeniser(tokeniser.vocab)
             : new BPETokeniser(tokeniser.vocab, tokeniser.merges);
+
+    if (tokeniser.datasetID) {
+        tokeniserInstance.datasetID = tokeniser.datasetID;
+    }
 
     const weights = await load_safetensors(weightData);
     const weightsMap = new Map<string, Tensor[]>();

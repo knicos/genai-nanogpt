@@ -21,10 +21,9 @@ export interface TrainingLogEntry {
     weightNorm?: number;
     weightStatistics?: Map<string, TensorStatistics>;
     memoryUsage?: number;
-    tokensPerSecond?: number;
+    tokensPerSecond: number;
     duration: number;
-    totalSamples: number;
-    samplesPerSecond: number;
+    totalTokens: number;
 }
 
 export interface LRSchedulerConfig {
@@ -32,12 +31,15 @@ export interface LRSchedulerConfig {
     decayEpochs: number;
     minLearningRate: number;
     epochSteps: number;
+    step?: number;
 }
 
 export interface AdamWOptimizerConfig extends LRSchedulerConfig {
     learningRate: number;
     beta1: number;
     beta2: number;
+    accBeta1?: number;
+    accBeta2?: number;
     epsilon?: number;
     weightDecay: number;
     lossScaling: number;

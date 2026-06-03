@@ -4,24 +4,47 @@ import CharTokeniser from '../tokeniser/CharTokeniser';
 import { Tensor } from '@tensorflow/tfjs-core';
 import { save_safetensors } from '../utilities/safetensors';
 import { VERSION } from './load';
-import { TransformersConfig } from '@base/loader/types';
+import { TransformersConfig, TransformersMetadata } from '@base/loader/types';
 import Model, { ModelForwardAttributes } from '@base/models/model';
-import { GPTConfig } from '@base/main';
+import { AdamWOptimizer } from '@base/training/AdamW';
+import { TrainingLogEntry } from '@base/training/types';
+import { GPTConfig } from '@base/models/config';
 
 export interface SaveOptions {
     name?: string;
     metadata?: Record<string, unknown>;
     files?: Record<string, unknown>;
+    includeOptimizer?: boolean;
+}
+
+export interface ExtraSaveItems {
+    optimizer?: AdamWOptimizer;
+    trainingLog?: TrainingLogEntry[];
 }
 
 export async function saveModel(
     model: Model<ModelForwardAttributes, GPTConfig>,
     tokeniser: ITokeniser,
-    options?: SaveOptions
+    options?: SaveOptions,
+    extraItems?: ExtraSaveItems
 ): Promise<Blob> {
     const weightsMap = new Map<string, Tensor[]>();
     model.weightStore.saveWeights(weightsMap);
     const zipFile = new zip();
+
+    if (extraItems?.optimizer) {
+        const optimizerWeights = await extraItems.optimizer.saveMoments();
+        zipFile.file('optimizer.safetensors', optimizerWeights as ArrayBuffer, { binary: true });
+        zipFile.file('optimizer_config.json', JSON.stringify(extraItems.optimizer.serializeConfig()), {
+            binary: false,
+        });
+    }
+
+    if (extraItems?.trainingLog) {
+        zipFile.file('training_log.json', JSON.stringify(extraItems.trainingLog, undefined, 4), {
+            binary: false,
+        });
+    }
 
     const weights: Record<string, Tensor> = {};
     weightsMap.forEach((tensorList, name) => {
@@ -67,31 +90,29 @@ export async function saveModel(
         binary: false,
     });
 
-    zipFile.file(
-        'meta.json',
-        JSON.stringify(
-            {
-                version: VERSION,
-                application: '@genai-fi/nanogpt',
-                meta: options?.metadata,
-                name: options?.name,
-                training: model.trainingState || undefined,
-                reference: model.metaData?.url || undefined,
-                phase: model.metaData?.phase || undefined,
-            },
-            undefined,
-            4
-        ),
-        {
-            binary: false,
-        }
-    );
+    const meta: TransformersMetadata = {
+        version: VERSION,
+        application: '@genai-fi/nanogpt',
+        meta: options?.metadata,
+        name: options?.name,
+        training: model.metaData?.training || undefined,
+        reference: model.metaData?.url || undefined,
+        phase: model.metaData?.phase || undefined,
+        pretrainingData: model.metaData?.pretrainingData || undefined,
+        pretrainingSettings: model.metaData?.pretrainingSettings || undefined,
+        generationSettings: model.metaData?.generationSettings || undefined,
+        actionLog: model.metaData?.actionLog || undefined,
+    };
+    zipFile.file('meta.json', JSON.stringify(meta, undefined, 4), {
+        binary: false,
+    });
     zipFile.file(
         'tokeniser.json',
         JSON.stringify({
             type: tokeniser instanceof CharTokeniser ? 'char' : 'bpe',
             vocab: tokeniser.getVocab(),
-            merges: await tokeniser.getMerges(),
+            merges: tokeniser.getMerges(),
+            datasetID: tokeniser.datasetID,
         }),
         {
             binary: false,

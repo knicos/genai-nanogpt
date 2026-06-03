@@ -13,17 +13,10 @@ import Model, { ModelForwardAttributes } from './models/model';
 import createModelInstance from './models/factory';
 import { Task } from './training/tasks/Task';
 import { TrainingLogEntry, TrainingOptions } from './training/types';
-import { ModelPhase } from './loader/types';
+import { ModelPhase, TransformersMetadata } from './loader/types';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded' | 'phase' | 'changeLoRA';
-
-interface TeachableLLMMeta {
-    name?: string;
-    id?: string;
-    reference?: string; // Reference model
-    [key: string]: unknown;
-}
 
 export default class TeachableLLM {
     private ee = new EE<TeachableLLMEvents>();
@@ -32,13 +25,23 @@ export default class TeachableLLM {
     private _tokeniser?: ITokeniser;
     private _status: TeachableLLMStatus = 'loading';
     private _memoryRequirements?: MemoryRequirements;
-    public meta: TeachableLLMMeta = {};
+    public meta: TransformersMetadata = {
+        version: 2,
+        application: '@genai-fi/nanogpt',
+    };
     private _trainer: Trainer | null = null;
 
     constructor(tokeniser?: ITokeniser, model?: Model<ModelForwardAttributes, GPTConfig>) {
         this._config = model?.config;
         this._tokeniser = tokeniser;
         this._model = model;
+        if (model?.metaData) {
+            this.meta = model.metaData;
+        }
+    }
+
+    get currentTrainer(): Trainer | null {
+        return this._trainer;
     }
 
     get vocab(): string[] {
@@ -169,28 +172,49 @@ export default class TeachableLLM {
         if (!this._model || !this._tokeniser) {
             throw new Error('model_or_tokeniser_not_initialized.');
         }
-        return saveModel(this._model, this._tokeniser, {
-            ...options,
-            name: options?.name || this.meta.name,
-        });
+        return saveModel(
+            this._model,
+            this._tokeniser,
+            {
+                ...options,
+                name: options?.name || this.meta.name,
+            },
+            options?.includeOptimizer && this._trainer?.trainingType === 'pretraining'
+                ? { optimizer: this._trainer.optimizer, trainingLog: this._trainer.log }
+                : undefined
+        );
     }
 
     static loadModel(data: Blob | Buffer | string, options?: LoadModelOptions): TeachableLLM {
         const teachableLLM = new TeachableLLM();
         loadModel(data, options)
-            .then(({ model, tokeniser, metaData }) => {
+            .then(({ model, tokeniser, metaData, optimizer, log }) => {
                 validateConfig(model.config);
                 teachableLLM._model = model;
                 teachableLLM._tokeniser = tokeniser;
                 teachableLLM._config = model.config;
-                if (metaData?.name) {
-                    teachableLLM.meta.name = metaData.name;
+                if (metaData) {
+                    teachableLLM.meta = metaData;
                 }
                 teachableLLM.setStatus('warmup');
 
                 dummyPassTrainAsync(model)
                     .then((memoryReqs) => {
                         teachableLLM._memoryRequirements = memoryReqs;
+
+                        if (optimizer) {
+                            teachableLLM._trainer = new Trainer(
+                                model,
+                                tokeniser,
+                                'pretraining',
+                                model.metaData.pretrainingSettings,
+                                optimizer
+                            );
+                            if (log) {
+                                teachableLLM._trainer.log = log;
+                            }
+                        }
+
                         teachableLLM.setStatus('ready');
                         teachableLLM.ee.emit('loaded');
                         teachableLLM.ee.emit('phase', teachableLLM.phase);

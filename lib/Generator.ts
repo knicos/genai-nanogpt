@@ -20,23 +20,7 @@ import Model, { ModelForwardAttributes } from './models/model';
 import topP from './utilities/topP';
 import { sparseSoftmaxCrossEntropy } from './training/sparseCrossEntropy';
 import { SPECIALS } from './tokeniser/BaseTokeniser';
-
-export interface GeneratorConversation extends Conversation {
-    _completed?: boolean;
-    _timestamp?: number;
-}
-
-export interface GenerateOptions {
-    temperature?: number;
-    topK?: number;
-    topP?: number;
-    usePadding?: boolean;
-    attentionScores?: boolean;
-    includeProbabilities?: boolean;
-    embeddings?: 'embedding' | 'logits' | 'softmax' | 'all';
-    targets?: number[];
-    loraName?: string;
-}
+import { GenerateOptions, GeneratorConversation } from './inference/types';
 
 interface JobItem {
     prompt?: Conversation[];
@@ -112,6 +96,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
     private lastMultinomialRand: number | null = null;
     private jobQueue: JobItem[] = [];
     private processingJob = false;
+    private startTime: number | null = null;
 
     constructor(
         private readonly model: Model<ModelForwardAttributes>,
@@ -573,6 +558,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         }
 
         this.processingJob = true;
+        this.startTime = Date.now();
         try {
             const result = await this.startJob(prompt, options);
             this.processingJob = false;
@@ -595,10 +581,28 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
     private async startJob(prompt?: Conversation[], options?: IGenerateOptions) {
         this.initialise(prompt, options);
         this.active = true;
+
+        this.model.metaData.generationSettings = options;
+
         if (options?.maxLength !== 1) this.emit('start');
         const result = this._generate(options);
         const r = await result;
         this.active = false;
+
+        if (this.startTime !== null) {
+            const endTime = Date.now();
+            const duration = endTime - this.startTime;
+            this.startTime = null;
+            this.model.metaData.actionLog = this.model.metaData.actionLog || [];
+            this.model.metaData.actionLog.push({
+                action: 'generate',
+                timestamp: endTime,
+                duration,
+                tokensProcessed: this.tokens.length,
+                options: options || {},
+            });
+        }
+
         this.emit('stop');
         return r;
     }

@@ -1,5 +1,9 @@
+import { GenerateOptions } from '@base/inference/types';
 import { LoRAConfig } from '@base/models/config';
-import { TrainingState } from '@base/training/types';
+import Model, { ModelForwardAttributes, TrainingState } from '@base/models/model';
+import { ITokeniser } from '@base/tokeniser/type';
+import { AdamWOptimizer } from '@base/training/AdamW';
+import { TrainingLogEntry, TrainingOptions } from '@base/training/types';
 
 export interface TransformersConfigBase {
     model_type: 'GenAI_NanoGPT_v1' | 'GenAI_NanoGPT_v2';
@@ -29,9 +33,23 @@ export interface TransformersTokeniser {
     type: 'char' | 'bpe';
     vocab: string[];
     merges: [string, string][];
+    datasetID?: string;
 }
 
 export type ModelPhase = 'untrained' | 'pretrained' | 'finetuned';
+
+export interface DatasetMetadata {
+    id: string;
+    name: string;
+}
+
+export interface ActionLogEntry {
+    action: 'pretrain' | 'generate' | 'finetune';
+    timestamp: number;
+    duration: number;
+    tokensProcessed: number;
+    options: TrainingOptions | GenerateOptions;
+}
 
 export interface TransformersMetadata {
     name?: string;
@@ -39,7 +57,20 @@ export interface TransformersMetadata {
     application: string;
     training?: TrainingState;
     reference?: string; // Reference model
+    id?: string;
     url?: string; // Original URL if loaded from there
     phase?: ModelPhase;
+    pretrainingData?: DatasetMetadata[];
+    pretrainingSettings?: TrainingOptions; // Last used training settings for pretraining
+    generationSettings?: GenerateOptions;
+    actionLog?: ActionLogEntry[];
     [key: string]: unknown;
+}
+
+export interface LoadResult {
+    model: Model<ModelForwardAttributes>;
+    tokeniser: ITokeniser;
+    metaData: TransformersMetadata;
+    optimizer?: AdamWOptimizer;
+    log?: TrainingLogEntry[];
 }

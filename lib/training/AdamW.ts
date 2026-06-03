@@ -26,6 +26,7 @@ import { NamedTensor, NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor
 import LRScheduler from './LRScheduler';
 import { clipScale } from '@base/ops/globalNorm';
 import { AdamWOptimizerConfig } from './types';
+import { load_safetensors, save_safetensors } from '@base/utilities/safetensors';
 
 export class AdamWOptimizer extends Optimizer {
     public readonly className = 'AdamW';
@@ -46,8 +47,8 @@ export class AdamWOptimizer extends Optimizer {
 
     constructor(private config: AdamWOptimizerConfig) {
         super();
-        this.accBeta1 = config.beta1;
-        this.accBeta2 = config.beta2;
+        this.accBeta1 = config.accBeta1 ?? config.beta1;
+        this.accBeta2 = config.accBeta2 ?? config.beta2;
         this.learningRate = config.learningRate;
         this.beta1 = config.beta1;
         this.beta2 = config.beta2;
@@ -67,6 +68,38 @@ export class AdamWOptimizer extends Optimizer {
 
     get lr(): number {
         return this.learningRate;
+    }
+
+    saveMoments(): Promise<ArrayBuffer> {
+        const moments: Record<string, Tensor> = {};
+        this.accumulatedMoments.forEach((v) => {
+            moments[v.originalName] = v.variable;
+        });
+        return save_safetensors(moments);
+    }
+
+    async loadMoments(momentData: ArrayBuffer) {
+        const moments = await load_safetensors(momentData);
+        Object.entries(moments).forEach(([name, tensor]) => {
+            const variable = tensor.variable(false);
+            this.accumulatedMoments.push({ originalName: name, variable });
+        });
+    }
+
+    serializeConfig(): AdamWOptimizerConfig {
+        return {
+            learningRate: this.learningRate,
+            beta1: this.beta1,
+            beta2: this.beta2,
+            accBeta1: this.accBeta1,
+            accBeta2: this.accBeta2,
+            epsilon: this.epsilon ?? undefined,
+            weightDecay: this.weightDecay,
+            lossScaling: this.lossScaling,
+            clipNorm: this.clipNorm,
+            orthoGrad: this.orthGrad,
+            ...this.lrScheduler.serializeConfig(),
+        };
     }
 
     private orthogonalizeGradient(weight: Tensor, gradient: Tensor): Tensor {

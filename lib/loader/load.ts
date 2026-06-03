@@ -1,5 +1,4 @@
 import zip from 'jszip';
-import type { ITokeniser } from '@base/tokeniser/type';
 import loadOldModel from './oldZipLoad';
 import loadZipFile from './newZipLoad';
 import loadHuggingFace from './loadHF';
@@ -7,7 +6,7 @@ import Model, { ModelForwardAttributes } from '@base/models/model';
 import { loadZipMeta } from './loadZipMeta';
 import { load_safetensors } from '@base/utilities/safetensors';
 import { Tensor } from '@tensorflow/tfjs-core';
-import { TransformersConfig, TransformersMetadata } from './types';
+import { LoadResult, TransformersConfig, TransformersMetadata } from './types';
 
 export const VERSION = 2;
 
@@ -49,10 +48,7 @@ async function mergeConfigs(zipFile: zip, model: Model<ModelForwardAttributes>):
     }
 }
 
-async function zipLoadCommon(
-    zipFile: zip,
-    metaData: TransformersMetadata
-): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
+async function zipLoadCommon(zipFile: zip, metaData: TransformersMetadata): Promise<LoadResult> {
     // This model refers to another one, so load it first.
     if (metaData.reference) {
         const refModel = await loadModel(metaData.reference);
@@ -93,10 +89,7 @@ export interface LoadModelOptions {
     sourceURL?: string;
 }
 
-export async function loadModel(
-    data: Blob | Buffer | string,
-    options?: LoadModelOptions
-): Promise<{ model: Model<ModelForwardAttributes>; tokeniser: ITokeniser; metaData: TransformersMetadata }> {
+export async function loadModel(data: Blob | Buffer | string, options?: LoadModelOptions): Promise<LoadResult> {
     if (typeof data === 'string') {
         if (data.startsWith('http://') || data.startsWith('https://')) {
             const arrayBuffer = await loadURL(data);

@@ -187,7 +187,8 @@ export default class BPETokeniser extends BaseTokeniser {
         return this.vocabIndex.get('') ?? 1;
     }
 
-    public async train(text: Conversation[][] = [], cb?: (vocab: number) => void): Promise<number> {
+    public async train(text: Conversation[][] = [], cb?: (vocab: number) => void, datasetID?: string): Promise<number> {
+        this.datasetID = datasetID;
         let lastYield = performance.now();
 
         const preTokensDeep = new Array<string[][]>(text.length);
@@ -246,6 +247,7 @@ export default class BPETokeniser extends BaseTokeniser {
                 this.vocabIndex.set(v, i++);
             }
 
+            this.generateID();
             this.emit('trainStatus', 'trained');
             return this.vocab.size;
         }
@@ -277,6 +279,7 @@ export default class BPETokeniser extends BaseTokeniser {
             this.vocabIndex.set(v, i++);
         }
 
+        this.generateID();
         this.emit('trainStatus', 'trained');
         return this.vocab.size;
     }

@@ -11,6 +11,7 @@ import SFTTrainer from './training/SFTTrainer';
 import { AdamWOptimizer } from './training/AdamW';
 import splitValidation from './training/tasks/splitter';
 import { v4 as uuidv4 } from 'uuid';
+import { DatasetMetadata } from './loader/types';
 
 interface TrainingProgress {
     lastLog: TrainingLogEntry;
@@ -26,7 +27,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     private hasTrained = false;
     private trainDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
     private validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
-    private totalSamples = 0;
+    private totalTokens = 0;
+    private tokensProcessed = 0;
     public log: TrainingLogEntry[] = [];
     private progress: TrainingProgress | null = null;
     public options: TrainingOptions = {
@@ -40,14 +42,16 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         model: Model<ModelForwardAttributes>,
         tokeniser: ITokeniser,
         trainingType?: TrainingType,
-        options?: TrainingOptions
+        options?: TrainingOptions,
+        optimizer?: AdamWOptimizer
     );
     constructor(trainer: Trainer, options?: TrainingOptions);
     constructor(
         modelOrCopy: Model<ModelForwardAttributes> | Trainer,
         tokeniser?: ITokeniser | TrainingOptions,
         trainingType: TrainingType = 'pretraining',
-        options?: TrainingOptions
+        options?: TrainingOptions,
+        optimizer?: AdamWOptimizer
     ) {
         super();
 
@@ -80,7 +84,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                 this.trainer.updateOptimizer(this.options);
                 this.log = modelOrCopy.log;
                 this.progress = modelOrCopy.progress;
-                this.totalSamples = modelOrCopy.totalSamples;
+                this.totalTokens = modelOrCopy.totalTokens;
                 this.tokenizer = modelOrCopy.tokenizer;
 
                 if (newOptions.batchSize === oldOptions.batchSize) {
@@ -103,9 +107,9 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             sftMode: 'full',
         };
         if (trainingType === 'sft') {
-            this.trainer = new SFTTrainer(modelOrCopy, tokeniser as ITokeniser, options);
+            this.trainer = new SFTTrainer(modelOrCopy, tokeniser as ITokeniser, options, optimizer);
         } else {
-            this.trainer = new PreTrainer(modelOrCopy, tokeniser as ITokeniser, options);
+            this.trainer = new PreTrainer(modelOrCopy, tokeniser as ITokeniser, options, optimizer);
         }
         this.trainingType = trainingType;
         this.tokenizer = tokeniser as ITokeniser;
@@ -134,8 +138,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         this.removeAllListeners();
     }
 
-    getTotalSamples(): number {
-        return this.totalSamples;
+    getTotalTokens(): number {
+        return this.totalTokens;
     }
 
     setOptions(options: TrainingOptions): void {
@@ -184,10 +188,18 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         }
     }
 
-    async prepare(tasks: Task[] | Uint16Array = []): Promise<void> {
+    async prepare(tasks: Task[] | Uint16Array = [], datasets?: DatasetMetadata[]): Promise<void> {
         const options = this.options;
+
+        if (datasets) {
+            this.model.metaData.pretrainingData = datasets.map((dataset) => ({
+                id: dataset.id,
+                name: dataset.name,
+            }));
+        }
+
         if (this.trainingType === 'pretraining' && this.trainer instanceof PreTrainer) {
-            const { trainDataset, validationDataset, size, trainState } = await createTrainValidationSplit(
+            const { trainDataset, validationDataset, size } = await createTrainValidationSplit(
                 tasks,
                 this.trainer.tokenizer,
                 this.trainer.datasetBuilder,
@@ -195,12 +207,14 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                 options?.validationSplit || 0.1
             );
 
-            const totalSamples = size * (1 - (options?.validationSplit || 0));
+            const totalTokens = size * (1 - (options?.validationSplit || 0));
 
             this.trainDataset = trainDataset;
             this.validationDataset = validationDataset;
-            this.totalSamples = totalSamples;
-            this.options.epochSteps = Math.ceil(trainState.shuffledIndexes.length / (options?.batchSize || 32));
+            this.totalTokens = totalTokens;
+            this.options.epochSteps = Math.ceil(
+                this.totalTokens / ((options?.batchSize || 32) * this.model.config.blockSize)
+            );
             this.trainer.updateOptimizer(this.options);
         } else if (this.trainingType === 'sft' && this.trainer instanceof SFTTrainer) {
             if (tasks instanceof Uint16Array) {
@@ -232,8 +246,10 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
 
                 this.trainDataset = trainDataset;
             }
-            this.totalSamples = tasks.reduce((acc, conv) => acc + conv.length, 0);
-            this.options.epochSteps = Math.ceil(this.totalSamples / (options?.batchSize || 32));
+            this.totalTokens = tasks.reduce((acc, conv) => acc + conv.length, 0);
+            this.options.epochSteps = Math.ceil(
+                this.totalTokens / ((options?.batchSize || 32) * this.model.config.blockSize)
+            );
             this.trainer.updateOptimizer(this.options);
         }
     }
@@ -339,6 +355,14 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
 
         this.emit('start');
 
+        this.model.metaData.pretrainingSettings = options;
+        const startTime = Date.now();
+
+        // Ensure trainer state is resumed
+        if (this.log.length > 0) {
+            this.trainer.resumeFromLog(this.log[this.log.length - 1]);
+        }
+
         this.trainer.setGradientCheckpointing(options?.gradientCheckpointing || false);
         this.trainer.setMixedPrecision(options?.mixedPrecision || false);
         this.trainer.setLabelSmoothing(options?.labelSmoothing || 0.0);
@@ -354,12 +378,10 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                     this.log.push(log);
                     this.progress = {
                         lastLog: log,
-                        progress: log.totalSamples / this.totalSamples,
-                        remaining: Math.max(
-                            0,
-                            ((this.totalSamples - log.totalSamples) / log.totalSamples) * log.duration
-                        ),
+                        progress: log.totalTokens / this.totalTokens,
+                        remaining: Math.max(0, ((this.totalTokens - log.totalTokens) / log.totalTokens) * log.duration),
                     };
+                    this.tokensProcessed = log.totalTokens;
 
                     const listeners = this.listeners('log');
                     for (const listener of listeners) {
@@ -370,6 +392,17 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             },
             this.validationDataset
         );
+
+        this.model.metaData.actionLog = this.model.metaData.actionLog || [];
+        const endTime = Date.now();
+        this.model.metaData.actionLog.push({
+            action: 'pretrain',
+            timestamp: endTime,
+            duration: endTime - startTime,
+            tokensProcessed: this.tokensProcessed,
+            options,
+        });
+
         this.emit('stop');
     }
 
@@ -393,8 +426,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             // These listeners can be async, so we await them
             await listener(log, {
                 lastLog: log,
-                progress: log.totalSamples / this.totalSamples,
-                remaining: Math.max(0, ((this.totalSamples - log.totalSamples) / log.totalSamples) * log.duration),
+                progress: log.totalTokens / this.totalTokens,
+                remaining: Math.max(0, ((this.totalTokens - log.totalTokens) / log.totalTokens) * log.duration),
             });
         }
         this.emit('stop');

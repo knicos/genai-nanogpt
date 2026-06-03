@@ -8,7 +8,9 @@ export interface Conversation {
 }
 
 export interface ITokeniser extends EE<'trainStatus'> {
-    train(text: Conversation[][], cb?: (vocab: number) => void): Promise<number>;
+    id: string;
+    datasetID?: string;
+    train(text: Conversation[][], cb?: (vocab: number) => void, datasetID?: string): Promise<number>;
     //tokenise(text: string[], numeric?: boolean): Promise<string[][] | number[][]>;
     //detokenise(tokens: (number[] | Uint16Array)[]): Promise<string[]>;
     getVocab(): string[];

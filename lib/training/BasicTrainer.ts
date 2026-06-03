@@ -116,6 +116,20 @@ export default class BasicTrainer {
         this.optimizer.updateConfig(this.optimizerConfig);
     }
 
+    resumeFromLog(log: TrainingLogEntry): void {
+        if (!this.lastState || this.lastState.step === 0) {
+            this.lastState = {
+                losses: [],
+                validationLosses: [],
+                logStartTime: 0,
+                step: log.step,
+                lastLoss: log.trainingMetrics.loss,
+                totalSteps: log.step,
+                trainingDuration: log.duration,
+            };
+        }
+    }
+
     // A single forward pass, backward pass, and optimizer step
     protected trainStep(
         state: Partial<TrainingState>,
@@ -286,9 +300,17 @@ export default class BasicTrainer {
             }
         } catch (error) {
             console.error('Training error:', error);
-            dispose();
             throw error;
         }
+
+        this.model.trainingState = {
+            steps: state.totalSteps,
+            learningRate: this.optimizer.lr,
+            batchSize: options.batchSize || 32,
+            loss: state.lastLoss,
+            tokensProcessed: state.totalSteps * (options.batchSize || 32) * this.model.config.blockSize,
+            duration: state.trainingDuration,
+        };
 
         dispose();
 
@@ -310,6 +332,7 @@ export default class BasicTrainer {
         state.lastLoss = lossValue;
         const logEndTime = Date.now();
         state.trainingDuration += logEndTime - state.logStartTime;
+        const tokensProcessed = state.totalSteps * batchSize * this.model.config.blockSize;
 
         const entry: TrainingLogEntry = {
             trainingMetrics: {
@@ -323,13 +346,10 @@ export default class BasicTrainer {
             batchSize: batchSize,
             learningRate: this.metrics.has('learningRate') ? this.optimizer.lr : undefined,
             duration: state.trainingDuration,
-            totalSamples: state.totalSteps * batchSize,
-            samplesPerSecond: (state.totalSteps * batchSize) / (state.trainingDuration / 1000),
+            totalTokens: tokensProcessed,
+            tokensPerSecond: tokensProcessed / (state.trainingDuration / 1000),
             memoryUsage: this.metrics.has('memoryUsage') ? this.model.getProfiler()?.getPeakMemory() || 0 : undefined,
         };
-        if (this.metrics.has('tokensPerSecond')) {
-            entry.tokensPerSecond = entry.samplesPerSecond * this.model.config.blockSize;
-        }
         if (state.gradientNorm) {
             state.gradientNorm.dispose();
             state.gradientNorm = undefined;
@@ -344,6 +364,8 @@ export default class BasicTrainer {
             learningRate: this.optimizer.lr,
             batchSize: batchSize,
             loss: state.lastLoss,
+            tokensProcessed,
+            duration: state.trainingDuration,
         };
 
         if (keepGrads && state.gradients) {

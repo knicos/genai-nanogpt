@@ -9,6 +9,16 @@ export default class LRScheduler {
         private config: LRSchedulerConfig
     ) {
         this.startLearningRate = learningRate;
+        if (config.step !== undefined) {
+            this.step = config.step;
+        }
+    }
+
+    serializeConfig(): LRSchedulerConfig {
+        return {
+            ...this.config,
+            step: this.step,
+        };
     }
 
     updateConfig(newConfig: Partial<LRSchedulerConfig>, learningRate?: number) {

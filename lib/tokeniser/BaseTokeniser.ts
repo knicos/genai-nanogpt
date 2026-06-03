@@ -15,6 +15,8 @@ export const SPECIALS = [
 ];
 
 export default abstract class BaseTokeniser extends EE<'trainStatus'> implements ITokeniser {
+    id = 'untrained';
+    datasetID?: string;
     protected specialTokens = new Map<string, number>();
     protected specialTokenSet = new Set<number>();
 
@@ -42,7 +44,36 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
         this.specialTokenSet.add(index);
     }
 
-    abstract train(text: Conversation[][], cb?: (vocab: number) => void): Promise<number>;
+    protected generateID() {
+        const vocab = this.getVocab();
+        let h1 = 0x811c9dc5; // FNV-like
+        let h2 = 0x9e3779b9; // second stream
+
+        for (let i = 0; i < vocab.length; i++) {
+            const token = vocab[i];
+            h1 ^= token.length;
+            h1 = Math.imul(h1, 0x01000193);
+
+            h2 ^= i;
+            h2 = Math.imul(h2, 0x85ebca6b);
+
+            for (let j = 0; j < token.length; j++) {
+                const c = token.charCodeAt(j);
+
+                h1 ^= c;
+                h1 = Math.imul(h1, 0x01000193);
+
+                h2 ^= c;
+                h2 = Math.imul(h2, 0xc2b2ae35);
+            }
+        }
+
+        const a = (h1 >>> 0).toString(36);
+        const b = (h2 >>> 0).toString(36);
+        this.id = 'tokeniser_' + a + '_' + b;
+    }
+
+    abstract train(text: Conversation[][], cb?: (vocab: number) => void, datasetID?: string): Promise<number>;
     abstract getVocab(): string[];
     abstract getMerges(): [string, string][];
     abstract destroy(): void;
