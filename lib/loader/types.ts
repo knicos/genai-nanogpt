@@ -34,6 +34,7 @@ export interface TransformersTokeniser {
     vocab: string[];
     merges: [string, string][];
     datasetID?: string;
+    id?: string;
 }
 
 export type ModelPhase = 'untrained' | 'pretrained' | 'finetuned';

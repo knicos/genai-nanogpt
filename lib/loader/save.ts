@@ -113,6 +113,7 @@ export async function saveModel(
             vocab: tokeniser.getVocab(),
             merges: tokeniser.getMerges(),
             datasetID: tokeniser.datasetID,
+            id: tokeniser.id,
         }),
         {
             binary: false,

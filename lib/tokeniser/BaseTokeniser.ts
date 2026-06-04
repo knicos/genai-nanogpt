@@ -44,10 +44,15 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
         this.specialTokenSet.add(index);
     }
 
-    protected generateID() {
+    public generateID() {
         const vocab = this.getVocab();
         let h1 = 0x811c9dc5; // FNV-like
         let h2 = 0x9e3779b9; // second stream
+
+        if (vocab.length === 0) {
+            this.id = 'untrained';
+            return;
+        }
 
         for (let i = 0; i < vocab.length; i++) {
             const token = vocab[i];

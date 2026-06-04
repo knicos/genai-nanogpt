@@ -57,6 +57,11 @@ export default async function loadTransformers(
     if (tokeniser.datasetID) {
         tokeniserInstance.datasetID = tokeniser.datasetID;
     }
+    if (tokeniser.id) {
+        tokeniserInstance.id = tokeniser.id;
+    } else {
+        tokeniserInstance.generateID();
+    }
 
     const weights = await load_safetensors(weightData);
     const weightsMap = new Map<string, Tensor[]>();
