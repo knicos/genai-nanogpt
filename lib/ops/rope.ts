@@ -6,7 +6,7 @@ import './webgl/rope';
 import './grads/rope';
 
 export function rope(x: Tensor, cache: RoPECache, pastLength: number, negSin = false): Tensor {
-    cache.ensureRopeCache(x.shape[1]! + pastLength); // x.shape[1] = Tcur
+    cache.ensureRopeCache(x.shape[2]! + pastLength); // x.shape[1] = Tcur
     const r = engine().runKernel('Rope', { x }, {
         pastLen: pastLength,
         negSin,

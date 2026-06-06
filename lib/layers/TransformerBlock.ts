@@ -10,6 +10,7 @@ interface BlockAttributes extends ForwardAttributes {
     pastKV?: KVCache;
     seed?: number;
     attentionScores?: AttentionScores;
+    ropePositionOffset?: number;
 }
 
 export type TransformerBlockConfig = MLPConfig & RMSNormConfig & CausalSelfAttentionConfig;

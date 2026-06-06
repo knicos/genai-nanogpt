@@ -12,6 +12,7 @@ export interface ModelForwardAttributes extends ForwardAttributes {
     attentionScores?: AttentionScores;
     seed?: number;
     skipLogits?: boolean; // Whether to output embeddings instead of logits
+    ropePositionOffset?: number; // Optional offset for RoPE position encoding
 }
 
 export interface TrainingState {

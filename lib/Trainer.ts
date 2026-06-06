@@ -49,7 +49,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     constructor(
         modelOrCopy: Model<ModelForwardAttributes> | Trainer,
         tokeniser?: ITokeniser | TrainingOptions,
-        trainingType: TrainingType = 'pretraining',
+        trainingType?: TrainingType,
         options?: TrainingOptions,
         optimizer?: AdamWOptimizer
     ) {
@@ -63,7 +63,14 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             if (modelOrCopy.trainingType === 'sft' && newOptions.sftMode !== oldOptions.sftMode) {
                 needsReset = true;
             }
-            if (trainingType !== modelOrCopy.trainingType) {
+            if (
+                modelOrCopy.trainer instanceof SFTTrainer &&
+                modelOrCopy.trainer.loraName &&
+                newOptions.loraName !== modelOrCopy.trainer.loraName
+            ) {
+                needsReset = true;
+            }
+            if (trainingType !== undefined && trainingType !== modelOrCopy.trainingType) {
                 needsReset = true;
             }
 
@@ -71,15 +78,16 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             if (needsReset) {
                 if (modelOrCopy.trainingType === 'sft') {
                     this.trainer = new SFTTrainer(modelOrCopy.model, modelOrCopy.tokenizer, newOptions);
+                    this.trainer.loraName = newOptions.loraName;
                 } else {
                     this.trainer = new PreTrainer(modelOrCopy.model, modelOrCopy.tokenizer, newOptions);
                 }
-                this.trainingType = trainingType;
+                this.trainingType = trainingType || modelOrCopy.trainingType;
                 this.options = newOptions;
                 this.tokenizer = modelOrCopy.tokenizer;
             } else {
                 this.trainer = modelOrCopy.trainer;
-                this.trainingType = trainingType;
+                this.trainingType = trainingType || modelOrCopy.trainingType;
                 this.options = newOptions;
                 this.trainer.updateOptimizer(this.options);
                 this.log = modelOrCopy.log;
@@ -108,10 +116,11 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         };
         if (trainingType === 'sft') {
             this.trainer = new SFTTrainer(modelOrCopy, tokeniser as ITokeniser, options, optimizer);
+            this.trainer.loraName = options?.loraName;
         } else {
             this.trainer = new PreTrainer(modelOrCopy, tokeniser as ITokeniser, options, optimizer);
         }
-        this.trainingType = trainingType;
+        this.trainingType = trainingType || 'pretraining';
         this.tokenizer = tokeniser as ITokeniser;
     }
 
@@ -267,6 +276,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         if (this.trainingType === 'sft') {
             if (mode === 'lora') {
                 const model = this.trainer.model;
+
+                console.log('Configuring model for LoRA fine-tuning with options:', options);
 
                 if (options?.loraName) {
                     if (!model.hasLoRA(options.loraName)) {

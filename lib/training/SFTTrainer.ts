@@ -18,6 +18,7 @@ const DEFAULT_OPT_CONFIG: Partial<AdamWOptimizerConfig> = {
 
 export default class SFTTrainer extends BasicTrainer {
     public datasetBuilder: SFTDatasetBuilder;
+    public loraName?: string;
 
     constructor(
         model: Model<ModelForwardAttributes>,

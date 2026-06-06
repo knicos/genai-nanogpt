@@ -31,6 +31,7 @@ interface AttentionForwardAttributes extends ForwardAttributes {
     attentionScores?: AttentionScores;
     pastKV?: KVCache; // Optional past key/value cache for incremental decoding
     seed?: number; // Optional seed for dropout randomness
+    ropePositionOffset?: number; // Optional offset for RoPE position encoding
 }
 
 export interface CausalSelfAttentionConfig {
@@ -151,7 +152,7 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
 
             // Apply RoPE to current chunk before concatenating with past
             // The rope operator ensures the cache is large enough
-            const pastLenInitial = attr.pastKV ? attr.pastKV.cumulativeLength : 0;
+            const pastLenInitial = attr.pastKV ? attr.pastKV.cumulativeLength : attr.ropePositionOffset || 0;
             const ropeCache = attr.ropeCache;
             const ropedQ = ropeCache ? rope(qI, ropeCache, pastLenInitial) : qI;
             const ropedKNew = ropeCache ? rope(kNewI, ropeCache, pastLenInitial) : kNewI;

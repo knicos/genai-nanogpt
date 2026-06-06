@@ -141,6 +141,8 @@ export default class BasicTrainer {
             this.model.getProfiler()?.startMemory();
             const { xs, ys } = batch;
 
+            // const randomRoPEOffset = Math.floor(Math.random() * this.model.config.blockSize * 2);
+
             const f = () => {
                 const logits = this.model.forward(
                     {
@@ -149,6 +151,7 @@ export default class BasicTrainer {
                         mixedPrecision: this._mixedPrecision,
                         dropout: this._dropout,
                         layerDrop: this._layerDrop,
+                        ropePositionOffset: 0,
                     },
                     xs
                 );
