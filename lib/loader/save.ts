@@ -22,6 +22,15 @@ export interface ExtraSaveItems {
     trainingLog?: TrainingLogEntry[];
 }
 
+function collapseLog(log: TrainingLogEntry[]): TrainingLogEntry[] {
+    // Reduce length by skipping if needed.
+    if (log.length > 1000) {
+        const step = Math.ceil(log.length / 1000);
+        return log.filter((_, index) => index % step === 0 || index === log.length - 1);
+    }
+    return log;
+}
+
 export async function saveModel(
     model: Model<ModelForwardAttributes, GPTConfig>,
     tokeniser: ITokeniser,
@@ -41,7 +50,7 @@ export async function saveModel(
     }
 
     if (extraItems?.trainingLog) {
-        zipFile.file('training_log.json', JSON.stringify(extraItems.trainingLog, undefined, 4), {
+        zipFile.file('training_log.json', JSON.stringify(collapseLog(extraItems.trainingLog), undefined, 4), {
             binary: false,
         });
     }
