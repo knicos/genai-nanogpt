@@ -132,6 +132,42 @@ describe('BPE Tokeniser Tests', () => {
         expect(decoded).toEqual(conversation);
     });
 
+    it('can encode and decode a conversation with mask', async ({ expect }) => {
+        const bpeTokeniser = new BPETokeniser(100);
+
+        const conversation: Conversation[] = [
+            { role: 'user', content: 'Hello, how are you?' },
+            { role: 'assistant', content: 'I am fine, thank you!' },
+            //{ role: 'system', content: 'This is a system message.' },
+        ];
+
+        await bpeTokeniser.train([conversation]);
+
+        const encoded = bpeTokeniser.encodeConversation(conversation, false, true);
+        const decoded = bpeTokeniser.decodeConversation(encoded.tokens);
+
+        expect(decoded).toEqual(conversation);
+
+        const expectedMask: boolean[] = [];
+        let insideUser = false;
+        encoded.tokens.forEach((token) => {
+            if (token === bpeTokeniser.getSpecialTokenIndex('<|user_start|>')) {
+                insideUser = true;
+            }
+            expectedMask.push(
+                !insideUser &&
+                    token !== bpeTokeniser.bosToken &&
+                    token !== bpeTokeniser.getSpecialTokenIndex('<|assistant_start|>')
+            );
+            if (token === bpeTokeniser.getSpecialTokenIndex('<|user_end|>')) {
+                insideUser = false;
+            }
+        });
+
+        expect(encoded.mask).toHaveLength(encoded.tokens.length);
+        expect(encoded.mask).toEqual(expectedMask);
+    });
+
     it('can encode and decode a text only conversation', async ({ expect }) => {
         const bpeTokeniser = new BPETokeniser(100);
 

@@ -7,7 +7,7 @@ describe('Validation split', () => {
     it('should split with the correct size', async ({ expect }) => {
         const mockTokenizer = {
             vocabSize: 256,
-            encodeConversation: vi.fn(async (conversation: Conversation[]) =>
+            encodeConversation: vi.fn((conversation: Conversation[]) =>
                 conversation.map((msg) => msg.content.split('').map((c: string) => c.charCodeAt(0))).flat()
             ),
         } as unknown as ITokeniser;
@@ -17,7 +17,7 @@ describe('Validation split', () => {
         const datasetBuilder = new DatasetBuilder(mockTokenizer, blockSize);
 
         const textData: Conversation[] = [{ role: 'user', content: 'hello world hello world hello world hello world' }];
-        const allTokens = new Uint16Array(await flattenTokens([textData], mockTokenizer));
+        const allTokens = flattenTokens([textData], mockTokenizer);
 
         const { trainState, validationState, size } = await createTrainValidationSplit(
             allTokens,

@@ -35,6 +35,40 @@ describe('Task', () => {
         expect(decodedText[1].role).toBe('text');
     });
 
+    it('can generate a mask', async ({ expect }) => {
+        const data1: Conversation[][] = [
+            [
+                { role: 'user', content: 'Hello world.' },
+                { role: 'assistant', content: 'How are you?' },
+            ],
+        ];
+        const data2: Conversation[][] = [
+            [
+                { role: 'user', content: 'This is a test.' },
+                { role: 'assistant', content: 'Testing 123.' },
+            ],
+        ];
+        const task1 = new ConversationTask(data1);
+        const task2 = new ConversationTask(data2);
+
+        const tasks = [task1, task2];
+
+        const tokeniser = new CharTokeniser(200);
+        await tokeniser.train(data1.concat(data2));
+        const tokens = await tokensFromTasks(tasks, tokeniser, undefined, true);
+
+        const decodedText = tokeniser.decodeConversation(tokens.tokens);
+
+        console.log('Mask:', tokens.mask);
+
+        expect(tokens.mask.length).toBe(tokens.tokens.length);
+
+        expect(decodedText[0].content).toContain('Hello world.');
+        expect(decodedText[0].role).toBe('user');
+        expect(decodedText[1].content).toContain('How are you?');
+        expect(decodedText[1].role).toBe('assistant');
+    });
+
     it('can handle re-expansion of array when large token count', async ({ expect }) => {
         const data1: Conversation[][] = [[{ role: 'text', content: 'short first sentence' }]];
 

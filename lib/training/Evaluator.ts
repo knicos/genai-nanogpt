@@ -1,10 +1,8 @@
 import { LazyIterator } from '@tensorflow/tfjs-data/dist/iterators/lazy_iterator';
 import { Dataset } from '@tensorflow/tfjs-data';
-import { tensor, Tensor, TensorContainer, tidy } from '@tensorflow/tfjs-core';
+import { Tensor, TensorContainer, tidy } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from '@base/models/model';
 import { calculateAccuracy, calculateLoss } from './loss';
-import { Conversation, ITokeniser } from '@base/main';
-import { buildSFTExample } from './SFTDatasetBuilder';
 
 interface Result {
     loss: number;
@@ -19,26 +17,11 @@ export default class Evaluator {
 
     constructor(
         private model: Model<ModelForwardAttributes>,
-        dataset: Dataset<TensorContainer> | Conversation[][],
-        tokeniser?: ITokeniser,
+        dataset: Dataset<TensorContainer>,
         masked?: boolean
     ) {
         this.masked = !!masked;
-        if (Array.isArray(dataset)) {
-            if (!tokeniser) {
-                throw new Error('Tokeniser is required when dataset is an array of conversations');
-            }
-            const example = dataset
-                .map((data) => buildSFTExample(data, -100, tokeniser, model.config.blockSize))
-                .filter((e) => e !== null);
-            if (example.length === 0) {
-                return;
-            }
-            this.xs = tensor(example.map((ex) => ex.xs));
-            this.ys = tensor(example.map((ex) => ex.ys));
-        } else {
-            this.iterator = dataset.iterator();
-        }
+        this.iterator = dataset.iterator();
     }
 
     dispose() {

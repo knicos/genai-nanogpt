@@ -18,6 +18,16 @@ export interface ITokeniser extends EE<'trainStatus'> {
     destroy(): void;
     encode(text: string): number[];
     encodeConversation(conversation: Conversation[], completion?: boolean): number[];
+    encodeConversation(
+        conversation: Conversation[],
+        completion: boolean,
+        masking: boolean
+    ): { tokens: number[]; mask: boolean[] };
+    encodeConversation(
+        conversation: Conversation[],
+        completion?: boolean,
+        masking?: boolean
+    ): number[] | { tokens: number[]; mask: boolean[] };
     encodeSequence(text: string): number[];
     encodeAsSequence(conversation: Conversation[], completion?: boolean): number[];
     decode(tokens: number[] | Uint16Array): string;

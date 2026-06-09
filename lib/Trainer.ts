@@ -9,7 +9,6 @@ import { TrainingOptions, TrainingLogEntry } from './training/types';
 import { createTrainValidationSplit } from './training/validation';
 import SFTTrainer from './training/SFTTrainer';
 import { AdamWOptimizer } from './training/AdamW';
-import splitValidation from './training/tasks/splitter';
 import { v4 as uuidv4 } from 'uuid';
 import { DatasetMetadata } from './loader/types';
 
@@ -77,8 +76,9 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             // Sometimes need to get a new optimizer
             if (needsReset) {
                 if (modelOrCopy.trainingType === 'sft') {
-                    this.trainer = new SFTTrainer(modelOrCopy.model, modelOrCopy.tokenizer, newOptions);
-                    this.trainer.loraName = newOptions.loraName;
+                    const newSFTTrainer = new SFTTrainer(modelOrCopy.model, modelOrCopy.tokenizer, newOptions);
+                    this.trainer = newSFTTrainer;
+                    newSFTTrainer.loraName = newOptions.loraName;
                 } else {
                     this.trainer = new PreTrainer(modelOrCopy.model, modelOrCopy.tokenizer, newOptions);
                 }
@@ -115,8 +115,9 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             sftMode: 'full',
         };
         if (trainingType === 'sft') {
-            this.trainer = new SFTTrainer(modelOrCopy, tokeniser as ITokeniser, options, optimizer);
-            this.trainer.loraName = options?.loraName;
+            const newSFTTrainer = new SFTTrainer(modelOrCopy, tokeniser as ITokeniser, options, optimizer);
+            this.trainer = newSFTTrainer;
+            newSFTTrainer.loraName = options?.loraName;
         } else {
             this.trainer = new PreTrainer(modelOrCopy, tokeniser as ITokeniser, options, optimizer);
         }
@@ -213,7 +214,8 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                 this.trainer.tokenizer,
                 this.trainer.datasetBuilder,
                 options?.batchSize || 32,
-                options?.validationSplit || 0.1
+                options?.validationSplit || 0.1,
+                options?.maskedLoss ?? false
             );
 
             const totalTokens = size * (1 - (options?.validationSplit || 0));
@@ -230,35 +232,24 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
                 throw new Error('SFT training requires Task[] input');
             }
 
-            if (options?.validationSplit && options.validationSplit > 0) {
-                const splitTasks = splitValidation(tasks, options?.validationSplit);
+            const { trainDataset, validationDataset, size } = await createTrainValidationSplit(
+                tasks,
+                this.trainer.tokenizer,
+                this.trainer.datasetBuilder,
+                options?.batchSize || 32,
+                options?.validationSplit || 0.1,
+                options?.maskedLoss ?? true
+            );
 
-                const trainDataset = await this.trainer.datasetBuilder.createSFTDataset(
-                    [splitTasks.training],
-                    options?.batchSize || 32,
-                    -100
-                );
-                const validationDataset = await this.trainer.datasetBuilder.createSFTDataset(
-                    [splitTasks.validation],
-                    options?.batchSize || 32,
-                    -100
-                );
+            const totalTokens = size * (1 - (options?.validationSplit || 0));
 
-                this.validationDataset = validationDataset;
-                this.trainDataset = trainDataset;
-            } else {
-                const trainDataset = await this.trainer.datasetBuilder.createSFTDataset(
-                    tasks,
-                    options?.batchSize || 32,
-                    -100
-                );
-
-                this.trainDataset = trainDataset;
-            }
-            this.totalTokens = tasks.reduce((acc, conv) => acc + conv.length, 0);
+            this.trainDataset = trainDataset;
+            this.validationDataset = validationDataset;
+            this.totalTokens = totalTokens;
             this.options.epochSteps = Math.ceil(
                 this.totalTokens / ((options?.batchSize || 32) * this.model.config.blockSize)
             );
+
             this.trainer.updateOptimizer(this.options);
         }
     }

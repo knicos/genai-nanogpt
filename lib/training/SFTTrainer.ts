@@ -1,9 +1,9 @@
 import Model, { ModelForwardAttributes } from '@base/models/model';
 import BasicTrainer from './BasicTrainer';
 import { ITokeniser } from '@base/tokeniser/type';
-import { SFTDatasetBuilder } from './SFTDatasetBuilder';
 import { AdamWOptimizer } from './AdamW';
 import { AdamWOptimizerConfig } from './types';
+import { DatasetBuilder } from './DatasetBuilder';
 
 const DEFAULT_OPT_CONFIG: Partial<AdamWOptimizerConfig> = {
     decayEpochs: 100,
@@ -17,7 +17,7 @@ const DEFAULT_OPT_CONFIG: Partial<AdamWOptimizerConfig> = {
 };
 
 export default class SFTTrainer extends BasicTrainer {
-    public datasetBuilder: SFTDatasetBuilder;
+    public datasetBuilder: DatasetBuilder;
     public loraName?: string;
 
     constructor(
@@ -30,7 +30,7 @@ export default class SFTTrainer extends BasicTrainer {
 
         this.optimizerConfig.minLearningRate = optConfig?.minLearningRate ?? this.optimizerConfig.learningRate / 20;
         this.updateOptimizer();
-        this.datasetBuilder = new SFTDatasetBuilder(tokenizer, model.config.blockSize);
+        this.datasetBuilder = new DatasetBuilder(tokenizer, model.config.blockSize);
         this.maskedLoss = true;
     }
 }

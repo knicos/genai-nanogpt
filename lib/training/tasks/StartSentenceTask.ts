@@ -30,9 +30,15 @@ export default class StartSentenceTask extends Task {
         return this.conversationFromString(text);
     }
 
-    nextTokens(tokeniser: ITokeniser): number[] | null {
+    nextTokens(tokeniser: ITokeniser): number[] | null;
+    nextTokens(tokeniser: ITokeniser, masking: boolean): { tokens: number[]; mask: boolean[] } | null;
+    nextTokens(tokeniser: ITokeniser, masking?: boolean): number[] | { tokens: number[]; mask: boolean[] } | null {
         const conv = this.nextConversation();
-        return conv ? tokeniser.encodeConversation(conv) : null;
+        if (!conv) {
+            return null;
+        }
+        const tokens = tokeniser.encodeConversation(conv, false, masking);
+        return tokens;
     }
 
     shuffle() {

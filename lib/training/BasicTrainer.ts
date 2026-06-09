@@ -63,6 +63,10 @@ export default class BasicTrainer {
         this.optimizer = adam;
     }
 
+    setLossMasking() {
+        this.maskedLoss = true;
+    }
+
     setGradientCheckpointing(enabled: boolean): void {
         this._gradientCheckpointing = enabled;
     }
@@ -269,9 +273,7 @@ export default class BasicTrainer {
         this.running = true;
         state.logStartTime = startTime;
 
-        const evaluator = validationDataset
-            ? new Evaluator(this.model, validationDataset, undefined, this.maskedLoss)
-            : undefined;
+        const evaluator = validationDataset ? new Evaluator(this.model, validationDataset, this.maskedLoss) : undefined;
         const iterator = await dataset.iterator();
 
         try {
@@ -281,6 +283,20 @@ export default class BasicTrainer {
                 const batch = result.value;
 
                 const lossScalar = this.trainStep(state, batch, false);
+
+                if (options.debug) {
+                    const lossValue = (await lossScalar.data())[0];
+                    if (isNaN(lossValue) || !isFinite(lossValue)) {
+                        console.error('Invalid loss value:', lossValue);
+                        console.error('Batch xs:', batch.xs.toString());
+                        console.error('Batch ys:', batch.ys.toString());
+                        console.error('State:', state);
+                        throw new Error('Loss is NaN or Infinity');
+                    } else {
+                        console.log(`Step ${state.step}: Loss = ${lossValue}`);
+                    }
+                }
+
                 batch.xs.dispose();
                 batch.ys.dispose();
 
@@ -438,9 +454,7 @@ export default class BasicTrainer {
         this.running = true;
         state.logStartTime = startTime;
 
-        const evaluator = validationDataset
-            ? new Evaluator(this.model, validationDataset, undefined, this.maskedLoss)
-            : undefined;
+        const evaluator = validationDataset ? new Evaluator(this.model, validationDataset, this.maskedLoss) : undefined;
         const iterator = await dataset.iterator();
 
         try {
@@ -453,6 +467,20 @@ export default class BasicTrainer {
 
                 // Do the actual training step
                 const lossScalar = this.trainStep(state, batch, false, keepGrads);
+
+                if (options.debug) {
+                    const lossValue = (await lossScalar.data())[0];
+                    if (isNaN(lossValue) || !isFinite(lossValue)) {
+                        console.error('Invalid loss value:', lossValue);
+                        console.error('Batch xs:', await batch.xs.array());
+                        console.error('Batch ys:', await batch.ys.array());
+                        console.error('State:', state);
+                        throw new Error('Loss is NaN or Infinity');
+                    } else {
+                        console.log(`Step ${state.step}: Loss = ${lossValue}`);
+                    }
+                }
+
                 batch.xs.dispose();
                 batch.ys.dispose();
 

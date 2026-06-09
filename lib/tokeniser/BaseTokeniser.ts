@@ -99,8 +99,22 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
             : [this.bosToken, ...tokens, this.eosToken];
     }
 
-    encodeConversation(conversation: Conversation[], completion?: boolean): number[] {
+    encodeConversation(conversation: Conversation[], completion?: boolean): number[];
+    encodeConversation(
+        conversation: Conversation[],
+        completion: boolean,
+        masking: boolean
+    ): { tokens: number[]; mask: boolean[] };
+    encodeConversation(
+        conversation: Conversation[],
+        completion?: boolean,
+        masking?: boolean
+    ): number[] | { tokens: number[]; mask: boolean[] } {
         const resultTokens: number[][] = [[this.bosToken]];
+        let mask: boolean[][] | undefined = undefined;
+        if (masking) {
+            mask = [[false]]; // mask BOS token
+        }
 
         const startTokens = [
             this.getSpecialTokenIndex('<|user_start|>')!,
@@ -114,16 +128,19 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
         ];
 
         for (const fragment of conversation) {
+            let maskContent = false;
             const encodedContent = this.encode(fragment.content);
             switch (fragment.role) {
                 case 'user':
                     resultTokens.push([startTokens[0]]);
+                    maskContent = true;
                     break;
                 case 'assistant':
                     resultTokens.push([startTokens[1]]);
                     break;
                 case 'system':
                     resultTokens.push([startTokens[2]]);
+                    maskContent = true;
                     break;
             }
             resultTokens.push(encodedContent);
@@ -138,16 +155,34 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
                     resultTokens.push([endTokens[2]]);
                     break;
             }
+
+            if (masking && mask && maskContent) {
+                // Mask all content tokens, but not special tokens
+                mask.push([false]); // for start token
+                mask.push(encodedContent.map(() => false));
+                mask.push([false]); // for end token
+            } else if (masking && mask) {
+                // Unmask all tokens for this fragment
+                mask.push([false]); // for start token
+                mask.push(encodedContent.map(() => true));
+                mask.push([true]); // for end token
+            }
         }
         const tokens = resultTokens.flat();
 
         if (completion) {
             tokens.push(startTokens[1]); // Assistant start token for completion
+            if (masking && mask) {
+                mask.push([false]);
+            }
         } else {
             tokens.push(this.eosToken);
+            if (masking && mask) {
+                mask.push([true]);
+            }
         }
 
-        return tokens;
+        return masking && mask ? { tokens, mask: mask.flat() } : tokens;
     }
 
     abstract decode(tokens: number[]): string;

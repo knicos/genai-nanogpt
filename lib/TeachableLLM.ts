@@ -128,6 +128,13 @@ export default class TeachableLLM {
         if (!this._model) {
             throw new Error('model_not_initialized.');
         }
+        if (this.model.lora?.name === name) {
+            return; // Already attached
+        }
+        if (this._trainer) {
+            this._trainer.dispose();
+            this._trainer = null;
+        }
         this._model.attachLoRA(name);
         this.ee.emit('changeLoRA');
     }

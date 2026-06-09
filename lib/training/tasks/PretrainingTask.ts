@@ -30,12 +30,18 @@ export default class PretrainingTask extends Task {
         return [conv];
     }
 
-    nextTokens(tokeniser: ITokeniser): number[] | null {
+    nextTokens(tokeniser: ITokeniser): number[] | null;
+    nextTokens(tokeniser: ITokeniser, masking: boolean): { tokens: number[]; mask: boolean[] } | null;
+    nextTokens(tokeniser: ITokeniser, masking?: boolean): number[] | { tokens: number[]; mask: boolean[] } | null {
         if (this.index >= this.rawText.length) {
             return null;
         }
         const tokens = tokeniser.encodeSequence(this.rawText[this.index]);
         this.index++;
+        if (masking) {
+            const mask = new Array(tokens.length).fill(true);
+            return { tokens, mask };
+        }
         return tokens;
     }
 
@@ -46,14 +52,12 @@ export default class PretrainingTask extends Task {
 
     async estimateTokens(tokeniser: ITokeniser): Promise<number> {
         return (
-            (
-                await tokeniser.encodeConversation([
-                    {
-                        role: 'assistant',
-                        content: this.rawText[0],
-                    },
-                ])
-            ).length * this.length
+            tokeniser.encodeConversation([
+                {
+                    role: 'assistant',
+                    content: this.rawText[0],
+                },
+            ]).length * this.length
         );
     }
 }

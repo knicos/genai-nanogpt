@@ -76,6 +76,7 @@ export interface TrainingOptions extends Partial<AdamWOptimizerConfig> {
     labelSmoothing?: number; // Amount of label smoothing to apply during loss calculation
     dropout?: number; // Dropout rate to apply during training
     layerDrop?: number; // Layer drop rate to apply during training
+    debug?: boolean;
     onStep?: (log: TrainingLogEntry) => void; // Callback for each training step
 }
 

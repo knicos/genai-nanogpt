@@ -8,7 +8,8 @@ export async function createTrainValidationSplit(
     tokeniser: ITokeniser,
     datasetBuilder: DatasetBuilder,
     batchSize: number,
-    validationSplit = 0.1
+    validationSplit = 0.1,
+    masking?: boolean
 ): Promise<{
     trainDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
     validationDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
@@ -16,7 +17,9 @@ export async function createTrainValidationSplit(
     validationState: DatasetState;
     trainState: DatasetState;
 }> {
-    const allTokens = tasks instanceof Uint16Array ? tasks : await tokensFromTasks(tasks, tokeniser);
+    const tokens = tasks instanceof Uint16Array ? tasks : await tokensFromTasks(tasks, tokeniser, undefined, masking);
+    const allTokens = tokens instanceof Uint16Array ? tokens : tokens.tokens;
+    const mask = tokens instanceof Uint16Array ? undefined : tokens.mask;
 
     const validationMask = new Set<number>();
     if (validationSplit > 0) {
@@ -52,7 +55,8 @@ export async function createTrainValidationSplit(
     const { dataset: trainDataset, state: trainState } = await datasetBuilder.createTextDataset(
         allTokens,
         batchSize,
-        shuffle(trainIndexes)
+        shuffle(trainIndexes),
+        mask ? mask : undefined
     );
 
     const { dataset: validationDataset, state: validationState } = await datasetBuilder.createTextDataset(

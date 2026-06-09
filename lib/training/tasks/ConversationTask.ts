@@ -29,12 +29,14 @@ export default class ConversationTask extends Task {
         return conv;
     }
 
-    nextTokens(tokeniser: ITokeniser): number[] | null {
+    nextTokens(tokeniser: ITokeniser): number[] | null;
+    nextTokens(tokeniser: ITokeniser, masking: boolean): { tokens: number[]; mask: boolean[] } | null;
+    nextTokens(tokeniser: ITokeniser, masking?: boolean): number[] | { tokens: number[]; mask: boolean[] } | null {
         const conv = this.nextConversation();
         if (!conv) {
             return null;
         }
-        const tokens = tokeniser.encodeConversation(conv);
+        const tokens = tokeniser.encodeConversation(conv, false, masking);
         return tokens;
     }
 
@@ -50,6 +52,6 @@ export default class ConversationTask extends Task {
     }
 
     async estimateTokens(tokeniser: ITokeniser): Promise<number> {
-        return (await tokeniser.encodeConversation(this.rawConvo[0])).length * this.length;
+        return tokeniser.encodeConversation(this.rawConvo[0]).length * this.length;
     }
 }

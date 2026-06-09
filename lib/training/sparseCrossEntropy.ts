@@ -59,7 +59,7 @@ export function sparseSoftmaxCrossEntropy(
 
 // TODO: Create custom operator.
 export function createSoftmaxCrossEntropyWithGrad(masked?: boolean, keepBatch?: boolean, labelSmoothing = 0) {
-    const ignoreIndex = -100;
+    const ignoreIndex = 0xffff;
 
     const sparseSoftmaxCrossEntropyGrad = tf.customGrad(
         // @ts-expect-error Invalid params
@@ -78,6 +78,8 @@ export function createSoftmaxCrossEntropyWithGrad(masked?: boolean, keepBatch?: 
                 const validMaskBool = tf.notEqual(labels1d, ignoreTensor);
                 validMask = validMaskBool.cast('float32');
                 safeLabels = tf.where(validMaskBool, labels1d, tf.zerosLike(labels1d));
+                ignoreTensor.dispose();
+                validMaskBool.dispose();
             } else {
                 safeLabels = labels1d;
             }

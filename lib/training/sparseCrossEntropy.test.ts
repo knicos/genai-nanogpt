@@ -88,7 +88,7 @@ describe('sparseCrossEntropy', () => {
             ],
             [7, 13]
         );
-        const labels = tf.tensor1d([-100, 2, 3, 1, 5, -100, -100], 'int32');
+        const labels = tf.tensor1d([0xffff, 2, 3, 1, 5, 0xffff, 0xffff], 'int32');
 
         const lossFn = createSoftmaxCrossEntropyWithGrad(true);
 
@@ -151,7 +151,7 @@ describe('sparseCrossEntropy', () => {
             ],
             [2, 4]
         );
-        const labels = tf.tensor1d([2, -100], 'int32');
+        const labels = tf.tensor1d([2, 0xffff], 'int32');
 
         const lossFun = createSoftmaxCrossEntropyWithGrad(true);
         const f = (x: tf.Tensor) => lossFun(x as tf.Tensor2D, labels) as tf.Scalar;
@@ -180,7 +180,7 @@ describe('sparseCrossEntropy', () => {
             ],
             [3, 4]
         );
-        const labels = tf.tensor1d([2, 3, -100], 'int32');
+        const labels = tf.tensor1d([2, 3, 0xffff], 'int32');
 
         const lossFun = createSoftmaxCrossEntropyWithGrad(true);
         const fCustom = (x: tf.Tensor) => lossFun(x as tf.Tensor2D, labels) as tf.Scalar;
@@ -190,7 +190,7 @@ describe('sparseCrossEntropy', () => {
         const fRef = (x: tf.Tensor) =>
             tf.tidy(() => {
                 const x2d = x as tf.Tensor2D;
-                const validMaskBool = tf.notEqual(labels, tf.scalar(-100, 'int32'));
+                const validMaskBool = tf.notEqual(labels, tf.scalar(0xffff, 'int32'));
                 const validMask = validMaskBool.cast('float32');
                 const safeLabels = tf.where(validMaskBool, labels, tf.zerosLike(labels));
 
