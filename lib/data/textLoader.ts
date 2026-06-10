@@ -61,7 +61,11 @@ function isConversation(obj: unknown): obj is Conversation[] {
     );
 }
 
-export default async function loadTextData(file: File, options?: DataOptions): Promise<Conversation[][]> {
+export default async function loadTextData(
+    file: File,
+    options?: DataOptions,
+    cb?: (progress: number) => void
+): Promise<Conversation[][]> {
     const type = file.type !== '' ? file.type : getFileType(file.name);
     if (type === 'application/parquet') {
         return loadParquet(file, options?.maxSize, options?.column);
@@ -89,10 +93,18 @@ export default async function loadTextData(file: File, options?: DataOptions): P
     }
     if (type === 'application/jsonl') {
         const data = await file.text();
+
+        if (cb) {
+            cb(0.1);
+        }
+
         return data
             .split('\n')
             .filter((line) => line.trim() !== '')
-            .map((line) => {
+            .map((line, index, array) => {
+                if (cb && index % 1000 === 0) {
+                    cb(0.1 + (index / array.length) * 0.9);
+                }
                 try {
                     const obj = JSON.parse(line);
                     if (isConversation(obj)) {
@@ -113,19 +125,35 @@ export default async function loadTextData(file: File, options?: DataOptions): P
     if (type === 'application/zip') {
         const zipFile = await zip.loadAsync(file);
         // Loop files and call loadTextData on each, then concatenate results
-        const results: Conversation[][] = [];
-        for (const fileName of Object.keys(zipFile.files)) {
+        let results: Conversation[][] = [];
+        const files = Object.keys(zipFile.files);
+
+        for (let i = 0; i < files.length; i++) {
+            const fileName = files[i];
             const zipEntry = zipFile.file(fileName);
             if (zipEntry) {
-                const blob = await zipEntry.async('blob');
+                const blob = await zipEntry.async('blob', (meta) => {
+                    if (cb) {
+                        const progress = (meta.percent / 100) * 0.9;
+                        const fileProgress = progress / files.length;
+                        const overallProgress = 0.1 + (fileProgress + (i / files.length) * 0.9);
+                        cb(overallProgress);
+                    }
+                });
                 const nestedResults = await loadTextData(new File([blob], fileName), options);
-                results.push(...nestedResults);
+                if (cb) {
+                    cb(0.1 + ((i + 1) / files.length) * 0.9);
+                }
+                results = results.concat(nestedResults);
             }
         }
         return results;
     }
     if (type === 'text/csv') {
         const data = await file.text();
+        if (cb) {
+            cb(0.1);
+        }
         return new Promise<Conversation[][]>((resolve, reject) => {
             papa.parse<string[]>(data, {
                 header: false,
