@@ -25,17 +25,8 @@ stages:
           - job: ESLint
             displayName: ESLint
             steps:
-                - task: Cache@2
-                  inputs:
-                      key: '"npmcache" | "$(Agent.OS)" | package-lock.json'
-                      restoreKeys: |
-                          npmcache | "$(Agent.OS)"
-                          npmcache
-                      path: $(NPM_CACHE_FOLDER)
-                  displayName: Cache NPM packages
                 - script: |
-                      npm set cache $(NPM_CACHE_FOLDER)
-                      npm ci --cache $(NPM_CACHE_FOLDER)
+                      npm ci
                       npm run lint
     - stage: Build
       dependsOn: Static
@@ -47,19 +38,8 @@ stages:
                   inputs:
                       version: '22.x'
                   displayName: 'Install Node.js'
-
-                - task: Cache@2
-                  inputs:
-                      key: '"npmcache" | "$(Agent.OS)" | package-lock.json'
-                      restoreKeys: |
-                          npmcache | "$(Agent.OS)"
-                          npmcache
-                      path: $(NPM_CACHE_FOLDER)
-                  displayName: Cache NPM packages
-
                 - script: |
-                      npm set cache $(NPM_CACHE_FOLDER)
-                      npm ci --cache $(NPM_CACHE_FOLDER)
+                      npm ci
                       npm run build
                   displayName: 'Build'
 
@@ -73,18 +53,8 @@ stages:
                   inputs:
                       version: '22.x'
                   displayName: 'Install Node.js'
-
-                - task: Cache@2
-                  inputs:
-                      key: '"npmcache" | "$(Agent.OS)" | package-lock.json'
-                      restoreKeys: |
-                          npmcache | "$(Agent.OS)"
-                          npmcache
-                      path: $(NPM_CACHE_FOLDER)
-                  displayName: Cache NPM packages
                 - script: |
-                      npm set cache $(NPM_CACHE_FOLDER)
-                      npm ci --cache $(NPM_CACHE_FOLDER)
+                      npm ci
                       CI=true npm run ci:test
                   displayName: 'Test'
                 - task: PublishTestResults@2
@@ -109,18 +79,9 @@ stages:
                   inputs:
                       version: '22.x'
                   displayName: 'Install Node.js'
-                - task: Cache@2
-                  inputs:
-                      key: '"npmcache" | "$(Agent.OS)" | package-lock.json'
-                      restoreKeys: |
-                          npmcache | "$(Agent.OS)"
-                          npmcache
-                      path: $(NPM_CACHE_FOLDER)
-                  displayName: Cache NPM packages
                 - script: |
                       echo -e "\n//registry.npmjs.org/:_authToken=$(NPM_TOKEN)" >> ./.npmrc
-                      npm set cache $(NPM_CACHE_FOLDER)
-                      npm ci --cache $(NPM_CACHE_FOLDER)
+                      npm ci
                       npm run build
                       npm version --git-tag-version=false ${BUILD_SOURCEBRANCHNAME}
                       npm publish --access public

@@ -106,7 +106,7 @@ export async function saveModel(
         name: options?.name,
         training: model.metaData?.training || undefined,
         reference: model.metaData?.url || undefined,
-        phase: model.metaData?.phase || undefined,
+        mode: model.metaData?.mode || undefined,
         pretrainingData: model.metaData?.pretrainingData || undefined,
         pretrainingSettings: model.metaData?.pretrainingSettings || undefined,
         generationSettings: model.metaData?.generationSettings || undefined,
