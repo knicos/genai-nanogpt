@@ -1,5 +1,4 @@
 import papa from 'papaparse';
-import { loadParquet } from './parquet';
 import { loadPDF } from './pdf';
 import { loadDOCX } from './docx';
 import zip from 'jszip';
@@ -68,7 +67,9 @@ export default async function loadTextData(
 ): Promise<Conversation[][]> {
     const type = file.type !== '' ? file.type : getFileType(file.name);
     if (type === 'application/parquet') {
-        return loadParquet(file, options?.maxSize, options?.column);
+        throw new Error(
+            'Parquet loading is not currently supported in the browser. Please convert your data to JSONL format.'
+        );
     }
     if (type === 'application/pdf') {
         return loadPDF(file, options?.maxSize);

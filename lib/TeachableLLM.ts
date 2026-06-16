@@ -13,10 +13,10 @@ import Model, { ModelForwardAttributes } from './models/model';
 import createModelInstance from './models/factory';
 import { Task } from './training/tasks/Task';
 import { TrainingLogEntry, TrainingOptions } from './training/types';
-import { ModelPhase, TransformersMetadata } from './loader/types';
+import { ModelMode, TransformersMetadata } from './loader/types';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
-type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded' | 'phase' | 'changeLoRA';
+type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded' | 'mode' | 'changeLoRA';
 
 export default class TeachableLLM {
     private ee = new EE<TeachableLLMEvents>();
@@ -48,17 +48,24 @@ export default class TeachableLLM {
         return this._tokeniser?.getVocab() || [];
     }
 
-    get phase(): ModelPhase {
-        return this._model?.metaData?.phase ?? 'untrained';
+    get mode(): ModelMode {
+        return this._model?.metaData?.mode ?? 'untrained';
     }
 
-    set phase(phase: ModelPhase) {
+    set mode(mode: ModelMode) {
         if (!this._model) {
             throw new Error('model_not_initialized.');
         }
 
-        this._model.metaData.phase = phase;
-        this.ee.emit('phase', phase);
+        if (this._model.metaData.mode === 'conversational' && mode === 'completion') {
+            return;
+        }
+        if (mode === 'untrained') {
+            return;
+        }
+
+        this._model.metaData.mode = mode;
+        this.ee.emit('mode', mode);
     }
 
     /** Model is fully loaded */
@@ -224,7 +231,7 @@ export default class TeachableLLM {
 
                         teachableLLM.setStatus('ready');
                         teachableLLM.ee.emit('loaded');
-                        teachableLLM.ee.emit('phase', teachableLLM.phase);
+                        teachableLLM.ee.emit('mode', teachableLLM.mode);
                     })
                     .catch((err) => {
                         teachableLLM.setStatus('error');
@@ -257,11 +264,11 @@ export default class TeachableLLM {
                 if (tmodel.tokeniser.trained) {
                     tmodel.setStatus('ready');
                     tmodel.ee.emit('loaded');
-                    tmodel.ee.emit('phase', tmodel.phase);
+                    tmodel.ee.emit('mode', tmodel.mode);
                 } else {
                     tmodel.setStatus('awaitingTokens');
                     tmodel.ee.emit('loaded');
-                    tmodel.ee.emit('phase', tmodel.phase);
+                    tmodel.ee.emit('mode', tmodel.mode);
                     tmodel.tokeniser.once('trainStatus', (status) => {
                         if (status === 'trained') {
                             tmodel.setStatus('ready');
@@ -325,7 +332,7 @@ export default class TeachableLLM {
 
         trainer.on('start', () => {
             this.setStatus('training');
-            this.phase = trainingType === 'sft' ? 'finetuned' : 'pretrained';
+            this.ee.emit('mode', this.mode);
         });
         trainer.on('stop', () => this.setStatus('ready'));
         trainer.on('log', async (step: TrainingLogEntry) => {
@@ -395,7 +402,7 @@ export default class TeachableLLM {
     }
 
     on(event: 'status', listener: (status: TeachableLLMStatus) => void): void;
-    on(event: 'phase', listener: (phase: ModelPhase) => void): void;
+    on(event: 'mode', listener: (mode: ModelMode) => void): void;
     on(event: 'error', listener: (error: Error) => void): void;
     on(event: 'trainStep', listener: (step: TrainingLogEntry) => void): void;
     on(event: 'loaded' | 'changeLoRA', listener: () => void): void;
@@ -410,7 +417,7 @@ export default class TeachableLLM {
     }
 
     off(event: 'status', listener: (status: TeachableLLMStatus) => void): void;
-    off(event: 'phase', listener: (phase: ModelPhase) => void): void;
+    off(event: 'mode', listener: (mode: ModelMode) => void): void;
     off(event: 'error', listener: (error: Error) => void): void;
     off(event: 'trainStep', listener: (step: TrainingLogEntry) => void): void;
     off(event: 'loaded' | 'changeLoRA', listener: () => void): void;

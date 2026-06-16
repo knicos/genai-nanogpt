@@ -33,8 +33,8 @@ const reshapeDispatch = (device: GPUDevice, program: WebGPUProgram): [number, nu
 };
 
 interface ExtendedAdapterInfo extends GPUAdapterInfo {
-    subgroupMaxSize?: number;
-    subgroupMinSize?: number;
+    subgroupMaxSize: number;
+    subgroupMinSize: number;
 }
 
 export default class WebGPUBackendPatch extends WebGPUBackend {

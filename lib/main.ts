@@ -7,7 +7,7 @@ export { default as BPETokeniser } from './tokeniser/bpe';
 export { default as waitForModel } from './utilities/waitForModel';
 export { default as generateDatasetID } from './utilities/datasetID';
 export { default as loadTextData } from './data/textLoader';
-export type { DatasetMetadata } from './loader/types';
+export type { DatasetMetadata, ModelMode } from './loader/types';
 export { default as Generator, type IGenerator } from './Generator';
 export { default as Evaluator } from './training/Evaluator';
 export { default as Trainer } from './Trainer';

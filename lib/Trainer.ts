@@ -201,57 +201,65 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     async prepare(tasks: Task[] | Uint16Array = [], datasets?: DatasetMetadata[]): Promise<void> {
         const options = this.options;
 
+        const isLoRA = options.loraName || options.loraConfig;
+        if (datasets && isLoRA) {
+            throw new Error('Cannot specify datasets when using LoRA fine-tuning');
+        } else if (!datasets && !isLoRA) {
+            throw new Error('Must specify datasets for non-LoRA training');
+        }
+
         if (datasets) {
-            this.model.metaData.pretrainingData = datasets.map((dataset) => ({
-                id: dataset.id,
-                name: dataset.name,
-            }));
-        }
-
-        if (this.trainingType === 'pretraining' && this.trainer instanceof PreTrainer) {
-            const { trainDataset, validationDataset, size } = await createTrainValidationSplit(
-                tasks,
-                this.trainer.tokenizer,
-                this.trainer.datasetBuilder,
-                options?.batchSize || 32,
-                options?.validationSplit || 0.1,
-                options?.maskedLoss ?? false
-            );
-
-            const totalTokens = size * (1 - (options?.validationSplit || 0));
-
-            this.trainDataset = trainDataset;
-            this.validationDataset = validationDataset;
-            this.totalTokens = totalTokens;
-            this.options.epochSteps = Math.ceil(
-                this.totalTokens / ((options?.batchSize || 32) * this.model.config.blockSize)
-            );
-            this.trainer.updateOptimizer(this.options);
-        } else if (this.trainingType === 'sft' && this.trainer instanceof SFTTrainer) {
-            if (tasks instanceof Uint16Array) {
-                throw new Error('SFT training requires Task[] input');
+            const existingData = this.model.metaData.pretrainingData || [];
+            const mergedData = [...existingData];
+            let isConversational = false;
+            for (const dataset of datasets) {
+                if (!existingData.some((d) => d.id === dataset.id)) {
+                    mergedData.push({ id: dataset.id, name: dataset.name, conversational: dataset.conversational });
+                }
+                if (dataset.conversational) {
+                    isConversational = true;
+                }
             }
+            this.model.metaData.pretrainingData = mergedData;
 
-            const { trainDataset, validationDataset, size } = await createTrainValidationSplit(
-                tasks,
-                this.trainer.tokenizer,
-                this.trainer.datasetBuilder,
-                options?.batchSize || 32,
-                options?.validationSplit || 0.1,
-                options?.maskedLoss ?? true
-            );
+            if (isConversational) {
+                this.model.metaData.mode = 'conversational';
+            } else if (this.model.metaData.mode !== 'conversational') {
+                this.model.metaData.mode = 'completion';
+            }
+        } else {
+            // TODO: Scan for user start token.
 
-            const totalTokens = size * (1 - (options?.validationSplit || 0));
-
-            this.trainDataset = trainDataset;
-            this.validationDataset = validationDataset;
-            this.totalTokens = totalTokens;
-            this.options.epochSteps = Math.ceil(
-                this.totalTokens / ((options?.batchSize || 32) * this.model.config.blockSize)
-            );
-
-            this.trainer.updateOptimizer(this.options);
+            if (this.model.metaData.mode !== 'conversational') {
+                this.model.metaData.mode = 'completion';
+            }
         }
+
+        const maskedLoss = options.maskedLoss ?? this.trainingType === 'sft';
+
+        if (this.trainingType === 'sft' && this.trainer instanceof SFTTrainer && tasks instanceof Uint16Array) {
+            throw new Error('SFT training requires Task[] input');
+        }
+
+        const { trainDataset, validationDataset, size } = await createTrainValidationSplit(
+            tasks,
+            this.trainer.tokenizer,
+            this.trainer.datasetBuilder,
+            options?.batchSize || 32,
+            options?.validationSplit || 0.1,
+            maskedLoss
+        );
+
+        const totalTokens = size * (1 - (options?.validationSplit || 0));
+
+        this.trainDataset = trainDataset;
+        this.validationDataset = validationDataset;
+        this.totalTokens = totalTokens;
+        this.options.epochSteps = Math.ceil(
+            this.totalTokens / ((options?.batchSize || 32) * this.model.config.blockSize)
+        );
+
+        this.trainer.updateOptimizer(this.options);
     }
 
     private configureModel(options?: TrainingOptions) {

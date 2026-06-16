@@ -37,11 +37,12 @@ export interface TransformersTokeniser {
     id?: string;
 }
 
-export type ModelPhase = 'untrained' | 'pretrained' | 'finetuned';
+export type ModelMode = 'untrained' | 'completion' | 'conversational';
 
 export interface DatasetMetadata {
     id: string;
     name: string;
+    conversational: boolean;
 }
 
 export interface ActionLogEntry {
@@ -60,7 +61,7 @@ export interface TransformersMetadata {
     reference?: string; // Reference model
     id?: string;
     url?: string; // Original URL if loaded from there
-    phase?: ModelPhase;
+    mode?: ModelMode;
     pretrainingData?: DatasetMetadata[];
     pretrainingSettings?: TrainingOptions; // Last used training settings for pretraining
     generationSettings?: GenerateOptions;

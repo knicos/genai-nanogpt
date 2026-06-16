@@ -48,7 +48,7 @@ export function registerWebGPUBackend(options?: GPUOptions): void {
             if (!options?.disableSubgroups && adapter.features.has('subgroups')) {
                 requiredFeatures.push('subgroups');
             }
-            deviceDescriptor.requiredFeatures = requiredFeatures as Iterable<GPUFeatureName>;
+            deviceDescriptor.requiredFeatures = requiredFeatures as GPUFeatureName[];
 
             const adapterLimits = adapter.limits;
             deviceDescriptor.requiredLimits = {
@@ -65,9 +65,9 @@ export function registerWebGPUBackend(options?: GPUOptions): void {
                 'info' in adapter
                     ? adapter.info
                     : 'requestAdapterInfo' in adapter
-                    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      await (adapter as any).requestAdapterInfo()
-                    : undefined;
+                      ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        await (adapter as any).requestAdapterInfo()
+                      : undefined;
             return new WebGPUBackend(device, adapterInfo);
         },
         3 /*priority*/
