@@ -248,11 +248,15 @@ export default class TeachableLLM {
         return teachableLLM;
     }
 
-    static create(tokeniserType: 'char' | 'bpe', config: GPTConfig) {
+    static create(tokeniserType: 'char' | 'bpe' | ITokeniser, config: GPTConfig) {
         validateConfig(config);
         const fullConfig = config;
         const tokeniser =
-            tokeniserType === 'char' ? new CharTokeniser(fullConfig.vocabSize) : new BPETokeniser(fullConfig.vocabSize);
+            tokeniserType === 'char'
+                ? new CharTokeniser(fullConfig.vocabSize)
+                : tokeniserType === 'bpe'
+                  ? new BPETokeniser(fullConfig.vocabSize)
+                  : tokeniserType;
         const model = createModelInstance(fullConfig);
         const tmodel = new TeachableLLM(tokeniser, model);
         tmodel.setStatus('warmup');

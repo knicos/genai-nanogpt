@@ -127,6 +127,27 @@ Supported input formats (TS-aligned subset):
 - `.json`: expected to be an array; each item maps to one text record
 - `.jsonl`: one record per line; supports text items and turn-based conversations
 
+Parquet support note:
+
+- Direct parquet loading is intentionally not in the TypeScript browser loader.
+- Use `scripts/parquet_to_jsonl.py` to convert parquet into TS-compatible JSONL (conversation-array-per-line format).
+- Non-conversational rows are emitted using the special `text` role:
+    - `[ { "role": "text", "content": "..." } ]`
+
+Parquet conversion examples:
+
+```bash
+python scripts/parquet_to_jsonl.py data/input.parquet -o data/output.jsonl
+python scripts/parquet_to_jsonl.py data/input.parquet -o data/output.jsonl --zip
+python scripts/parquet_to_jsonl.py data/chat.parquet --conversation-column conversation --zip
+```
+
+Parquet converter install dependency:
+
+```bash
+pip install pyarrow
+```
+
 CSV rules:
 
 - Default column name is `text` (use `--csv-column` to override)
