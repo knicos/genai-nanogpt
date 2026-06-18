@@ -39,7 +39,8 @@ function roundRobinData(
             if (state.offset + tokenArray.length > currentTokens.length) {
                 const remainingSpace = currentTokens.length - state.offset;
                 currentTokens.set(tokenArray.slice(0, remainingSpace), state.offset);
-                const newArray = new Uint16Array(Math.floor(estimatedTokens * 0.1) + 100);
+                const neededSize = tokenArray.length - remainingSpace;
+                const newArray = new Uint16Array(Math.max(Math.floor(estimatedTokens * 0.1) + 100, neededSize));
                 newArray.set(tokenArray.slice(remainingSpace), 0);
                 allTokens.push(newArray);
 
