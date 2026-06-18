@@ -133,6 +133,10 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         return this.trainer.optimizer;
     }
 
+    get isTraining(): boolean {
+        return this.trainer.isRunning;
+    }
+
     stop() {
         this.trainer.stop();
     }
