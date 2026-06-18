@@ -112,7 +112,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         options?: IGenerateOptions
     ): Promise<Tensor> {
         if (prompt) {
-            const isAssistant = prompt.length > 0 && prompt[prompt.length - 1].role === 'assistant';
+            const isAssistant = prompt.length > 0 && prompt[prompt.length - 1].role === 'text';
             let tokenisedPrompt: number[] = [];
             if (options?.nonConversational) {
                 if (isAssistant && options?.continuation) {
@@ -363,7 +363,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
     }
 
     /** Generate multiple tokens in a loop and produce text */
-    private async _generate(options?: IGenerateOptions): Promise<Conversation[]> {
+    private async _generate(options?: IGenerateOptions, hasPrompt?: boolean): Promise<Conversation[]> {
         let appended = false;
 
         // Begin a new assistant response in conversation
@@ -371,12 +371,19 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             //this.lastToken < 0 ||
             this.outputConversation.length === 0 ||
             this.outputConversation[this.outputConversation.length - 1]._completed ||
-            this.outputConversation[this.outputConversation.length - 1].role !== 'assistant'
+            (this.outputConversation[this.outputConversation.length - 1].role !== 'assistant' &&
+                options?.nonConversational !== true) ||
+            (this.outputConversation[this.outputConversation.length - 1].role !== 'text' &&
+                options?.nonConversational === true)
         ) {
-            this.outputConversation.push({ role: 'assistant', content: '', _timestamp: Date.now() });
+            this.outputConversation.push({
+                role: options?.nonConversational === true ? 'text' : 'assistant',
+                content: '',
+                _timestamp: Date.now(),
+            });
             appended = true;
             this.resetCache(!options?.noCache);
-        } else if (this.lastToken < 0) {
+        } else if (this.lastToken < 0 || hasPrompt) {
             this.resetCache(!options?.noCache);
         }
 
@@ -385,7 +392,11 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                 ? tensor2d([this.lastToken], [1, 1], 'int32')
                 : await this.tokenisePrompt(
                       this.actualTokeniser,
-                      appended ? this.outputConversation.slice(0, -1) : this.outputConversation,
+                      hasPrompt
+                          ? appended
+                              ? this.outputConversation.slice(0, -1)
+                              : this.outputConversation
+                          : undefined,
                       options
                   );
 
@@ -585,7 +596,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         this.model.metaData.generationSettings = options;
 
         if (options?.maxLength !== 1) this.emit('start');
-        const result = this._generate(options);
+        const result = this._generate(options, !!prompt);
         const r = await result;
         this.active = false;
 
