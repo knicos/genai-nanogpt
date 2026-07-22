@@ -25,8 +25,8 @@ function rmsNormGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?
     const packedGamma = gamma ? isPackedTensor(gamma) : false;
     const packed = packedX || packedGamma;
 
-    const pX = !packed || packed ? x : pack16(x);
-    const pGamma = !packed || !gamma ? gamma : pack16(gamma);
+    const pX = !packed || packedX ? x : pack16(x);
+    const pGamma = gamma && (!packed || packedGamma ? gamma : pack16(gamma));
 
     const inputs = pGamma ? [pX, pGamma] : [pX];
     const reduceInfo = createReduceInfo(inputs, -1);

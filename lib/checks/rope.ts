@@ -1,6 +1,6 @@
 import RoPECache from '@base/layers/RoPECache';
 import { GPTConfigV1 } from '@base/models/config';
-import { engine, setBackend, tensor4d } from '@tensorflow/tfjs-core';
+import { engine, setBackend, tensor4d, NamedAttrMap } from '@tensorflow/tfjs-core';
 
 export async function execute(backend: string) {
     await setBackend(backend);
@@ -31,11 +31,11 @@ export async function execute(backend: string) {
     ropeCache.ensureRopeCache(120);
 
     // Custom op
-    const custom = engine().runKernel(
-        'Rope',
-        { x, sin: ropeCache.getSin()!, cos: ropeCache.getCos()! },
-        { pastLen: 20 }
-    );
+    const custom = engine().runKernel('Rope', { x }, {
+        pastLen: 20,
+        ropeCache: ropeCache,
+        negSin: false,
+    } as unknown as NamedAttrMap);
     if (Array.isArray(custom)) {
         return custom.map((t) => t.array());
     }

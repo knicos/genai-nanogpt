@@ -20,3 +20,38 @@ export function arraysClose(a: unknown, b: unknown) {
         return Number.POSITIVE_INFINITY;
     }
 }
+
+export function arraysClosePercentile(a: unknown, b: unknown, percentile = 0.99): number {
+    const errors: number[] = [];
+
+    function walk(x: unknown, y: unknown): boolean {
+        if ((Array.isArray(x) || x instanceof Float32Array) && (Array.isArray(y) || y instanceof Float32Array)) {
+            if (x.length !== y.length) return false;
+            for (let i = 0; i < x.length; i++) {
+                if (!walk(x[i], y[i])) return false;
+            }
+            return true;
+        }
+
+        if (typeof x === 'number' && typeof y === 'number') {
+            if (Number.isNaN(x) && Number.isNaN(y)) {
+                errors.push(0);
+                return true;
+            }
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                return x === y;
+            }
+            errors.push(Math.abs(x - y));
+            return true;
+        }
+
+        return false;
+    }
+
+    if (!walk(a, b)) return Number.POSITIVE_INFINITY;
+    if (errors.length === 0) return Number.POSITIVE_INFINITY;
+
+    errors.sort((m, n) => m - n);
+    const idx = Math.min(errors.length - 1, Math.floor(percentile * errors.length));
+    return errors[idx];
+}

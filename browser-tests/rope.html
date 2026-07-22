@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
@@ -15,7 +15,7 @@
             import { checks } from '../dist/main.js';
 
             async function runTest() {
-                const results = await checks.runCheck(checks.rope);
+                const results = await checks.runCheck(checks.rope, 1e-5);
 
                 const pass = results.reduce((acc, curr) => acc && curr.passed, true);
 

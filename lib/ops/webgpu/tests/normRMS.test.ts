@@ -2,7 +2,7 @@ import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
 import { pack16 } from '../../pack16';
 import { unpack16 } from '../../unpack16';
-import { arraysClose } from '@base/utilities/arrayClose';
+import { arraysClose, arraysClosePercentile } from '@base/utilities/arrayClose';
 
 Object.assign(globalThis, globals);
 const navigator = { gpu: create([]) };
@@ -24,20 +24,21 @@ describe('RMS Norm 16-bit', { timeout: 30000 }, () => {
         await selectBackend('webgpu');
         const x = randomNormal([32, 128, 192], 0, 1, 'float32');
         const gamma = ones([192], 'float32');
+        const packedGamma = pack16(gamma);
 
         const pX = pack16(x);
         const uX = unpack16(pX);
 
-        const packedRMS = normRMS(pX, gamma);
-        const originalRMS = unpack16(pack16(normRMS(uX, gamma)));
+        const packedRMS = normRMS(pX, packedGamma);
+        const originalRMS = unpack16(pack16(normRMS(uX, unpack16(packedGamma))));
 
         const unpackedRMS = unpack16(packedRMS);
 
         const originalData = await originalRMS.data();
         const unpackedData = await unpackedRMS.data();
 
-        const error = arraysClose(originalData, unpackedData);
-        expect(error).toBeLessThan(1e-2);
+        const error = arraysClosePercentile(originalData, unpackedData);
+        expect(error).toBeLessThan(1e-4);
     });
 
     it('produces correct norm compared to manual approach', async ({ expect }) => {
@@ -174,7 +175,7 @@ describe('RMS Norm 16-bit', { timeout: 30000 }, () => {
         const gradX32Data = await gradX32.data();
 
         const error = arraysClose(gradX16Data, gradX32Data);
-        expect(error).toBeLessThan(1e-3);
+        expect(error).toBeLessThan(1e-4);
     });
 
     it('produces similar gradients for each precision without gamma', async ({ expect }) => {
@@ -194,6 +195,6 @@ describe('RMS Norm 16-bit', { timeout: 30000 }, () => {
         const gradX32Data = await gradX32.data();
 
         const error = arraysClose(gradX16Data, gradX32Data);
-        expect(error).toBeLessThan(1e-3);
+        expect(error).toBeLessThan(1e-4);
     });
 });

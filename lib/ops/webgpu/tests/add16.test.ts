@@ -39,6 +39,6 @@ describe('Add 16-bit', { timeout: 10000 }, () => {
         expect(unpacked.shape).toEqual([100, 4, 64]);
 
         const error = arraysClose(originalData, unpackedData);
-        expect(error).toBeLessThan(1e-3);
+        expect(error).toBeLessThan(1e-4);
     });
 });

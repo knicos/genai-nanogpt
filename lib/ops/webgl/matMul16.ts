@@ -25,7 +25,7 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
         scale?: number;
         scaleA?: number;
         scaleB?: number;
-        activation?: 'gelu';
+        activation?: 'gelu' | 'relu2' | 'relu';
         forceOutputShape?: number[];
         perm?: number[];
         originalShape?: number[];
@@ -41,9 +41,7 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
         const sB = scaleB !== undefined ? mul(B, scalar(scaleB)) : B;
 
         let result: Tensor;
-        if (scale !== undefined) {
-            result = matMulMul(sA, sB, scalar(scale), transposeA, transposeB);
-        } else if (activation === 'gelu') {
+        if (activation === 'gelu') {
             result = matMulGelu(sA, sB);
         } else if (activation === 'relu2') {
             // TODO Use fused implementation
@@ -54,6 +52,13 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
             reluResult.dispose();
         } else if (activation === 'relu') {
             result = relu(matMul(sA, sB, transposeA, transposeB));
+            if (scale !== undefined) {
+                const scaledResult = mul(result, scalar(scale));
+                result.dispose();
+                result = scaledResult;
+            }
+        } else if (scale !== undefined) {
+            result = matMulMul(sA, sB, scalar(scale), transposeA, transposeB);
         } else {
             result = matMul(sA, sB, transposeA, transposeB);
         }

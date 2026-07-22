@@ -2,7 +2,7 @@ import { afterAll, describe, it } from 'vitest';
 import { create, globals } from 'webgpu';
 import { pack16 } from '../../pack16';
 import { unpack16 } from '../../unpack16';
-import { arraysClose } from '@base/utilities/arrayClose';
+import { arraysClosePercentile } from '@base/utilities/arrayClose';
 
 Object.assign(globalThis, globals);
 const navigator = { gpu: create([]) };
@@ -36,8 +36,8 @@ describe('Softmax 16-bit', { timeout: 10000 }, () => {
         const originalData = await originalSoftmax.data();
         const unpackedData = await unpacked.data();
 
-        const error = arraysClose(originalData, unpackedData);
-        expect(error).toBeLessThan(1e-3);
+        const error = arraysClosePercentile(originalData, unpackedData);
+        expect(error).toBeLessThan(1e-4);
 
         expect(unpackedData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
     });
@@ -77,7 +77,7 @@ describe('Softmax 16-bit', { timeout: 10000 }, () => {
         const gradX32 = unpack16(pack16(realGradFunc(unpack16(packedDY), [unpack16(packedY)], { dim: 1 }).logits()));
         const gradX32Data = await gradX32.data();
 
-        const error = arraysClose(gradX16Data, gradX32Data);
-        expect(error).toBeLessThan(1e-2);
+        const error = arraysClosePercentile(gradX16Data, gradX32Data);
+        expect(error).toBeLessThan(1e-4);
     });
 });

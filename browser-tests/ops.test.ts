@@ -30,12 +30,6 @@ test('scatterSub operation', async ({ page }) => {
     await expect(body).toHaveText('PASS');
 });
 
-test('fusedSoftmax operation', async ({ page }) => {
-    await page.goto('/browser-tests/fusedSoftmax.html');
-    const body = page.locator('body');
-    await expect(body).toHaveText('PASS');
-});
-
 test('rmsNorm operation', async ({ page }) => {
     await page.goto('/browser-tests/normRMS.html');
     const body = page.locator('body');

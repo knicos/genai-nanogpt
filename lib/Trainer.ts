@@ -11,6 +11,7 @@ import SFTTrainer from './training/SFTTrainer';
 import { AdamWOptimizer } from './training/AdamW';
 import { v4 as uuidv4 } from 'uuid';
 import { DatasetMetadata } from './loader/types';
+import { packingSupported } from './utilities/packed';
 
 interface TrainingProgress {
     lastLog: TrainingLogEntry;
@@ -114,12 +115,16 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             batchSize: 32,
             sftMode: 'full',
         };
+
+        const useMixed = this.options.mixedPrecision && packingSupported();
+        this.options.lossScaling = useMixed ? modelOrCopy.lossScaling : 1.0;
+
         if (trainingType === 'sft') {
-            const newSFTTrainer = new SFTTrainer(modelOrCopy, tokeniser as ITokeniser, options, optimizer);
+            const newSFTTrainer = new SFTTrainer(modelOrCopy, tokeniser as ITokeniser, this.options, optimizer);
             this.trainer = newSFTTrainer;
             newSFTTrainer.loraName = options?.loraName;
         } else {
-            this.trainer = new PreTrainer(modelOrCopy, tokeniser as ITokeniser, options, optimizer);
+            this.trainer = new PreTrainer(modelOrCopy, tokeniser as ITokeniser, this.options, optimizer);
         }
         this.trainingType = trainingType || 'pretraining';
         this.tokenizer = tokeniser as ITokeniser;

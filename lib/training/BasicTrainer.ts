@@ -54,7 +54,7 @@ export default class BasicTrainer {
         this.optimizerConfig = {
             ...DEFAULT_OPT_CONFIG,
             ...optConfig,
-            lossScaling: model.lossScaling,
+            lossScaling: optConfig?.lossScaling ?? model.lossScaling,
         };
         const adam = optimizer ? optimizer : new AdamWOptimizer(this.optimizerConfig);
         if (optimizer) {

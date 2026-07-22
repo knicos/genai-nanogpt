@@ -23,7 +23,7 @@
     </head>
     <body>
         <script type="module">
-            import { TeachableLLM, waitForModel } from '/dist/main.js';
+            import { TeachableLLM, waitForModel, tasks } from '/dist/main.js';
 
             const model = TeachableLLM.create('char', {
                 vocabSize: 20,
@@ -33,6 +33,8 @@
                 nEmbed: 32,
                 dropout: 0.1,
                 useRope: true,
+                mlpFactor: 4,
+                modelType: 'GenAI_NanoGPT_v2',
             });
 
             model.enableProfiler = true;
@@ -44,18 +46,13 @@
                 'All that glitters is not gold.',
                 'In the end, we will remember not the words of our enemies, but the silence of our friends.',
             ];
+            const textConversations = textData.map((text) => [{ role: 'text', content: text }]);
 
             const tokeniser = model.tokeniser;
-            await tokeniser.train(textData);
+            await tokeniser.train(textConversations);
             await waitForModel(model);
 
             model.model.checkpointing = true;
-
-            const trainer = model.trainer();
-
-            trainer.on('log', (log, progress) => {
-                console.log('Step', log, progress);
-            });
 
             const options = {
                 //prompt: 'What a great movie. It',
@@ -67,10 +64,17 @@
                 learningRate: 0.001,
                 advancedMetrics: false,
             };
-            await trainer.prepare(textData, options);
+
+            const trainer = model.trainer('pretraining', options);
+
+            trainer.on('log', (log, progress) => {
+                console.log('Step', log, progress);
+            });
+
+            await trainer.prepare([new tasks.ConversationTask(textConversations)], []);
             await trainer.train(options);
 
-            await trainer.step(options);
+            //await trainer.step(options);
 
             console.log('Training complete');
             document.body.innerText = 'PASS';
