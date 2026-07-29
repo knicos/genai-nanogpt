@@ -15,6 +15,7 @@ export interface SaveOptions {
     metadata?: Record<string, unknown>;
     files?: Record<string, unknown>;
     includeOptimizer?: boolean;
+    quantize?: 'none' | 'F16';
 }
 
 export interface ExtraSaveItems {
@@ -62,7 +63,7 @@ export async function saveModel(
         }
     });
 
-    const weightsBin = await save_safetensors(weights);
+    const weightsBin = await save_safetensors(weights, options?.quantize);
     zipFile.file('model.safetensors', weightsBin as ArrayBuffer, { binary: true });
 
     const modelType = model.config.modelType;
