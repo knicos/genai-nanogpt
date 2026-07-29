@@ -49,13 +49,13 @@ function sum16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: 
     }
 
     const origAxes = util.parseAxisParam(axis ?? -1, x.shape);
-    let axes = origAxes;
+    const axes = origAxes;
     const permutedAxes = backend_util.getAxesPermutation(axes, x.shape.length);
 
     let input = x;
     if (permutedAxes != null) {
         input = transpose16(x, permutedAxes);
-        axes = backend_util.getInnerMostAxes(axes.length, input.shape.length);
+        // axes = backend_util.getInnerMostAxes(axes.length, input.shape.length);
         toDispose.push(input);
     }
 

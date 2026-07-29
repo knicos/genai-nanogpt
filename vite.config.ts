@@ -1,7 +1,6 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
-import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { extname, relative, resolve } from 'path';
 import { glob } from 'glob';
 import { fileURLToPath } from 'url';
@@ -9,9 +8,6 @@ import { fileURLToPath } from 'url';
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [
-        nodePolyfills({
-            include: ['util', 'zlib', 'stream'],
-        }),
         dts({
             tsconfigPath: './tsconfig.build.json',
             include: ['lib'],

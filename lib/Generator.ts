@@ -113,7 +113,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
     ): Promise<Tensor> {
         if (prompt) {
             const isAssistant = prompt.length > 0 && prompt[prompt.length - 1].role === 'text';
-            let tokenisedPrompt: number[] = [];
+            let tokenisedPrompt: number[];
             if (options?.nonConversational) {
                 if (isAssistant && options?.continuation) {
                     tokenisedPrompt = [tokeniser.bosToken, ...tokeniser.encode(prompt[prompt.length - 1].content)];

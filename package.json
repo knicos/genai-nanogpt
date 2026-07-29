@@ -27,7 +27,7 @@
         "postinstall": "patch-package"
     },
     "devDependencies": {
-        "@eslint/js": "^9.32.0",
+        "@eslint/js": "^10.0.1",
         "@playwright/test": "^1.55.0",
         "@types/node": "^22.13.14",
         "@types/papaparse": "^5.3.16",
@@ -36,15 +36,15 @@
         "@vitest/coverage-v8": "^4.1.9",
         "chalk": "^5.4.1",
         "dayjs": "^1.11.13",
-        "eslint": "^9.32.0",
+        "eslint": "^10.8.0",
         "glob": "^11.0.3",
+        "globals": "^17.8.0",
         "jsdom": "^27.4.0",
         "tsx": "^4.20.3",
         "typescript": "^6.0.3",
         "typescript-eslint": "^8.61.1",
         "vite": "^8.0.16",
         "vite-plugin-dts": "^5.0.2",
-        "vite-plugin-node-polyfills": "^0.28.0",
         "vitest": "^4.1.9",
         "webgpu": "^0.4.0",
         "yargs": "^18.0.0"

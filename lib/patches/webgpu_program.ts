@@ -220,10 +220,10 @@ function makeShader(
     program.variableNames.forEach((x, i) => {
         prefixSnippets.push(`
       @group(0) @binding(${1 + i}) var<storage, read> ${x}: array<${
-            program.variableComponents
-                ? dataTypeToGPUType(inputInfo[i].dtype, program.variableComponents[i])
-                : dataTypeToGPUType(inputInfo[i].dtype, program.outputComponent)
-        }>;
+          program.variableComponents
+              ? dataTypeToGPUType(inputInfo[i].dtype, program.variableComponents[i])
+              : dataTypeToGPUType(inputInfo[i].dtype, program.outputComponent)
+      }>;
         `);
     });
 
@@ -391,8 +391,8 @@ function getInputByOutputSnippet(
 
     fn ${funcName}Coords(coords : ${type}) -> ${typeSnippet(component)} {
       return ${typeSnippet(component)}(${texName}[${outRank > 1 ? 'getOutputIndexFromCoords(coords)' : 'coords'}${
-            component === 1 ? '' : ` / ${component}`
-        }]);
+          component === 1 ? '' : ` / ${component}`
+      }]);
     }
     `;
     }
@@ -400,7 +400,7 @@ function getInputByOutputSnippet(
     const broadcastDims = backend_util.getBroadcastDims(inputInfo.shape, outShape);
     const rankDiff = outRank - inRank;
 
-    let coordsSnippet = '';
+    let coordsSnippet: string;
 
     if (inRank === 0) {
         return `
@@ -420,7 +420,7 @@ function getInputByOutputSnippet(
         }
     }
 
-    let unpackedCoordsSnippet = '';
+    let unpackedCoordsSnippet: string;
     if (outRank < 2 && inRank > 0) {
         unpackedCoordsSnippet = 'coords';
     } else {

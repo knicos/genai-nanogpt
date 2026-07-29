@@ -19,7 +19,7 @@ export function calculateLoss(
         return loss;
     } catch (error) {
         console.error('Error computing loss:', error);
-        throw new Error(`Loss computation failed: ${error}`);
+        throw new Error(`Loss computation failed`, { cause: error });
     }
 }
 
@@ -33,6 +33,6 @@ export function calculateAccuracy(logits: Tensor, targets: Tensor): Tensor {
         return accuracy;
     } catch (error) {
         console.error('Error computing accuracy:', error);
-        throw new Error(`Accuracy computation failed: ${error}`);
+        throw new Error(`Accuracy computation failed.`, { cause: error });
     }
 }

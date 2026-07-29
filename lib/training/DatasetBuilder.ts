@@ -2,8 +2,6 @@ import { Tensor, tidy } from '@tensorflow/tfjs-core';
 import type { Conversation, ITokeniser } from '../tokeniser/type';
 import { Dataset, generator } from '@tensorflow/tfjs-data';
 
-export const PAGE_FACTOR = 8;
-
 export function flattenTokens(textData: Conversation[][], tokenizer: ITokeniser): Uint16Array {
     // Process ALL text into one token array first
     const tokenisedTexts = textData.map((text) => tokenizer.encodeConversation(text));
@@ -61,26 +59,27 @@ export class DatasetBuilder {
             throw new Error(`Not enough tokens (${flatTokens.length}) for block size ${this.blockSize}`);
         }
 
+        const totalBlocks = Math.ceil(flatTokens.length / this.blockSize);
+
         const state: DatasetState = {
-            shuffledIndexes: new Uint32Array(flatTokens.length),
+            shuffledIndexes: new Uint32Array(totalBlocks),
             step: 0,
         };
 
+        // Note: Don't actually shuffle on the first epoch to allow curriculum learning. We'll shuffle after the first epoch.
         if (indexes) {
             state.shuffledIndexes = indexes;
-            // shuffle(state.shuffledIndexes);
         } else {
-            state.shuffledIndexes = new Uint32Array(flatTokens.length);
-            for (let i = 0; i < flatTokens.length; i++) {
+            state.shuffledIndexes = new Uint32Array(totalBlocks);
+            for (let i = 0; i < totalBlocks; i++) {
                 state.shuffledIndexes[i] = i;
             }
-            shuffle(state.shuffledIndexes);
         }
 
         // Use generator to avoid storing all sequences in memory
         const gen = function* (this: DatasetBuilder) {
             while (true) {
-                const i = state.shuffledIndexes[state.step++];
+                const i = state.shuffledIndexes[state.step++] * this.blockSize;
 
                 if (state.step >= state.shuffledIndexes.length) {
                     state.step = 0;

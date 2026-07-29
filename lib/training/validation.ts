@@ -1,7 +1,7 @@
 import { ITokeniser, Task, tokensFromTasks } from '@base/main';
 import { Tensor } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
-import { DatasetBuilder, DatasetState, PAGE_FACTOR, shuffle } from './DatasetBuilder';
+import { DatasetBuilder, DatasetState, shuffle } from './DatasetBuilder';
 
 export async function createTrainValidationSplit(
     tasks: Task[] | Uint16Array,
@@ -19,50 +19,52 @@ export async function createTrainValidationSplit(
 }> {
     const tokens = tasks instanceof Uint16Array ? tasks : await tokensFromTasks(tasks, tokeniser, undefined, masking);
     const allTokens = tokens instanceof Uint16Array ? tokens : tokens.tokens;
+    const totalBlocks = Math.ceil(allTokens.length / datasetBuilder.blockSize);
     const mask = tokens instanceof Uint16Array ? undefined : tokens.mask;
 
     const validationMask = new Set<number>();
     if (validationSplit > 0) {
-        const totalPages = Math.floor(allTokens.length / (datasetBuilder.blockSize * PAGE_FACTOR));
-        const numValidationPages = Math.max(1, Math.floor(totalPages * validationSplit));
+        const numValidationBlocks = Math.max(1, Math.floor(totalBlocks * validationSplit));
 
-        while (validationMask.size < numValidationPages) {
-            const pageIndex = Math.floor(Math.random() * totalPages);
-            validationMask.add(pageIndex);
+        while (validationMask.size < numValidationBlocks) {
+            const blockIndex = Math.floor(Math.random() * totalBlocks);
+            validationMask.add(blockIndex);
         }
     }
 
-    const trainIndexes = new Uint32Array(
-        allTokens.length - validationMask.size * datasetBuilder.blockSize * PAGE_FACTOR
-    );
-    const validationIndexes = new Uint32Array(validationMask.size * datasetBuilder.blockSize * PAGE_FACTOR);
+    const trainIndexes = new Uint32Array(totalBlocks - validationMask.size);
+    const validationIndexes = new Uint32Array(validationMask.size);
 
     let trainIdx = 0;
     let valIdx = 0;
-    for (let i = 0; i < allTokens.length; i++) {
-        const pageIndex = Math.floor(i / (datasetBuilder.blockSize * PAGE_FACTOR));
-        if (validationMask.has(pageIndex)) {
+    for (let blockIndex = 0; blockIndex < totalBlocks; blockIndex++) {
+        if (validationMask.has(blockIndex)) {
             if (valIdx < validationIndexes.length) {
-                validationIndexes[valIdx++] = i;
+                validationIndexes[valIdx++] = blockIndex;
             }
         } else {
             if (trainIdx < trainIndexes.length) {
-                trainIndexes[trainIdx++] = i;
+                trainIndexes[trainIdx++] = blockIndex;
             }
         }
     }
+
+    validationMask.clear();
+
+    // Only shuffle validation
+    shuffle(validationIndexes);
 
     const { dataset: trainDataset, state: trainState } = await datasetBuilder.createTextDataset(
         allTokens,
         batchSize,
-        shuffle(trainIndexes),
+        trainIndexes,
         mask ? mask : undefined
     );
 
     const { dataset: validationDataset, state: validationState } = await datasetBuilder.createTextDataset(
         allTokens,
         batchSize,
-        shuffle(validationIndexes)
+        validationIndexes
     );
 
     return { trainDataset, validationDataset, size: allTokens.length, validationState, trainState };

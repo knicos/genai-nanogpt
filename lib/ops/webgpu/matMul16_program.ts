@@ -143,7 +143,7 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
             throw new Error(`Unsupported output shape rank change: ${oldShape.length} -> ${shape.length}}`);
         }
 
-        let coordExprs: string[] = [];
+        let coordExprs: string[];
         if (perm) {
             if (perm.length !== shape.length) {
                 throw new Error('Permutation length must match output rank');
@@ -353,14 +353,14 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
             let strideA = uniforms.aShape.z / 2;
             let strideB = uniforms.bShape.z / 2;
         `;
-        let baseB = '';
+        let baseB: string;
         if (this.transposeB) {
             baseB = `let baseB = getIndexFromCoords3D(vec3<i32>(batchB, globalColStart, 0), vec3<i32>(uniforms.bShape.x, uniforms.bShape.y, strideB));`;
         } else {
             baseB = `let baseB = getIndexFromCoords3D(vec3<i32>(batchB, 0, globalColStart / 4), vec3<i32>(uniforms.bShape.x, uniforms.bShape.y, strideB));`;
         }
 
-        let baseA = '';
+        let baseA: string;
         if (this.transposeA) {
             baseA = `let baseA = getIndexFromCoords3D(vec3<i32>(batchA, 0, globalRowStart / 4), vec3<i32>(uniforms.aShape.x, uniforms.aShape.y, strideA));`;
         } else {
@@ -375,14 +375,14 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
     }
 
     private offsetSnippets(): string {
-        let offsetA = '';
+        let offsetA: string;
         if (this.transposeA) {
             offsetA = `let offsetA = baseA + kStart * strideA;`;
         } else {
             offsetA = `let offsetA = baseA + kStart / 4;`;
         }
 
-        let offsetB = '';
+        let offsetB: string;
         if (this.transposeB) {
             offsetB = `let offsetB = baseB + kStart / 4;`;
         } else {
