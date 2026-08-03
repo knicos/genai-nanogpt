@@ -1,6 +1,7 @@
 import { Tensor, tidy } from '@tensorflow/tfjs-core';
 import type { Conversation, ITokeniser } from '../tokeniser/type';
 import { Dataset, generator } from '@tensorflow/tfjs-data';
+import { sliceUint16Shards, sliceUint8Shards } from '@base/utilities/tokens';
 
 export function flattenTokens(textData: Conversation[][], tokenizer: ITokeniser): Uint16Array {
     // Process ALL text into one token array first
@@ -16,8 +17,6 @@ export function flattenTokensWithMask(
 ): { tokens: Uint16Array; mask: Uint8Array } {
     // Process ALL text into one token array first
     const tokenisedTexts = textData.map((text) => tokenizer.encodeConversation(text, false, true));
-
-    console.log('Tokenised Texts with Mask:', tokenisedTexts);
 
     const flatTokens = tokenisedTexts.map((t) => t.tokens).flat();
     const mask = tokenisedTexts.map((t) => t.mask).flat();
@@ -49,17 +48,19 @@ export class DatasetBuilder {
 
     // Create dataset from text files
     public async createTextDataset(
-        flatTokens: Uint16Array,
+        flatTokens: Uint16Array[],
         batchSize = 32,
         indexes?: Uint32Array,
-        mask?: Uint8Array,
+        mask?: Uint8Array[],
         ignoreIndex = 0xffff
     ): Promise<{ dataset: Dataset<{ xs: Tensor; ys: Tensor }>; state: DatasetState }> {
-        if (flatTokens.length < this.blockSize + 1) {
-            throw new Error(`Not enough tokens (${flatTokens.length}) for block size ${this.blockSize}`);
+        const totalTokens = flatTokens.reduce((sum, tokens) => sum + tokens.length, 0);
+
+        if (totalTokens < this.blockSize + 1) {
+            throw new Error(`Not enough tokens (${totalTokens}) for block size ${this.blockSize}`);
         }
 
-        const totalBlocks = Math.ceil(flatTokens.length / this.blockSize);
+        const totalBlocks = Math.ceil(totalTokens / this.blockSize);
 
         const state: DatasetState = {
             shuffledIndexes: new Uint32Array(totalBlocks),
@@ -86,19 +87,18 @@ export class DatasetBuilder {
                     shuffle(state.shuffledIndexes);
                 }
 
-                if (i + this.blockSize + 1 > flatTokens.length) {
+                if (i + this.blockSize + 1 > totalTokens) {
                     continue; // Skip if out of bounds
                 }
 
-                const xs = new Int32Array(flatTokens.subarray(i, i + this.blockSize));
-
-                const target = flatTokens.subarray(i + 1, i + this.blockSize + 1);
-                const ys = new Int32Array(target);
+                const xs = new Int32Array(sliceUint16Shards(flatTokens, i, i + this.blockSize));
+                const ys = new Int32Array(sliceUint16Shards(flatTokens, i + 1, i + this.blockSize + 1));
 
                 if (mask) {
                     let count = 0;
+                    const flatMask = sliceUint8Shards(mask, i + 1, i + this.blockSize + 1);
                     for (let j = 0; j < ys.length; j++) {
-                        if (mask[i + 1 + j] === 0) {
+                        if (flatMask[j] === 0) {
                             ys[j] = ignoreIndex;
                             count++;
                         }

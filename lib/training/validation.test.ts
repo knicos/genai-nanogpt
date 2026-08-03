@@ -20,7 +20,7 @@ describe('Validation split', () => {
         const allTokens = flattenTokens([textData], mockTokenizer);
 
         const { trainState, validationState, size } = await createTrainValidationSplit(
-            allTokens,
+            [allTokens],
             mockTokenizer,
             datasetBuilder,
             2,

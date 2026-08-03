@@ -6,7 +6,7 @@ import Generator, { IGenerateOptions, IGenerator } from './Generator';
 import Trainer, { TrainingType } from './Trainer';
 import EE from 'eventemitter3';
 import { dummyPassTrainAsync, MemoryRequirements } from './utilities/dummy';
-import { CharTokeniser } from './main';
+import { CharTokeniser, ConversationStream } from './main';
 import MemoryProfiler from './utilities/profile';
 import BPETokeniser from './tokeniser/bpe';
 import Model, { ModelForwardAttributes } from './models/model';
@@ -362,7 +362,7 @@ export default class TeachableLLM {
         await trainer.train();
     }
 
-    async trainTokeniser(text: Conversation[][]): Promise<number> {
+    async trainTokeniser(text: ConversationStream[]): Promise<number> {
         if (!this._tokeniser) {
             throw new Error('tokeniser_not_initialized.');
         }

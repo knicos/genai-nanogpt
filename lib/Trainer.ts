@@ -207,7 +207,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         }
     }
 
-    async prepare(tasks: Task[] | Uint16Array = [], datasets?: DatasetMetadata[]): Promise<void> {
+    async prepare(tasks: Task[] | Uint16Array[] = [], datasets?: DatasetMetadata[]): Promise<void> {
         const options = this.options;
 
         const isLoRA = options.loraName || options.loraConfig;
@@ -259,7 +259,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             maskedLoss
         );
 
-        const totalTokens = size * (1 - (options?.validationSplit || 0));
+        const totalTokens = Math.floor(size * (1 - (options?.validationSplit || 0.1)));
 
         this.trainDataset = trainDataset;
         this.validationDataset = validationDataset;
@@ -284,8 +284,6 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         if (this.trainingType === 'sft') {
             if (mode === 'lora') {
                 const model = this.trainer.model;
-
-                console.log('Configuring model for LoRA fine-tuning with options:', options);
 
                 if (options?.loraName) {
                     if (!model.hasLoRA(options.loraName)) {

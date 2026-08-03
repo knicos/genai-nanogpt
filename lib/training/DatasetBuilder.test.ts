@@ -30,7 +30,7 @@ describe('DatasetBuilder', () => {
             ],
         ];
         const allTokens = flattenTokens(textData, mockTokenizer);
-        const { dataset } = await datasetBuilder.createTextDataset(allTokens, 2);
+        const { dataset } = await datasetBuilder.createTextDataset([allTokens], 2);
 
         // Assertions
         expect(dataset).toBeDefined();
@@ -90,7 +90,7 @@ describe('DatasetBuilder', () => {
         const allTokens = flattenTokensWithMask(textData, mockTokenizer);
         console.log('All Tokens:', allTokens.tokens);
         console.log('All Masks:', allTokens.mask);
-        const { dataset } = await datasetBuilder.createTextDataset(allTokens.tokens, 2, undefined, allTokens.mask);
+        const { dataset } = await datasetBuilder.createTextDataset([allTokens.tokens], 2, undefined, [allTokens.mask]);
 
         // Assertions
         expect(dataset).toBeDefined();
@@ -135,7 +135,7 @@ describe('DatasetBuilder', () => {
         const textData: Conversation[] = [{ role: 'user', content: 'hello world hello world hello world hello world' }];
         const allTokens = new Uint16Array(await flattenTokens([textData], mockTokenizer));
         const indexes = [0, 6, 12, 18]; // Only take the first token of each "hello"
-        const { dataset, state } = await datasetBuilder.createTextDataset(allTokens, 2, new Uint32Array(indexes));
+        const { dataset, state } = await datasetBuilder.createTextDataset([allTokens], 2, new Uint32Array(indexes));
 
         // Assertions
         expect(dataset).toBeDefined();

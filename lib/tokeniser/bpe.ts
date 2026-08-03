@@ -1,7 +1,7 @@
 import { yieldIfNeeded } from '@base/utilities/yielder';
 import parseTokens from '../utilities/tokenParse';
 import BaseTokeniser, { SPECIALS } from './BaseTokeniser';
-import { Conversation } from './type';
+import { ConversationStream } from '@base/data/stream';
 
 interface TokenPair {
     a: string;
@@ -187,24 +187,30 @@ export default class BPETokeniser extends BaseTokeniser {
         return this.vocabIndex.get('') ?? 1;
     }
 
-    public async train(text: Conversation[][] = [], cb?: (vocab: number) => void, datasetID?: string): Promise<number> {
+    public async train(
+        text: ConversationStream[] = [],
+        cb?: (vocab: number) => void,
+        datasetID?: string
+    ): Promise<number> {
         this.datasetID = datasetID;
         let lastYield = performance.now();
 
-        const preTokensDeep = new Array<string[][]>(text.length);
-        for (let i = 0; i < text.length; i++) {
-            const conversation = text[i];
-            const parsedConvervation = new Array<string[]>(conversation.length);
-            for (let j = 0; j < conversation.length; j++) {
-                parsedConvervation[j] = parseTokens(conversation[j].content);
+        const preTokenSet = new Set<string>();
+
+        for (const stream of text) {
+            const cursor = stream.cursor();
+            let conversation = await cursor.next();
+            while (conversation !== null) {
+                for (const message of conversation) {
+                    const tokens = parseTokens(message.content);
+                    for (const token of tokens) {
+                        preTokenSet.add(token);
+                    }
+                }
+                lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
+                conversation = await cursor.next();
             }
-            lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
-            preTokensDeep[i] = parsedConvervation;
         }
-
-        const pretokens = preTokensDeep.flat(2);
-
-        const preTokenSet = new Set<string>(pretokens);
 
         this.vocab = new Set();
         this.pretokenMap.clear();
@@ -226,30 +232,12 @@ export default class BPETokeniser extends BaseTokeniser {
         lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
 
         if (this.vocab.size >= this.targetSize) {
-            console.warn('Initial vocab size is greater than or equal to target size. No merges will be performed.');
-
-            // Truncate vocab to target size using only most frequent characters
-            const charCounts = new Map<string, number>();
-            pretokens.forEach((token) => {
-                Array.from(token).forEach((char) => {
-                    charCounts.set(char, (charCounts.get(char) || 0) + 1);
-                });
-            });
-
-            const sortedChars = Array.from(charCounts.entries()).sort((a, b) => b[1] - a[1]);
-            this.vocab = new Set();
-            this.addSpecialTokens();
-            const selectedChars = sortedChars.slice(0, this.targetSize - this.vocab.size).map(([char]) => char);
-            selectedChars.forEach((char) => this.vocab.add(char));
-            this.vocabIndex.clear();
-            let i = 0;
-            for (const v of this.vocab.keys()) {
-                this.vocabIndex.set(v, i++);
-            }
-
-            this.generateID();
-            this.emit('trainStatus', 'trained');
-            return this.vocab.size;
+            console.warn(
+                'Initial vocab size is greater than or equal to target size. No merges will be performed.',
+                this.vocab.size,
+                this.targetSize
+            );
+            throw new Error('too_small_vocab');
         }
 
         while (this.vocab.size < this.targetSize && this.merges.length < this.targetSize) {

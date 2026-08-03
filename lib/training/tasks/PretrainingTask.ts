@@ -18,7 +18,7 @@ export default class PretrainingTask extends Task {
         return this.index < this.rawText.length;
     }
 
-    nextConversation(): Conversation[] | null {
+    async nextConversation(): Promise<Conversation[] | null> {
         if (this.index >= this.rawText.length) {
             return null;
         }
@@ -30,9 +30,12 @@ export default class PretrainingTask extends Task {
         return [conv];
     }
 
-    nextTokens(tokeniser: ITokeniser): number[] | null;
-    nextTokens(tokeniser: ITokeniser, masking: boolean): { tokens: number[]; mask: boolean[] } | null;
-    nextTokens(tokeniser: ITokeniser, masking?: boolean): number[] | { tokens: number[]; mask: boolean[] } | null {
+    nextTokens(tokeniser: ITokeniser): Promise<number[] | null>;
+    nextTokens(tokeniser: ITokeniser, masking: boolean): Promise<{ tokens: number[]; mask: boolean[] } | null>;
+    async nextTokens(
+        tokeniser: ITokeniser,
+        masking?: boolean
+    ): Promise<number[] | { tokens: number[]; mask: boolean[] } | null> {
         if (this.index >= this.rawText.length) {
             return null;
         }

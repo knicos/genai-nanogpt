@@ -4,20 +4,20 @@ import { yieldIfNeeded } from '@base/utilities/yielder';
 export abstract class Task {
     abstract get length(): number;
     abstract hasMoreConversations(): boolean;
-    abstract nextConversation(): Conversation[] | null;
+    abstract nextConversation(): Promise<Conversation[] | null>;
 
-    abstract nextTokens(tokeniser: ITokeniser): number[] | null;
-    abstract nextTokens(tokeniser: ITokeniser, masking: boolean): { tokens: number[]; mask: boolean[] } | null;
+    abstract nextTokens(tokeniser: ITokeniser): Promise<number[] | null>;
+    abstract nextTokens(tokeniser: ITokeniser, masking: boolean): Promise<{ tokens: number[]; mask: boolean[] } | null>;
     abstract nextTokens(
         tokeniser: ITokeniser,
         masking?: boolean
-    ): number[] | { tokens: number[]; mask: boolean[] } | null;
+    ): Promise<number[] | { tokens: number[]; mask: boolean[] } | null>;
 
-    abstract estimateTokens(tokeniser: ITokeniser): Promise<number>;
-    abstract shuffle(): void;
+    //abstract estimateTokens(tokeniser: ITokeniser): Promise<number>;
+    //abstract shuffle(): void;
 }
 
-function roundRobinData(
+async function roundRobinData(
     tasks: Task[],
     allTokens: Uint16Array[],
     tokenizer: ITokeniser,
@@ -27,7 +27,7 @@ function roundRobinData(
 ) {
     // Step through each task in round-robin fashion
     for (const task of tasks) {
-        const tokens = task.nextTokens(tokenizer, mask ? true : undefined);
+        const tokens = await task.nextTokens(tokenizer, mask ? true : undefined);
         if (tokens) {
             const tokenArray = Array.isArray(tokens) ? tokens : tokens.tokens;
             state.total += tokenArray.length;
@@ -40,7 +40,12 @@ function roundRobinData(
                 const remainingSpace = currentTokens.length - state.offset;
                 currentTokens.set(tokenArray.slice(0, remainingSpace), state.offset);
                 const neededSize = tokenArray.length - remainingSpace;
-                const newArray = new Uint16Array(Math.max(Math.floor(estimatedTokens * 0.1) + 100, neededSize));
+                if (neededSize > estimatedTokens) {
+                    throw new Error(
+                        `Estimated tokens (${estimatedTokens}) is too small for the next batch of tokens (${neededSize}).`
+                    );
+                }
+                const newArray = new Uint16Array(estimatedTokens);
                 newArray.set(tokenArray.slice(remainingSpace), 0);
                 allTokens.push(newArray);
 
@@ -76,34 +81,31 @@ export async function tokensFromTasks(
     tasks: Task[],
     tokenizer: ITokeniser,
     cb?: (tokens: number) => void
-): Promise<Uint16Array>;
+): Promise<Uint16Array[]>;
 export async function tokensFromTasks(
     tasks: Task[],
     tokenizer: ITokeniser,
     cb?: (tokens: number) => void,
     masking?: boolean
-): Promise<{ tokens: Uint16Array; mask: Uint8Array }>;
+): Promise<{ tokens: Uint16Array[]; mask: Uint8Array[] }>;
 export async function tokensFromTasks(
     tasks: Task[],
     tokenizer: ITokeniser,
     cb?: (tokens: number) => void,
     masking?: boolean
-): Promise<Uint16Array | { tokens: Uint16Array; mask: Uint8Array }> {
-    const estimatedTokens = Math.min(
-        (await Promise.all(tasks.map((task) => task.estimateTokens(tokenizer)))).reduce((sum, val) => sum + val, 0),
-        tokenizer.vocabSize * 10000
-    );
+): Promise<Uint16Array[] | { tokens: Uint16Array[]; mask: Uint8Array[] }> {
+    const SHARD_SIZE = 10_000 * 1024; // 10 million tokens
 
-    const allTokens = [new Uint16Array(estimatedTokens)];
-    const mask: Uint8Array[] | null = masking ? [new Uint8Array(estimatedTokens)] : null;
+    const allTokens = [new Uint16Array(SHARD_SIZE)];
+    const mask: Uint8Array[] | null = masking ? [new Uint8Array(SHARD_SIZE)] : null;
     const state = {
         offset: 0,
         total: 0,
     };
 
     let lastYield = performance.now();
-    while (state.offset < estimatedTokens) {
-        roundRobinData(tasks, allTokens, tokenizer, state, estimatedTokens, mask || undefined);
+    while (true) {
+        await roundRobinData(tasks, allTokens, tokenizer, state, SHARD_SIZE, mask || undefined);
         // Break if all tasks are exhausted
         if (tasks.every((task) => !task.hasMoreConversations())) {
             break;
@@ -114,42 +116,16 @@ export async function tokensFromTasks(
 
     if (allTokens.length === 1) {
         if (mask) {
-            return { tokens: allTokens[0].subarray(0, state.offset), mask: mask[0].subarray(0, state.offset) };
+            return { tokens: [allTokens[0].subarray(0, state.offset)], mask: [mask[0].subarray(0, state.offset)] };
         }
-        return allTokens[0].subarray(0, state.offset);
-    }
-
-    // Combine all arrays into one
-    const totalLength =
-        allTokens.reduce((sum, arr) => sum + arr.length, 0) - (allTokens[allTokens.length - 1].length - state.offset);
-    const finalTokens = new Uint16Array(totalLength);
-    let pos = 0;
-    for (let i = 0; i < allTokens.length; i++) {
-        const arr = allTokens[i];
-        if (i === allTokens.length - 1) {
-            finalTokens.set(arr.subarray(0, state.offset), pos);
-            pos += state.offset;
-        } else {
-            finalTokens.set(arr, pos);
-            pos += arr.length;
+        return [allTokens[0].subarray(0, state.offset)];
+    } else {
+        // Truncate the last array to the actual size
+        allTokens[allTokens.length - 1] = allTokens[allTokens.length - 1].subarray(0, state.offset);
+        if (mask) {
+            mask[mask.length - 1] = mask[mask.length - 1].subarray(0, state.offset);
+            return { tokens: allTokens, mask };
         }
+        return allTokens;
     }
-
-    if (mask) {
-        const finalMask = new Uint8Array(totalLength);
-        pos = 0;
-        for (let i = 0; i < mask.length; i++) {
-            const arr = mask[i];
-            if (i === mask.length - 1) {
-                finalMask.set(arr.subarray(0, state.offset), pos);
-                pos += state.offset;
-            } else {
-                finalMask.set(arr, pos);
-                pos += arr.length;
-            }
-        }
-        return { tokens: finalTokens, mask: finalMask };
-    }
-
-    return finalTokens;
 }

@@ -1,38 +1,48 @@
-import { Conversation, ITokeniser } from '@base/main';
+import { Conversation, ConversationStream, ConversationCursor, ITokeniser } from '@base/main';
 import { Task } from './Task';
-import { shuffle } from '../DatasetBuilder';
 
 export default class ConversationTask extends Task {
-    private rawConvo: Conversation[][];
-    private shuffledIndices: Uint32Array | null = null;
-    private index = 0;
+    private streams: ConversationStream[];
+    private streamIndex = 0;
+    private currentCursor: ConversationCursor | null = null;
 
     get length(): number {
-        return this.rawConvo.length;
+        return this.streams.length;
     }
 
-    constructor(conversations: Conversation[][]) {
+    constructor(conversations: ConversationStream[]) {
         super();
-        this.rawConvo = conversations;
+        this.streams = conversations;
     }
 
     hasMoreConversations(): boolean {
-        return this.index < this.rawConvo.length;
+        return this.streamIndex < this.streams.length;
     }
 
-    nextConversation(): Conversation[] | null {
-        if (this.index >= this.rawConvo.length) {
-            return null;
+    async nextConversation(): Promise<Conversation[] | null> {
+        if (this.streamIndex < this.streams.length) {
+            if (!this.currentCursor) {
+                this.currentCursor = this.streams[this.streamIndex].cursor();
+            }
+            const conv = await this.currentCursor.next();
+            if (conv) {
+                return conv;
+            } else {
+                this.streamIndex++;
+                this.currentCursor = null;
+                return this.nextConversation();
+            }
         }
-        const conv = this.rawConvo[this.shuffledIndices ? this.shuffledIndices[this.index] : this.index];
-        this.index++;
-        return conv;
+        return null;
     }
 
-    nextTokens(tokeniser: ITokeniser): number[] | null;
-    nextTokens(tokeniser: ITokeniser, masking: boolean): { tokens: number[]; mask: boolean[] } | null;
-    nextTokens(tokeniser: ITokeniser, masking?: boolean): number[] | { tokens: number[]; mask: boolean[] } | null {
-        const conv = this.nextConversation();
+    nextTokens(tokeniser: ITokeniser): Promise<number[] | null>;
+    nextTokens(tokeniser: ITokeniser, masking: boolean): Promise<{ tokens: number[]; mask: boolean[] } | null>;
+    async nextTokens(
+        tokeniser: ITokeniser,
+        masking?: boolean
+    ): Promise<number[] | { tokens: number[]; mask: boolean[] } | null> {
+        const conv = await this.nextConversation();
         if (!conv) {
             return null;
         }
@@ -40,18 +50,11 @@ export default class ConversationTask extends Task {
         return tokens;
     }
 
-    shuffle() {
-        if (!this.shuffledIndices) {
-            this.shuffledIndices = new Uint32Array(this.rawConvo.length);
-            for (let i = 0; i < this.rawConvo.length; i++) {
-                this.shuffledIndices[i] = i;
-            }
-        }
-        shuffle(this.shuffledIndices);
-        this.index = 0;
-    }
-
     async estimateTokens(tokeniser: ITokeniser): Promise<number> {
-        return tokeniser.encodeConversation(this.rawConvo[0]).length * this.length;
+        const convo = await this.streams[0].cursor().next();
+        if (!convo) {
+            return 0;
+        }
+        return tokeniser.encodeConversation(convo).length * this.length;
     }
 }

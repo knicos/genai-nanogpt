@@ -1,5 +1,5 @@
 import type EE from 'eventemitter3';
-
+import type { ConversationStream } from '../data/stream';
 export type Roles = 'user' | 'assistant' | 'system' | 'text';
 
 export interface Conversation {
@@ -7,10 +7,10 @@ export interface Conversation {
     content: string;
 }
 
-export interface ITokeniser extends EE<'trainStatus'> {
+export interface ITokeniser extends EE<'trainStatus' | 'error'> {
     id: string;
     datasetID?: string;
-    train(text: Conversation[][], cb?: (vocab: number) => void, datasetID?: string): Promise<number>;
+    train(text: ConversationStream[], cb?: (vocab: number) => void, datasetID?: string): Promise<number>;
     //tokenise(text: string[], numeric?: boolean): Promise<string[][] | number[][]>;
     //detokenise(tokens: (number[] | Uint16Array)[]): Promise<string[]>;
     getVocab(): string[];

@@ -1,6 +1,7 @@
 import { describe, it } from 'vitest';
 import BPETokeniser from './bpe';
 import { Conversation } from './type';
+import { MemoryConversationStream } from '@base/data/stream';
 
 function textToConversations(texts: string[]): Conversation[][] {
     return texts.map((text) => [{ role: 'text', content: text }]);
@@ -12,9 +13,9 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        await bpe.train(textToConversations(textData));
+        await bpe.train([new MemoryConversationStream(textToConversations(textData))]);
 
-        const tokens = await bpe.tokenise(textData);
+        const tokens = bpe.tokenise(textData);
         expect(tokens).toEqual([
             ['hello', ' world'],
             ['this', ' is', ' a', ' test'],
@@ -24,18 +25,18 @@ describe('BPE Tokeniser Tests', () => {
     });
 
     it('token per character', async ({ expect }) => {
-        const bpe = new BPETokeniser(5);
+        const bpe = new BPETokeniser(27);
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        await bpe.train(textToConversations(textData));
+        await bpe.train([new MemoryConversationStream(textToConversations(textData))]);
 
-        const tokens = await bpe.tokenise(textData);
+        const tokens = bpe.tokenise(textData);
         expect(tokens).toEqual([
-            ['h', 'e', 'l', 'l', 'o', ' ', '', 'o', 'r', 'l', ''],
-            ['t', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' ', 't', 'e', 's', 't'],
-            ['h', 'e', 'l', 'l', 'o', ' ', 'a', '', 'a', 'i', 'n'],
-            ['t', 'e', 's', 't', ' ', 't', 'h', 'e', ' ', 't', 'o', '', 'e', 'n', 'i', '', 'e', 'r'],
+            ['h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd'],
+            ['t', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' t', 'e', 's', 't'],
+            ['h', 'e', 'l', 'l', 'o', ' ', 'a', 'g', 'a', 'i', 'n'],
+            ['t', 'e', 's', 't', ' t', 'h', 'e', ' t', 'o', 'k', 'e', 'n', 'i', 'z', 'e', 'r'],
         ]);
     });
 
@@ -44,7 +45,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        await bpe.train(textToConversations(textData));
+        await bpe.train([new MemoryConversationStream(textToConversations(textData))]);
 
         const tokens = await bpe.tokenise(['@']);
         expect(tokens).toEqual([['']]);
@@ -55,7 +56,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        await bpe.train(textToConversations(textData));
+        await bpe.train([new MemoryConversationStream(textToConversations(textData))]);
 
         // Generate random noise string
         const noise = Array.from({ length: 100 }, () => String.fromCharCode(Math.floor(Math.random() * 256))).join('');
@@ -70,7 +71,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        await bpe.train(textToConversations(textData));
+        await bpe.train([new MemoryConversationStream(textToConversations(textData))]);
 
         const tokens = await bpe.tokenise(['@'], true);
         expect(tokens).toEqual([[bpe.unkToken]]);
@@ -81,7 +82,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['    hello', '    is a test', '    hello again'];
 
-        await bpe.train(textToConversations(textData));
+        await bpe.train([new MemoryConversationStream(textToConversations(textData))]);
 
         const vocab = bpe.getVocab();
         expect(vocab).toContain('   ');
@@ -92,7 +93,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello!!!', 'this is a test...', 'hello again!!!', '\t\t\twow'];
 
-        await bpe.train(textToConversations(textData));
+        await bpe.train([new MemoryConversationStream(textToConversations(textData))]);
 
         const vocab = bpe.getVocab();
         console.log('Vocab:', vocab);
@@ -106,7 +107,7 @@ describe('BPE Tokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        await bpe.train(textToConversations(textData));
+        await bpe.train([new MemoryConversationStream(textToConversations(textData))]);
 
         const tokens = await bpe.tokenise(textData, true);
         const eosTokens = tokens.map((t) => [...t, bpe.eosToken]);
@@ -124,7 +125,7 @@ describe('BPE Tokeniser Tests', () => {
             { role: 'system', content: 'This is a system message.' },
         ];
 
-        await bpeTokeniser.train([conversation]);
+        await bpeTokeniser.train([new MemoryConversationStream([conversation])]);
 
         const encoded = bpeTokeniser.encodeConversation(conversation);
         const decoded = bpeTokeniser.decodeConversation(encoded);
@@ -141,7 +142,7 @@ describe('BPE Tokeniser Tests', () => {
             //{ role: 'system', content: 'This is a system message.' },
         ];
 
-        await bpeTokeniser.train([conversation]);
+        await bpeTokeniser.train([new MemoryConversationStream([conversation])]);
 
         const encoded = bpeTokeniser.encodeConversation(conversation, false, true);
         const decoded = bpeTokeniser.decodeConversation(encoded.tokens);
@@ -177,7 +178,7 @@ describe('BPE Tokeniser Tests', () => {
             { role: 'text', content: 'This is a system message.' },
         ];
 
-        await bpeTokeniser.train([conversation]);
+        await bpeTokeniser.train([new MemoryConversationStream([conversation])]);
 
         const encoded = bpeTokeniser.encodeConversation(conversation);
         const decoded = bpeTokeniser.decodeConversation(encoded);

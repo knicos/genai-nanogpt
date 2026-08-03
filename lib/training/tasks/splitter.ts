@@ -1,20 +1,24 @@
+import { MemoryConversationStream } from '@base/data/stream';
 import { Conversation } from '../../tokeniser/type';
 import ConversationTask from './ConversationTask';
 import { Task } from './Task';
 
-export default function splitValidation(tasks: Task[], validationSplit: number): { training: Task; validation: Task } {
+export default async function splitValidation(
+    tasks: Task[],
+    validationSplit: number
+): Promise<{ training: Task; validation: Task }> {
     if (validationSplit <= 0 || validationSplit >= 1) {
         throw new Error('validationSplit must be between 0 and 1');
     }
 
-    tasks.forEach((task) => task.shuffle());
+    // tasks.forEach((task) => task.shuffle());
 
     const trainingConversations: Conversation[][] = [];
     const validationConversations: Conversation[][] = [];
 
     for (const task of tasks) {
         while (task.hasMoreConversations()) {
-            const nextConvo = task.nextConversation();
+            const nextConvo = await task.nextConversation();
             if (!nextConvo) {
                 break;
             }
@@ -28,7 +32,7 @@ export default function splitValidation(tasks: Task[], validationSplit: number):
     }
 
     return {
-        training: new ConversationTask(trainingConversations),
-        validation: new ConversationTask(validationConversations),
+        training: new ConversationTask([new MemoryConversationStream(trainingConversations)]),
+        validation: new ConversationTask([new MemoryConversationStream(validationConversations)]),
     };
 }

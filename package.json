@@ -52,6 +52,7 @@
     "dependencies": {
         "@tensorflow/tfjs": "^4.22.0",
         "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
+        "@zip.js/zip.js": "^2.8.34",
         "eventemitter3": "^5.0.1",
         "jszip": "^3.10.1",
         "papaparse": "^5.5.3",

@@ -8,7 +8,11 @@ describe('Text loading', () => {
             type: 'application/json',
         });
         const result = await loadTextData(file as unknown as File);
-        expect(result).toEqual([[{ role: 'text', content: 'Hello' }], [{ role: 'text', content: 'World' }]]);
+        const cursor = result.cursor();
+        const first = await cursor.next();
+        const second = await cursor.next();
+        expect(first).toEqual([{ role: 'text', content: 'Hello' }]);
+        expect(second).toEqual([{ role: 'text', content: 'World' }]);
     });
 
     it('should load a jsonl file', async ({ expect }) => {
@@ -20,7 +24,11 @@ describe('Text loading', () => {
             }
         );
         const result = await loadTextData(file as unknown as File);
-        expect(result).toEqual([[{ role: 'text', content: 'Hello' }], [{ role: 'text', content: 'World' }]]);
+        const stream = result.cursor();
+        const first = await stream.next();
+        const second = await stream.next();
+        expect(first).toEqual([{ role: 'text', content: 'Hello' }]);
+        expect(second).toEqual([{ role: 'text', content: 'World' }]);
     });
 
     it('should load a jsonl conversation file', async ({ expect }) => {
@@ -42,15 +50,16 @@ describe('Text loading', () => {
             }
         );
         const result = await loadTextData(file as unknown as File);
-        expect(result).toEqual([
-            [
-                { role: 'user', content: 'Hello' },
-                { role: 'assistant', content: 'Hi there!' },
-            ],
-            [
-                { role: 'user', content: 'World' },
-                { role: 'assistant', content: 'Hello!' },
-            ],
+        const stream = result.cursor();
+        const first = await stream.next();
+        const second = await stream.next();
+        expect(first).toEqual([
+            { role: 'user', content: 'Hello' },
+            { role: 'assistant', content: 'Hi there!' },
+        ]);
+        expect(second).toEqual([
+            { role: 'user', content: 'World' },
+            { role: 'assistant', content: 'Hello!' },
         ]);
     });
 });

@@ -1,3 +1,4 @@
+import { ConversationStream } from '@base/data/stream';
 import { Conversation, ITokeniser, Roles } from './type';
 import EE from 'eventemitter3';
 
@@ -78,7 +79,7 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
         this.id = 'tokeniser_' + a + '_' + b;
     }
 
-    abstract train(text: Conversation[][], cb?: (vocab: number) => void, datasetID?: string): Promise<number>;
+    abstract train(text: ConversationStream[], cb?: (vocab: number) => void, datasetID?: string): Promise<number>;
     abstract getVocab(): string[];
     abstract getMerges(): [string, string][];
     abstract destroy(): void;

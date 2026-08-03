@@ -9,6 +9,7 @@ import { selectBackend } from '@base/backend';
 import TeachableLLM from '@base/TeachableLLM';
 import { sentenceEmbeddings } from './sentences';
 import { Conversation } from '@base/tokeniser/type';
+import { MemoryConversationStream } from '@base/data/stream';
 
 function textToConversations(texts: string[]): Conversation[][] {
     return texts.map((text) => [{ role: 'text', content: text }]);
@@ -35,7 +36,7 @@ describe('Sentence embeddings', { timeout: 60000 }, () => {
             vocabSize: 20,
         });
 
-        await model.trainTokeniser(textToConversations(sentences));
+        await model.trainTokeniser([new MemoryConversationStream(textToConversations(sentences))]);
 
         const embeddings = await sentenceEmbeddings(model, sentences);
         expect(embeddings.length).toBe(1);
@@ -58,10 +59,10 @@ describe('Sentence embeddings', { timeout: 60000 }, () => {
             nLayer: 2,
             nHead: 4,
             mlpFactor: 4,
-            vocabSize: 20,
+            vocabSize: 100,
         });
 
-        await model.trainTokeniser(textToConversations(sentences));
+        await model.trainTokeniser([new MemoryConversationStream(textToConversations(sentences))]);
 
         const embeddings = await sentenceEmbeddings(model, sentences);
         expect(embeddings.length).toBe(1);
@@ -89,10 +90,10 @@ describe('Sentence embeddings', { timeout: 60000 }, () => {
             nLayer: 2,
             nHead: 4,
             mlpFactor: 4,
-            vocabSize: 20,
+            vocabSize: 100,
         });
 
-        await model.trainTokeniser(textToConversations(sentences));
+        await model.trainTokeniser([new MemoryConversationStream(textToConversations(sentences))]);
 
         const embeddings = await sentenceEmbeddings(model, sentences);
         expect(embeddings.length).toBe(sentences.length);

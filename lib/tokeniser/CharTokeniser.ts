@@ -1,6 +1,6 @@
 import { yieldIfNeeded } from '@base/utilities/yielder';
 import BaseTokeniser, { SPECIALS } from './BaseTokeniser';
-import { Conversation } from './type';
+import { ConversationStream } from '@base/data/stream';
 
 const specialTokens = ['<eos>', '<unk>'];
 
@@ -107,21 +107,25 @@ export default class CharTokeniser extends BaseTokeniser {
         this.vocab = [];
     }
 
-    public async train(text: Conversation[][], cb?: (vocab: number) => void, datasetID?: string): Promise<number> {
+    public async train(text: ConversationStream[], cb?: (vocab: number) => void, datasetID?: string): Promise<number> {
         this.datasetID = datasetID;
         //const flatText = text.map((t) => t.map((c) => c.content.split(''))).flat(2);
         const charSet = new Set<string>();
         let lastYield = performance.now();
 
         // Build charset
-        for (const conversation of text) {
-            conversation.forEach((fragment) => {
-                for (const char of fragment.content) {
-                    charSet.add(char);
-                }
-            });
-
-            lastYield = await yieldIfNeeded(lastYield, cb, 0);
+        for (const stream of text) {
+            const cursor = stream.cursor();
+            let conversation = await cursor.next();
+            while (conversation !== null) {
+                conversation.forEach((fragment) => {
+                    for (const char of fragment.content) {
+                        charSet.add(char);
+                    }
+                });
+                lastYield = await yieldIfNeeded(lastYield, cb, 0);
+                conversation = await cursor.next();
+            }
         }
 
         const charArray = Array.from(charSet);
@@ -137,16 +141,7 @@ export default class CharTokeniser extends BaseTokeniser {
 
         if (charArray.length > actualSize) {
             // Remove least common characters if we exceed the vocab size
-            const counts = new Map<string, number>();
-            text.forEach((conversation) => {
-                conversation.forEach((fragment) => {
-                    for (const char of fragment.content) {
-                        counts.set(char, (counts.get(char) || 0) + 1);
-                    }
-                });
-            });
-            charArray.sort((a, b) => (counts.get(a) || 0) - (counts.get(b) || 0));
-            charArray.splice(0, charArray.length - actualSize);
+            throw new Error('too_small_vocab');
         }
 
         // charArray.sort((a, b) => a.charCodeAt(0) - b.charCodeAt(0));

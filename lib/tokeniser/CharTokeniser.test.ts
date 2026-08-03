@@ -2,6 +2,7 @@ import { describe, it } from 'vitest';
 import CharTokeniser from './CharTokeniser';
 import { SPECIALS } from './BaseTokeniser';
 import { Conversation } from './type';
+import { MemoryConversationStream } from '@base/data/stream';
 
 function textToConversations(texts: string[]): Conversation[][] {
     return texts.map((text) => [{ role: 'text', content: text }]);
@@ -13,7 +14,7 @@ describe('CharTokeniser Tests', () => {
 
         const textData = ['hello world', 'this is a test', 'hello again', 'test the tokenizer'];
 
-        await charTokeniser.train(textToConversations(textData));
+        await charTokeniser.train([new MemoryConversationStream(textToConversations(textData))]);
 
         const tokens = charTokeniser.tokenise(textData, true);
         const eosTokens = tokens.map((t) => [...t, charTokeniser.eosToken]);
@@ -27,7 +28,7 @@ describe('CharTokeniser Tests', () => {
 
         const textData = ['short', 'sort'];
 
-        await charTokeniser.train(textToConversations(textData));
+        await charTokeniser.train([new MemoryConversationStream(textToConversations(textData))]);
 
         expect(charTokeniser.vocabSize).toBe(20);
         expect(charTokeniser.vocab.length).toBe(20);
@@ -41,7 +42,7 @@ describe('CharTokeniser Tests', () => {
 
         const textData = ['a', 'b', 'c', 'c', 'a', 'b', 'd', 'd', 'e', 'e', 'f', 'g'];
 
-        await charTokeniser.train(textToConversations(textData));
+        await charTokeniser.train([new MemoryConversationStream(textToConversations(textData))]);
 
         expect(charTokeniser.vocabSize).toBe(SPECIALS.length + 3);
         expect(charTokeniser.vocab).not.toContain('f');
@@ -55,7 +56,7 @@ describe('CharTokeniser Tests', () => {
 
         const textData = ['a', 'b', 'c', 'c', 'a', 'b', 'd', 'd', 'e', 'e', 'f', 'g'];
 
-        await charTokeniser.train(textToConversations(textData));
+        await charTokeniser.train([new MemoryConversationStream(textToConversations(textData))]);
 
         const tokens = (await charTokeniser.tokenise(textData)).flat();
 
@@ -68,11 +69,11 @@ describe('CharTokeniser Tests', () => {
         const textData1 = ['hello world', 'hello again'];
         const textData2 = ['short', 'sort'];
 
-        await charTokeniser.train(textToConversations(textData1));
+        await charTokeniser.train([new MemoryConversationStream(textToConversations(textData1))]);
 
         const vocabAfterFirstTrain = [...charTokeniser.vocab];
 
-        await charTokeniser.train(textToConversations(textData2));
+        await charTokeniser.train([new MemoryConversationStream(textToConversations(textData2))]);
 
         const vocabAfterSecondTrain = [...charTokeniser.vocab];
 
@@ -97,7 +98,7 @@ describe('CharTokeniser Tests', () => {
             { role: 'system', content: 'This is a system message.' },
         ];
 
-        await charTokeniser.train([conversation]);
+        await charTokeniser.train([new MemoryConversationStream([conversation])]);
 
         const encoded = charTokeniser.encodeConversation(conversation);
 

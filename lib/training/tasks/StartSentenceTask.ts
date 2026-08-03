@@ -19,7 +19,7 @@ export default class StartSentenceTask extends Task {
         return this.index < this.rawText.length;
     }
 
-    nextConversation(): Conversation[] | null {
+    async nextConversation(): Promise<Conversation[] | null> {
         if (this.index >= this.rawText.length) {
             return null;
         }
@@ -30,10 +30,13 @@ export default class StartSentenceTask extends Task {
         return this.conversationFromString(text);
     }
 
-    nextTokens(tokeniser: ITokeniser): number[] | null;
-    nextTokens(tokeniser: ITokeniser, masking: boolean): { tokens: number[]; mask: boolean[] } | null;
-    nextTokens(tokeniser: ITokeniser, masking?: boolean): number[] | { tokens: number[]; mask: boolean[] } | null {
-        const conv = this.nextConversation();
+    nextTokens(tokeniser: ITokeniser): Promise<number[] | null>;
+    nextTokens(tokeniser: ITokeniser, masking: boolean): Promise<{ tokens: number[]; mask: boolean[] } | null>;
+    async nextTokens(
+        tokeniser: ITokeniser,
+        masking?: boolean
+    ): Promise<number[] | { tokens: number[]; mask: boolean[] } | null> {
+        const conv = await this.nextConversation();
         if (!conv) {
             return null;
         }

@@ -76,6 +76,8 @@ def _row_to_conversation(
     row: dict[str, Any],
     text_column: str | None,
     conversation_column: str | None,
+    prompt_column: str | None,
+    response_column: str | None,
     include_columns: list[str] | None,
 ) -> list[dict[str, str]]:
     # 1) Explicit conversation column takes precedence when valid.
@@ -87,7 +89,19 @@ def _row_to_conversation(
                 for turn in candidate
             ]
 
-    # 2) Auto-detect a conversation shape in common columns.
+    # 2) Explicit prompt/response columns map to user/assistant turns.
+    if (
+        prompt_column
+        and response_column
+        and prompt_column in row
+        and response_column in row
+    ):
+        return [
+            {"role": "user", "content": _stringify(row.get(prompt_column))},
+            {"role": "assistant", "content": _stringify(row.get(response_column))},
+        ]
+
+    # 3) Auto-detect a conversation shape in common columns.
     for key in ("conversation", "messages"):
         if key in row:
             candidate = _parse_json_if_string(row.get(key))
@@ -97,7 +111,7 @@ def _row_to_conversation(
                     for turn in candidate
                 ]
 
-    # 3) Text-column mapping for non-conversational records.
+    # 4) Text-column mapping for non-conversational records.
     chosen_text_column: str | None = None
     if text_column and text_column in row:
         chosen_text_column = text_column
@@ -108,7 +122,7 @@ def _row_to_conversation(
         content = _stringify(row.get(chosen_text_column))
         return [{"role": "text", "content": content}]
 
-    # 4) Fallback: serialize selected columns or the whole row as text payload.
+    # 5) Fallback: serialize selected columns or the whole row as text payload.
     payload: Any
     if include_columns:
         payload = {col: row.get(col) for col in include_columns}
@@ -122,6 +136,8 @@ def _iter_jsonl_lines(
     rows: Iterable[dict[str, Any]],
     text_column: str | None,
     conversation_column: str | None,
+    prompt_column: str | None,
+    response_column: str | None,
     include_columns: list[str] | None,
 ) -> Iterator[str]:
     for row in rows:
@@ -129,6 +145,8 @@ def _iter_jsonl_lines(
             row=row,
             text_column=text_column,
             conversation_column=conversation_column,
+            prompt_column=prompt_column,
+            response_column=response_column,
             include_columns=include_columns,
         )
         yield json.dumps(conversation, ensure_ascii=False)
@@ -154,6 +172,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--conversation-column",
         default=None,
         help="Column that contains conversation arrays (object/array or JSON string)",
+    )
+    parser.add_argument(
+        "--prompt-column",
+        default=None,
+        help="Column to use as user prompt content (requires --response-column)",
+    )
+    parser.add_argument(
+        "--response-column",
+        default=None,
+        help="Column to use as assistant response content (requires --prompt-column)",
     )
     parser.add_argument(
         "--include-columns",
@@ -188,6 +216,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
 
+    if bool(args.prompt_column) != bool(args.response_column):
+        print(
+            "Both --prompt-column and --response-column must be provided together.",
+            file=sys.stderr,
+        )
+        return 2
+
     input_path = Path(args.input)
     if not input_path.exists() or not input_path.is_file():
         print(f"Input parquet file not found: {input_path}", file=sys.stderr)
@@ -203,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
                 batch,
                 text_column=args.text_column,
                 conversation_column=args.conversation_column,
+                prompt_column=args.prompt_column,
+                response_column=args.response_column,
                 include_columns=args.include_columns,
             ):
                 out.write(line)

@@ -4,7 +4,7 @@ import { Dataset } from '@tensorflow/tfjs-data';
 import { DatasetBuilder, DatasetState, shuffle } from './DatasetBuilder';
 
 export async function createTrainValidationSplit(
-    tasks: Task[] | Uint16Array,
+    tasks: Task[] | Uint16Array[],
     tokeniser: ITokeniser,
     datasetBuilder: DatasetBuilder,
     batchSize: number,
@@ -17,10 +17,14 @@ export async function createTrainValidationSplit(
     validationState: DatasetState;
     trainState: DatasetState;
 }> {
-    const tokens = tasks instanceof Uint16Array ? tasks : await tokensFromTasks(tasks, tokeniser, undefined, masking);
-    const allTokens = tokens instanceof Uint16Array ? tokens : tokens.tokens;
-    const totalBlocks = Math.ceil(allTokens.length / datasetBuilder.blockSize);
-    const mask = tokens instanceof Uint16Array ? undefined : tokens.mask;
+    const tokens =
+        tasks[0] instanceof Uint16Array
+            ? (tasks as Uint16Array[])
+            : await tokensFromTasks(tasks as Task[], tokeniser, undefined, masking);
+    const allTokens = Array.isArray(tokens) ? tokens : tokens.tokens;
+    const totalTokens = allTokens.reduce((sum, tokens) => sum + tokens.length, 0);
+    const totalBlocks = Math.ceil(totalTokens / datasetBuilder.blockSize);
+    const mask = Array.isArray(tokens) ? undefined : tokens.mask;
 
     const validationMask = new Set<number>();
     if (validationSplit > 0) {
@@ -67,5 +71,11 @@ export async function createTrainValidationSplit(
         validationIndexes
     );
 
-    return { trainDataset, validationDataset, size: allTokens.length, validationState, trainState };
+    return {
+        trainDataset,
+        validationDataset,
+        size: totalTokens,
+        validationState,
+        trainState,
+    };
 }

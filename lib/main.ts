@@ -7,6 +7,7 @@ export { default as BPETokeniser } from './tokeniser/bpe';
 export { default as waitForModel } from './utilities/waitForModel';
 export { default as generateDatasetID } from './utilities/datasetID';
 export { default as loadTextData } from './data/textLoader';
+export type { ConversationStream, ConversationCursor } from './data/stream';
 export type { DatasetMetadata, ModelMode } from './loader/types';
 export { default as Generator, type IGenerator } from './Generator';
 export { default as Evaluator } from './training/Evaluator';
@@ -24,6 +25,7 @@ export {
     validateConfig,
 } from './utilities/parameters';
 export { default as topP } from './utilities/topP';
+export { sliceUint16Shards, sliceUint8Shards } from './utilities/tokens';
 export { Task, tokensFromTasks } from './training/tasks/Task';
 import { default as PretrainingTask } from './training/tasks/PretrainingTask';
 import { default as StartSentenceTask } from './training/tasks/StartSentenceTask';
