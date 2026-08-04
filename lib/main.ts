@@ -8,6 +8,7 @@ export { default as waitForModel } from './utilities/waitForModel';
 export { default as generateDatasetID } from './utilities/datasetID';
 export { default as loadTextData } from './data/textLoader';
 export type { ConversationStream, ConversationCursor } from './data/stream';
+export { MemoryConversationStream } from './data/stream';
 export type { DatasetMetadata, ModelMode } from './loader/types';
 export { default as Generator, type IGenerator } from './Generator';
 export { default as Evaluator } from './training/Evaluator';

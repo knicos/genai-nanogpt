@@ -117,7 +117,6 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             if (options?.nonConversational) {
                 if (isAssistant && options?.continuation) {
                     tokenisedPrompt = [tokeniser.bosToken, ...tokeniser.encode(prompt[prompt.length - 1].content)];
-                    //tokenisedPrompt = tokeniser.encode(prompt[prompt.length - 1].content);
                 } else {
                     tokenisedPrompt = tokeniser.encodeAsSequence(prompt, true);
                 }

@@ -13,6 +13,17 @@ export default function topP(probs: number[][], tP: number): number[] {
 
     // Renormalize
     const sumMasked = masked.reduce((a, b) => a + b, 0);
+
+    if (sumMasked === 0) {
+        const original = probs[0];
+        const origSum = original.reduce((a, b) => a + b, 0);
+        if (origSum > 0) {
+            return original.map((p) => p / origSum);
+        }
+        const uniform = 1 / original.length;
+        return original.map(() => uniform);
+    }
+
     const renormProbs = masked.map((p) => p / sumMasked);
     return renormProbs;
 }
