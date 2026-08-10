@@ -11,7 +11,7 @@ import loadZipFile from './newZipLoad';
 import { TransformersMetadata } from './types';
 import '@tensorflow/tfjs';
 import createModelInstance from '@base/models/factory';
-import { CharTokeniser } from '@base/main';
+import { AdamWOptimizer, CharTokeniser } from '@base/main';
 
 vi.mock('./newZipLoad', () => ({ default: vi.fn() }));
 vi.mock('./oldZipLoad', () => ({ default: vi.fn() }));
@@ -31,9 +31,6 @@ describe('save/load zips', () => {
             nLayer: 1,
             nHead: 1,
             nEmbed: 4,
-            dropout: 0,
-            biasInLinear: false,
-            biasInLayerNorm: false,
             mlpFactor: 4,
             useRope: false,
         });
@@ -89,9 +86,6 @@ describe('save/load zips', () => {
             nLayer: 1,
             nHead: 1,
             nEmbed: 4,
-            dropout: 0,
-            biasInLinear: false,
-            biasInLayerNorm: false,
             mlpFactor: 4,
             useRope: false,
         });
@@ -214,5 +208,116 @@ describe('save/load zips', () => {
         expect(loadedTensor).toBeTruthy();
         const data = await loadedTensor!.data();
         expect(Array.from(data)).toEqual([9]);
+    });
+
+    it('saveModel then loadModel round-trips a custom model zip without mocks', async () => {
+        vi.resetModules();
+        vi.doUnmock('./newZipLoad');
+        vi.doUnmock('./oldZipLoad');
+        vi.doUnmock('./loadHF');
+
+        const { loadModel: realLoadModel } = await import('./load');
+
+        const model = createModelInstance({
+            modelType: 'GenAI_NanoGPT_v1',
+            vocabSize: 48,
+            blockSize: 24,
+            nLayer: 1,
+            nHead: 2,
+            nEmbed: 8,
+            mlpFactor: 4,
+            useRope: true,
+        });
+
+        model.metaData = {
+            version: VERSION,
+            application: '@genai-fi/nanogpt',
+        };
+
+        // Touch one variable so at least one tensor is written to the safetensors file.
+        model.weightStore.touchVariables(['block_0_rms1']);
+
+        const tokeniser = new CharTokeniser(48);
+        const blob = await saveModel(model, tokeniser, {
+            name: 'custom-language-model',
+            metadata: { language: 'custom' },
+        });
+
+        const loaded = await realLoadModel(blob);
+
+        expect(loaded.model.config.modelType).toBe('GenAI_NanoGPT_v1');
+        expect(loaded.model.config.nEmbed).toBe(8);
+        expect(loaded.model.config.nHead).toBe(2);
+        expect(loaded.metaData.name).toBe('custom-language-model');
+        expect(loaded.metaData.meta).toEqual({ language: 'custom' });
+        expect(loaded.tokeniser.getVocab().length).toBe(48);
+
+        loaded.model.dispose();
+        model.dispose();
+    });
+
+    it('can save and load with optimizer state', async () => {
+        vi.resetModules();
+        vi.doUnmock('./newZipLoad');
+        vi.doUnmock('./oldZipLoad');
+        vi.doUnmock('./loadHF');
+
+        const { loadModel: realLoadModel } = await import('./load');
+
+        const model = createModelInstance({
+            modelType: 'GenAI_NanoGPT_v1',
+            vocabSize: 48,
+            blockSize: 24,
+            nLayer: 1,
+            nHead: 2,
+            nEmbed: 8,
+            mlpFactor: 4,
+            useRope: true,
+        });
+
+        model.metaData = {
+            version: VERSION,
+            application: '@genai-fi/nanogpt',
+        };
+
+        // Touch one variable so at least one tensor is written to the safetensors file.
+        model.weightStore.touchVariables(['block_0_rms1']);
+
+        const tokeniser = new CharTokeniser(48);
+        const blob = await saveModel(
+            model,
+            tokeniser,
+            {
+                name: 'custom-language-model',
+                metadata: { language: 'custom' },
+                includeOptimizer: true,
+            },
+            {
+                optimizer: new AdamWOptimizer({
+                    learningRate: 0.001,
+                    weightDecay: 0.01,
+                    beta1: 0.9,
+                    beta2: 0.999,
+                    lossScaling: 1,
+                    warmupSteps: 0,
+                    decayEpochs: 1,
+                    minLearningRate: 0.0001,
+                    epochSteps: 100,
+                }),
+            }
+        );
+
+        const loaded = await realLoadModel(blob);
+
+        expect(loaded.model.config.modelType).toBe('GenAI_NanoGPT_v1');
+        expect(loaded.model.config.nEmbed).toBe(8);
+        expect(loaded.model.config.nHead).toBe(2);
+        expect(loaded.metaData.name).toBe('custom-language-model');
+        expect(loaded.metaData.meta).toEqual({ language: 'custom' });
+        expect(loaded.tokeniser.getVocab().length).toBe(48);
+        expect(loaded.optimizer).toBeDefined();
+
+        loaded.model.dispose();
+        model.dispose();
     });
 });

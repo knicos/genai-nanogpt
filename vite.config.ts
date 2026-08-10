@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import dts from 'vite-plugin-dts';
 import { extname, relative, resolve } from 'path';
 import { glob } from 'glob';
@@ -25,6 +25,7 @@ export default defineConfig({
         coverage: {
             provider: 'v8',
             reporter: ['cobertura', 'html'],
+            exclude: ['**/browser-tests/**', 'lib/checks/**', 'lib/ops/webgl/**'],
         },
         exclude: ['**/browser-tests/**', '**/node_modules/**', '**/dist/**'],
     },
