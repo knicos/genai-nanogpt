@@ -1,15 +1,22 @@
-import { ITokeniser, Task, tokensFromTasks } from '@base/main';
+import { ITokeniser } from '@base/tokeniser/type';
 import { Tensor } from '@tensorflow/tfjs-core';
 import { Dataset } from '@tensorflow/tfjs-data';
-import { DatasetBuilder, DatasetState, shuffle } from './DatasetBuilder';
+import { DatasetBuilder, DatasetState } from './DatasetBuilder';
+import { createTokenStore, TokenStore } from './tasks/TokenStore';
 
-export async function createTrainValidationSplit(
-    tasks: Task[] | Uint16Array[],
+export async function storeFromArray(tokens: Uint16Array[], tokenizer: ITokeniser): Promise<TokenStore> {
+    const store = await createTokenStore('training-tokens', tokenizer.id, tokenizer.datasetID ?? '');
+    const promises = tokens.map((shard) => store.appendShard(shard));
+    await Promise.all(promises);
+    return store;
+}
+
+export async function createTrainValidationDatasets(
+    trainingTokens: Uint16Array[] | TokenStore,
+    validationTokens: Uint16Array[] | TokenStore,
     tokeniser: ITokeniser,
     datasetBuilder: DatasetBuilder,
-    batchSize: number,
-    validationSplit = 0.1,
-    masking?: boolean
+    batchSize: number
 ): Promise<{
     trainDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
     validationDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
@@ -17,58 +24,28 @@ export async function createTrainValidationSplit(
     validationState: DatasetState;
     trainState: DatasetState;
 }> {
-    const tokens =
-        tasks[0] instanceof Uint16Array
-            ? (tasks as Uint16Array[])
-            : await tokensFromTasks(tasks as Task[], tokeniser, undefined, masking);
-    const allTokens = Array.isArray(tokens) ? tokens : tokens.tokens;
-    const totalTokens = allTokens.reduce((sum, tokens) => sum + tokens.length, 0);
-    const totalBlocks = Math.ceil(totalTokens / datasetBuilder.blockSize);
-    const mask = Array.isArray(tokens) ? undefined : tokens.mask;
+    const trainingStore =
+        trainingTokens instanceof TokenStore
+            ? trainingTokens
+            : await storeFromArray(trainingTokens as Uint16Array[], tokeniser);
 
-    const validationMask = new Set<number>();
-    if (validationSplit > 0) {
-        const numValidationBlocks = Math.max(1, Math.floor(totalBlocks * validationSplit));
+    const validationStore =
+        validationTokens instanceof TokenStore
+            ? validationTokens
+            : await storeFromArray(validationTokens as Uint16Array[], tokeniser);
 
-        while (validationMask.size < numValidationBlocks) {
-            const blockIndex = Math.floor(Math.random() * totalBlocks);
-            validationMask.add(blockIndex);
-        }
-    }
+    const totalTokens = trainingStore.getTokenCount();
 
-    const trainIndexes = new Uint32Array(totalBlocks - validationMask.size);
-    const validationIndexes = new Uint32Array(validationMask.size);
-
-    let trainIdx = 0;
-    let valIdx = 0;
-    for (let blockIndex = 0; blockIndex < totalBlocks; blockIndex++) {
-        if (validationMask.has(blockIndex)) {
-            if (valIdx < validationIndexes.length) {
-                validationIndexes[valIdx++] = blockIndex;
-            }
-        } else {
-            if (trainIdx < trainIndexes.length) {
-                trainIndexes[trainIdx++] = blockIndex;
-            }
-        }
-    }
-
-    validationMask.clear();
-
-    // Only shuffle validation
-    shuffle(validationIndexes);
-
-    const { dataset: trainDataset, state: trainState } = await datasetBuilder.createTextDataset(
-        allTokens,
+    const { dataset: trainDataset, state: trainState } = await datasetBuilder.createTextDataset(trainingStore, {
         batchSize,
-        trainIndexes,
-        mask ? mask : undefined
-    );
+    });
 
     const { dataset: validationDataset, state: validationState } = await datasetBuilder.createTextDataset(
-        allTokens,
-        batchSize,
-        validationIndexes
+        validationStore,
+        {
+            batchSize,
+            shuffleFirst: true, // Shuffle validation dataset to ensure randomness
+        }
     );
 
     return {

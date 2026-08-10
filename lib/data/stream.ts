@@ -67,6 +67,9 @@ function parseJsonlLine(line: string): Conversation[] {
     }
 }
 
+const MIN_QUEUE_SIZE = 100;
+const MAX_QUEUE_SIZE = 1000;
+
 class JSONLFromReadableStream implements ConversationStream {
     private sourceFactory: () => Promise<ReadableStream<Uint8Array>>;
 
@@ -80,6 +83,7 @@ class JSONLFromReadableStream implements ConversationStream {
         const decoder = new TextDecoder();
         let remainder = '';
         let done = false;
+        let filling = false;
         const queue: Conversation[][] = [];
 
         const init = async () => {
@@ -90,11 +94,19 @@ class JSONLFromReadableStream implements ConversationStream {
             }
         };
 
+        let resolveSomeData: (() => void) | null = null;
+
         const fillQueue = async () => {
+            if (filling) return;
+            filling = true;
             await init();
 
-            while (queue.length === 0 && !done) {
+            while (queue.length < MAX_QUEUE_SIZE && !done) {
                 const result = await reader!.read();
+                if (resolveSomeData && queue.length > 0) {
+                    resolveSomeData();
+                    resolveSomeData = null;
+                }
 
                 if (result.done) {
                     remainder += decoder.decode();
@@ -119,13 +131,35 @@ class JSONLFromReadableStream implements ConversationStream {
                     queue.push(parseJsonlLine(line));
                 }
             }
+            filling = false;
+            if (resolveSomeData && (queue.length > 0 || done)) {
+                resolveSomeData();
+                resolveSomeData = null;
+            }
         };
+
+        let fillPromise: Promise<void> | null = null;
 
         return {
             async next(): Promise<Conversation[] | null> {
-                if (queue.length > 0) return queue.shift() ?? null;
-                await fillQueue();
-                return queue.shift() ?? null;
+                if (queue.length < MIN_QUEUE_SIZE && !done && !filling) {
+                    fillPromise = fillQueue().then(() => {
+                        fillPromise = null;
+                    });
+                }
+                if (queue.length === 0 && fillPromise) {
+                    await new Promise<void>((resolve) => {
+                        resolveSomeData = resolve;
+                    });
+                }
+                if (queue.length === 0 && !done) {
+                    console.warn('Queue is empty but not done');
+                }
+                const r = queue.length > 0 ? (queue.shift() ?? null) : null;
+                if (r === null && !done) {
+                    console.warn('Queue is empty and not done');
+                }
+                return r;
             },
         };
     }

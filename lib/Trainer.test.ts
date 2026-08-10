@@ -1,12 +1,12 @@
 import { beforeEach, describe, it, vi } from 'vitest';
 import Trainer from './Trainer';
 import CharTokeniser from './tokeniser/CharTokeniser';
-import { createTrainValidationSplit } from './training/validation';
+import { createTrainValidationDatasets } from './training/validation';
 import { DatasetMetadata, TransformersMetadata } from './loader/types';
 import Model, { ModelForwardAttributes } from './models/model';
 
 vi.mock('./training/validation', () => ({
-    createTrainValidationSplit: vi.fn(),
+    createTrainValidationDatasets: vi.fn(),
 }));
 
 function createMockModel() {
@@ -48,7 +48,7 @@ describe('Trainer Tests', () => {
         const mockModel = createMockModel();
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (createTrainValidationSplit as any).mockResolvedValue({
+        (createTrainValidationDatasets as any).mockResolvedValue({
             trainDataset: { iterator: vi.fn() }, // shape only; we stub trainOnDataset below
             validationDataset: { iterator: vi.fn() }, // shape only
             size: 100,
@@ -68,15 +68,15 @@ describe('Trainer Tests', () => {
         });*/
 
         const rawData = new Uint16Array([1, 2, 3, 4]);
-        await trainer.prepare(rawData, [{ id: 'ds1', conversational: false } as DatasetMetadata]);
+        const validationData = new Uint16Array([5, 6, 7, 8]);
+        await trainer.prepare([rawData], [validationData], [{ id: 'ds1', conversational: false } as DatasetMetadata]);
 
-        expect(createTrainValidationSplit).toHaveBeenCalledWith(
-            rawData,
+        expect(createTrainValidationDatasets).toHaveBeenCalledWith(
+            [rawData],
+            [validationData],
             tokeniser,
             expect.anything(), // datasetBuilder
-            2,
-            0.1,
-            false
+            2
         );
 
         expect(mockModel.metaData.pretrainingData).toEqual([{ id: 'ds1', conversational: false }]);
@@ -88,7 +88,7 @@ describe('Trainer Tests', () => {
         const mockModel = createMockModel();
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (createTrainValidationSplit as any).mockResolvedValue({
+        (createTrainValidationDatasets as any).mockResolvedValue({
             trainDataset: { iterator: vi.fn() }, // shape only; we stub trainOnDataset below
             validationDataset: { iterator: vi.fn() }, // shape only
             size: 100,
@@ -108,15 +108,15 @@ describe('Trainer Tests', () => {
         });*/
 
         const rawData = new Uint16Array([1, 2, 3, 4]);
-        await trainer.prepare(rawData, [{ id: 'ds1', conversational: true } as DatasetMetadata]);
+        const validationData = new Uint16Array([5, 6, 7, 8]);
+        await trainer.prepare([rawData], [validationData], [{ id: 'ds1', conversational: true } as DatasetMetadata]);
 
-        expect(createTrainValidationSplit).toHaveBeenCalledWith(
-            rawData,
+        expect(createTrainValidationDatasets).toHaveBeenCalledWith(
+            [rawData],
+            [validationData],
             tokeniser,
             expect.anything(), // datasetBuilder
-            2,
-            0.1,
-            false
+            2
         );
 
         expect(mockModel.metaData.pretrainingData).toEqual([{ id: 'ds1', conversational: true }]);

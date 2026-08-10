@@ -4,14 +4,15 @@ import PreTrainer from './training/PreTrainer';
 import { Dataset } from '@tensorflow/tfjs-data';
 import { Tensor } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from './models/model';
-import { Task } from './training/tasks/Task';
+import { Task, tokensFromTasks } from './training/tasks/Task';
 import { TrainingOptions, TrainingLogEntry } from './training/types';
-import { createTrainValidationSplit } from './training/validation';
+import { createTrainValidationDatasets, storeFromArray } from './training/validation';
 import SFTTrainer from './training/SFTTrainer';
 import { AdamWOptimizer } from './training/AdamW';
 import { v4 as uuidv4 } from 'uuid';
 import { DatasetMetadata } from './loader/types';
 import { packingSupported } from './utilities/packed';
+import { TokenStore } from './training/tasks/TokenStore';
 
 interface TrainingProgress {
     lastLog: TrainingLogEntry;
@@ -207,7 +208,11 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
         }
     }
 
-    async prepare(tasks: Task[] | Uint16Array[] = [], datasets?: DatasetMetadata[]): Promise<void> {
+    async prepare(
+        tasks: Task[] | Uint16Array[] | TokenStore = [],
+        validation?: Uint16Array[] | TokenStore,
+        datasets?: DatasetMetadata[]
+    ): Promise<void> {
         const options = this.options;
 
         const isLoRA = options.loraName || options.loraConfig;
@@ -250,19 +255,49 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             throw new Error('SFT training requires Task[] input');
         }
 
-        const { trainDataset, validationDataset, size } = await createTrainValidationSplit(
-            tasks,
-            this.trainer.tokenizer,
-            this.trainer.datasetBuilder,
-            options?.batchSize || 32,
-            options?.validationSplit || 0.1,
-            maskedLoss
-        );
+        let trainingTokens: Uint16Array[] | TokenStore;
+        let validationTokens: Uint16Array[] | TokenStore | undefined = validation;
 
-        const totalTokens = Math.floor(size * (1 - (options?.validationSplit || 0.1)));
+        if (Array.isArray(tasks)) {
+            if (tasks[0] instanceof Uint16Array) {
+                trainingTokens = tasks as Uint16Array[];
+            } else {
+                const result = await tokensFromTasks(tasks as Task[], this.trainer.tokenizer, {
+                    masking: maskedLoss,
+                    validationSplit: options.validationSplit,
+                });
+                trainingTokens = result.trainingTokens;
+                if (!validation) {
+                    validationTokens = result.validationTokens;
+                }
+            }
+        } else {
+            trainingTokens = tasks as TokenStore;
+        }
 
-        this.trainDataset = trainDataset;
-        this.validationDataset = validationDataset;
+        const totalTokens =
+            trainingTokens instanceof TokenStore
+                ? trainingTokens.getTokenCount()
+                : trainingTokens.reduce((sum, shard) => sum + shard.length, 0);
+
+        if (validationTokens) {
+            const { trainDataset, validationDataset } = await createTrainValidationDatasets(
+                trainingTokens,
+                validationTokens,
+                this.trainer.tokenizer,
+                this.trainer.datasetBuilder,
+                options?.batchSize || 32
+            );
+
+            this.trainDataset = trainDataset;
+            this.validationDataset = validationDataset;
+        } else {
+            const tokens =
+                trainingTokens instanceof TokenStore
+                    ? trainingTokens
+                    : await storeFromArray(trainingTokens as Uint16Array[], this.trainer.tokenizer);
+            this.trainDataset = (await this.trainer.datasetBuilder.createTextDataset(tokens, options)).dataset;
+        }
         this.totalTokens = totalTokens;
         this.options.epochSteps = Math.ceil(
             this.totalTokens / ((options?.batchSize || 32) * this.model.config.blockSize)

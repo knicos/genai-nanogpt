@@ -1,5 +1,6 @@
 import { Conversation, ITokeniser } from '@base/main';
 import { yieldIfNeeded } from '@base/utilities/yielder';
+import { createTokenStore, deleteTokenStore, TokenStore } from './TokenStore';
 
 export abstract class Task {
     abstract get length(): number;
@@ -77,55 +78,92 @@ async function roundRobinData(
     }
 }
 
-export async function tokensFromTasks(
-    tasks: Task[],
-    tokenizer: ITokeniser,
-    cb?: (tokens: number) => void
-): Promise<Uint16Array[]>;
-export async function tokensFromTasks(
-    tasks: Task[],
-    tokenizer: ITokeniser,
-    cb?: (tokens: number) => void,
-    masking?: boolean
-): Promise<{ tokens: Uint16Array[]; mask: Uint8Array[] }>;
-export async function tokensFromTasks(
-    tasks: Task[],
-    tokenizer: ITokeniser,
-    cb?: (tokens: number) => void,
-    masking?: boolean
-): Promise<Uint16Array[] | { tokens: Uint16Array[]; mask: Uint8Array[] }> {
-    const SHARD_SIZE = 10_000 * 1024; // 10 million tokens
+interface TokensFromTasksOptions {
+    masking?: boolean;
+    maxCachedShards?: number;
+    noOPFS?: boolean;
+    shardSize?: number;
+    validationSplit?: number;
+    cb?: (tokens: number) => void;
+}
 
-    const allTokens = [new Uint16Array(SHARD_SIZE)];
-    const mask: Uint8Array[] | null = masking ? [new Uint8Array(SHARD_SIZE)] : null;
-    const state = {
+export async function tokensFromTasks(
+    tasks: Task[],
+    tokenizer: ITokeniser,
+    options?: TokensFromTasksOptions
+): Promise<{ trainingTokens: TokenStore; validationTokens?: TokenStore }> {
+    await deleteTokenStore('training-tokens');
+    const trainingStore = await createTokenStore('training-tokens', tokenizer.id, tokenizer.datasetID ?? '', options);
+
+    await deleteTokenStore('validation-tokens');
+    const validationStore =
+        options?.validationSplit && options.validationSplit > 0
+            ? await createTokenStore('validation-tokens', tokenizer.id, tokenizer.datasetID ?? '', options)
+            : undefined;
+
+    const trainingTokens = [new Uint16Array(trainingStore.shardSize)];
+    const trainingMask: Uint8Array[] | null = options?.masking ? [new Uint8Array(trainingStore.shardSize)] : null;
+    const trainingState = {
+        offset: 0,
+        total: 0,
+    };
+
+    const validationTokens =
+        options?.validationSplit && options.validationSplit > 0
+            ? [new Uint16Array(validationStore!.shardSize)]
+            : undefined;
+    const validationMask: Uint8Array[] | null =
+        options?.masking && validationTokens ? [new Uint8Array(validationStore!.shardSize)] : null;
+    const validationState = {
         offset: 0,
         total: 0,
     };
 
     let lastYield = performance.now();
     while (true) {
-        await roundRobinData(tasks, allTokens, tokenizer, state, SHARD_SIZE, mask || undefined);
+        const isValidationPhase =
+            options?.validationSplit && options.validationSplit > 0 && Math.random() < options.validationSplit;
+        const allTokens = isValidationPhase ? validationTokens! : trainingTokens;
+        const state = isValidationPhase ? validationState : trainingState;
+        const mask = isValidationPhase ? validationMask : trainingMask;
+        const store = isValidationPhase ? validationStore! : trainingStore;
+        await roundRobinData(tasks, allTokens, tokenizer, state, store.shardSize, mask || undefined);
+
+        if (allTokens.length > 1) {
+            // Append the first shard to the store
+            store.appendShard(allTokens[0], mask ? mask[0] : undefined);
+            // Remove the first shard and reset offset
+            allTokens.shift();
+            if (mask) {
+                mask.shift();
+            }
+        }
+
         // Break if all tasks are exhausted
         if (tasks.every((task) => !task.hasMoreConversations())) {
             break;
         }
+
         // Yield if more than 40ms has passed
-        lastYield = await yieldIfNeeded(lastYield, cb, state.total);
+        lastYield = await yieldIfNeeded(lastYield, options?.cb, trainingState.total);
     }
 
-    if (allTokens.length === 1) {
-        if (mask) {
-            return { tokens: [allTokens[0].subarray(0, state.offset)], mask: [mask[0].subarray(0, state.offset)] };
-        }
-        return [allTokens[0].subarray(0, state.offset)];
-    } else {
-        // Truncate the last array to the actual size
-        allTokens[allTokens.length - 1] = allTokens[allTokens.length - 1].subarray(0, state.offset);
-        if (mask) {
-            mask[mask.length - 1] = mask[mask.length - 1].subarray(0, state.offset);
-            return { tokens: allTokens, mask };
-        }
-        return allTokens;
+    if (trainingTokens.length === 1) {
+        // Truncate the first array to the actual size and append to store
+        trainingTokens[0] = trainingTokens[0].subarray(0, trainingState.offset);
+        await trainingStore.appendShard(
+            trainingTokens[0],
+            trainingMask ? trainingMask[0].subarray(0, trainingState.offset) : undefined
+        );
     }
+    if (validationTokens && validationTokens.length === 1) {
+        // Truncate the first array to the actual size and append to store
+        validationTokens[0] = validationTokens[0].subarray(0, validationState.offset);
+        await validationStore!.appendShard(
+            validationTokens[0],
+            validationMask ? validationMask[0].subarray(0, validationState.offset) : undefined
+        );
+    }
+
+    return { trainingTokens: trainingStore, validationTokens: validationTokens ? validationStore : undefined };
 }

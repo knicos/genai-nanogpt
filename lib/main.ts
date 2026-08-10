@@ -27,6 +27,7 @@ export {
 } from './utilities/parameters';
 export { default as topP } from './utilities/topP';
 export { sliceUint16Shards, sliceUint8Shards } from './utilities/tokens';
+export { TokenStore, createTokenStore } from './training/tasks/TokenStore';
 export { Task, tokensFromTasks } from './training/tasks/Task';
 import { default as PretrainingTask } from './training/tasks/PretrainingTask';
 import { default as StartSentenceTask } from './training/tasks/StartSentenceTask';

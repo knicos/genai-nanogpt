@@ -1,7 +1,7 @@
 import { Tensor, tidy } from '@tensorflow/tfjs-core';
 import type { Conversation, ITokeniser } from '../tokeniser/type';
 import { Dataset, generator } from '@tensorflow/tfjs-data';
-import { sliceUint16Shards, sliceUint8Shards } from '@base/utilities/tokens';
+import { TokenStore } from './tasks/TokenStore';
 
 export function flattenTokens(textData: Conversation[][], tokenizer: ITokeniser): Uint16Array {
     // Process ALL text into one token array first
@@ -32,8 +32,70 @@ export function shuffle(array: Uint32Array): Uint32Array {
 }
 
 export interface DatasetState {
+    shuffledShards: Uint32Array;
     shuffledIndexes: Uint32Array;
+    lastShardIndexes: Uint32Array;
+    currentShard: Uint16Array | null;
+    nextShard: Uint16Array | null;
+    currentMask: Uint8Array | null;
+    nextMask: Uint8Array | null;
+    shardIndex: number;
     step: number;
+}
+
+export async function moveToNext(state: DatasetState, store: TokenStore, noShuffle?: boolean) {
+    state.step += 1;
+
+    const indexes =
+        state.shardIndex === state.shuffledShards.length - 1 ? state.lastShardIndexes : state.shuffledIndexes;
+
+    // End of shard
+    if (state.step >= indexes.length) {
+        state.step = 0;
+        state.shardIndex += 1;
+        // End of all shards
+        if (state.shardIndex >= state.shuffledShards.length) {
+            state.shardIndex = 0;
+            if (!noShuffle) {
+                shuffle(state.shuffledShards);
+                shuffle(state.shuffledIndexes);
+                shuffle(state.lastShardIndexes);
+            }
+        }
+
+        if (state.nextShard) {
+            state.currentShard = state.nextShard;
+            state.nextShard = null;
+        } else {
+            state.currentShard = await store.getShard(state.shuffledShards[state.shardIndex]);
+        }
+        // Preload next shard
+        const nextShardIndex = (state.shardIndex + 1) % state.shuffledShards.length;
+        store.getShard(state.shuffledShards[nextShardIndex]).then((shard) => {
+            state.nextShard = shard;
+        });
+
+        if (store.hasMask()) {
+            if (state.nextMask) {
+                state.currentMask = state.nextMask;
+                state.nextMask = null;
+            } else {
+                state.currentMask = (await store.getMask(state.shuffledShards[state.shardIndex])) ?? null;
+            }
+            // Preload next mask
+            const nextMaskIndex = (state.shardIndex + 1) % state.shuffledShards.length;
+            store.getMask(state.shuffledShards[nextMaskIndex]).then((mask) => {
+                state.nextMask = mask ?? null;
+            });
+        }
+    }
+}
+
+interface DatasetOptions {
+    batchSize: number;
+    noShuffle?: boolean;
+    ignoreIndex?: number;
+    shuffleFirst?: boolean;
 }
 
 // Training data utilities using TensorFlow.js Dataset API
@@ -48,55 +110,100 @@ export class DatasetBuilder {
 
     // Create dataset from text files
     public async createTextDataset(
-        flatTokens: Uint16Array[],
-        batchSize = 32,
-        indexes?: Uint32Array,
-        mask?: Uint8Array[],
-        ignoreIndex = 0xffff
+        store: TokenStore,
+        options?: DatasetOptions
     ): Promise<{ dataset: Dataset<{ xs: Tensor; ys: Tensor }>; state: DatasetState }> {
-        const totalTokens = flatTokens.reduce((sum, tokens) => sum + tokens.length, 0);
+        const { batchSize = 32, noShuffle = false, ignoreIndex = 0xffff } = options || {};
+        const totalTokens = store.getTokenCount();
 
         if (totalTokens < this.blockSize + 1) {
             throw new Error(`Not enough tokens (${totalTokens}) for block size ${this.blockSize}`);
         }
 
-        const totalBlocks = Math.ceil(totalTokens / this.blockSize);
+        const blocksPerShard = Math.ceil(store.shardSize / this.blockSize);
 
         const state: DatasetState = {
-            shuffledIndexes: new Uint32Array(totalBlocks),
+            shuffledShards: new Uint32Array(store.getShardCount()),
+            shuffledIndexes: new Uint32Array(blocksPerShard),
+            lastShardIndexes: new Uint32Array(
+                Math.ceil(store.getShardLength(store.getShardCount() - 1) / this.blockSize)
+            ),
+            currentMask: null,
+            nextMask: null,
+            currentShard: null,
+            nextShard: null,
+            shardIndex: 0,
             step: 0,
         };
 
-        // Note: Don't actually shuffle on the first epoch to allow curriculum learning. We'll shuffle after the first epoch.
-        if (indexes) {
-            state.shuffledIndexes = indexes;
-        } else {
-            state.shuffledIndexes = new Uint32Array(totalBlocks);
-            for (let i = 0; i < totalBlocks; i++) {
-                state.shuffledIndexes[i] = i;
+        for (let i = 0; i < state.shuffledShards.length; i++) {
+            state.shuffledShards[i] = i;
+        }
+        for (let i = 0; i < state.shuffledIndexes.length; i++) {
+            state.shuffledIndexes[i] = i;
+        }
+        for (let i = 0; i < state.lastShardIndexes.length; i++) {
+            state.lastShardIndexes[i] = i;
+        }
+
+        if (options?.shuffleFirst) {
+            shuffle(state.shuffledShards);
+            shuffle(state.shuffledIndexes);
+            shuffle(state.lastShardIndexes);
+        }
+
+        // Await current shard
+        state.currentShard = await store.getShard(state.shuffledShards[state.shardIndex]);
+        // Preload next shard
+        if (state.shardIndex + 1 < state.shuffledShards.length) {
+            store.getShard(state.shuffledShards[state.shardIndex + 1]).then((shard) => {
+                state.nextShard = shard;
+            });
+        }
+
+        if (store.hasMask()) {
+            state.currentMask = (await store.getMask(state.shuffledShards[state.shardIndex])) ?? null;
+            // Preload next mask
+            if (state.shardIndex + 1 < state.shuffledShards.length) {
+                store.getMask(state.shuffledShards[state.shardIndex + 1]).then((mask) => {
+                    state.nextMask = mask ?? null;
+                });
             }
         }
 
         // Use generator to avoid storing all sequences in memory
-        const gen = function* (this: DatasetBuilder) {
+        const gen = async function* (this: DatasetBuilder) {
             while (true) {
-                const i = state.shuffledIndexes[state.step++] * this.blockSize;
+                const indexes =
+                    state.shardIndex === state.shuffledShards.length - 1
+                        ? state.lastShardIndexes
+                        : state.shuffledIndexes;
+                const step = indexes[state.step];
+                const i = step * this.blockSize;
+                const flatTokens = state.currentShard;
+                const mask = state.currentMask;
 
-                if (state.step >= state.shuffledIndexes.length) {
-                    state.step = 0;
-                    shuffle(state.shuffledIndexes);
+                const move = moveToNext(state, store, noShuffle);
+
+                if (!flatTokens) {
+                    break;
                 }
-
-                if (i + this.blockSize + 1 > totalTokens) {
+                if (i + this.blockSize + 1 > flatTokens.length) {
+                    console.warn(
+                        'Index out of bounds for current shard, moving to next shard',
+                        step,
+                        i,
+                        flatTokens.length
+                    );
                     continue; // Skip if out of bounds
                 }
 
-                const xs = new Int32Array(sliceUint16Shards(flatTokens, i, i + this.blockSize));
-                const ys = new Int32Array(sliceUint16Shards(flatTokens, i + 1, i + this.blockSize + 1));
+                const xs = new Int32Array(flatTokens.slice(i, i + this.blockSize));
+                const ys = new Int32Array(flatTokens.slice(i + 1, i + this.blockSize + 1));
 
                 if (mask) {
                     let count = 0;
-                    const flatMask = sliceUint8Shards(mask, i + 1, i + this.blockSize + 1);
+                    const flatMask = mask.slice(i + 1, i + this.blockSize + 1);
                     for (let j = 0; j < ys.length; j++) {
                         if (flatMask[j] === 0) {
                             ys[j] = ignoreIndex;
@@ -109,6 +216,8 @@ export class DatasetBuilder {
                 }
 
                 yield { xs, ys };
+
+                await move;
             }
         }.bind(this);
 
@@ -120,7 +229,7 @@ export class DatasetBuilder {
                     const batchData = batch as { xs: Tensor; ys: Tensor };
                     return tidy(() => ({
                         xs: batchData.xs.cast('int32'),
-                        ys: batchData.ys.cast('int32'), // this.tf.oneHot(batchData.ys.cast('int32'), this.tokenizer.vocabSize),
+                        ys: batchData.ys.cast('int32'),
                     }));
                 })
                 .prefetch(2), // Smaller prefetch to reduce memory pressure

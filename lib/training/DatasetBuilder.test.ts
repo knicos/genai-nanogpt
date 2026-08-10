@@ -1,7 +1,8 @@
 import { describe, it, vi } from 'vitest';
-import { DatasetBuilder, flattenTokens, flattenTokensWithMask } from './DatasetBuilder';
+import { DatasetBuilder, DatasetState, flattenTokens, flattenTokensWithMask, moveToNext } from './DatasetBuilder';
 import * as tf from '@tensorflow/tfjs';
 import type { Conversation, ITokeniser } from '../tokeniser/type';
+import { TokenStore } from './tasks/TokenStore';
 
 await tf.setBackend('cpu');
 
@@ -30,7 +31,11 @@ describe('DatasetBuilder', () => {
             ],
         ];
         const allTokens = flattenTokens(textData, mockTokenizer);
-        const { dataset } = await datasetBuilder.createTextDataset([allTokens], 2);
+        const store = new TokenStore('mockTokenizer', 'mockDataset');
+        await store.appendShard(allTokens);
+        const { dataset } = await datasetBuilder.createTextDataset(store, {
+            batchSize: 2,
+        });
 
         // Assertions
         expect(dataset).toBeDefined();
@@ -90,7 +95,11 @@ describe('DatasetBuilder', () => {
         const allTokens = flattenTokensWithMask(textData, mockTokenizer);
         console.log('All Tokens:', allTokens.tokens);
         console.log('All Masks:', allTokens.mask);
-        const { dataset } = await datasetBuilder.createTextDataset([allTokens.tokens], 2, undefined, [allTokens.mask]);
+        const store = new TokenStore('mockTokenizer', 'mockDataset');
+        await store.appendShard(allTokens.tokens, allTokens.mask);
+        const { dataset } = await datasetBuilder.createTextDataset(store, {
+            batchSize: 2,
+        });
 
         // Assertions
         expect(dataset).toBeDefined();
@@ -118,48 +127,64 @@ describe('DatasetBuilder', () => {
         expect(mockTokenizer.encodeConversation).toHaveBeenCalledWith(textData[0], false, true);
         expect(mockTokenizer.encodeConversation).toHaveBeenCalledWith(textData[1], false, true);
     });
+});
 
-    it('work with provided indexes', async ({ expect }) => {
-        const mockTokenizer = {
-            vocabSize: 256,
-            encodeConversation: vi.fn((conversation: Conversation[]) =>
-                conversation.map((msg) => msg.content.split('').map((c: string) => c.charCodeAt(0))).flat()
-            ),
-        } as unknown as ITokeniser;
-        const blockSize = 1;
+describe('moveToNext', () => {
+    it('should move to the next shard and reset step', async ({ expect }) => {
+        const state: DatasetState = {
+            shuffledShards: new Uint32Array([0, 1]),
+            shuffledIndexes: new Uint32Array([0, 1, 2]),
+            lastShardIndexes: new Uint32Array([0, 1, 2]),
+            currentShard: new Uint16Array([1, 2, 3]),
+            nextShard: new Uint16Array([4, 5, 6]),
+            currentMask: null,
+            nextMask: null,
+            shardIndex: 0,
+            step: 2,
+        };
 
-        // Create instance of DatasetBuilder
-        const datasetBuilder = new DatasetBuilder(mockTokenizer, blockSize);
+        const mockStore = {
+            hasMask: vi.fn(() => false),
+            getShard: vi.fn(async (index: number) => {
+                if (index === 0) return new Uint16Array([1, 2, 3]);
+                if (index === 1) return new Uint16Array([4, 5, 6]);
+                throw new Error('Invalid shard index');
+            }),
+        } as unknown as TokenStore;
 
-        // Test createTextDataset method with a single text input
-        const textData: Conversation[] = [{ role: 'user', content: 'hello world hello world hello world hello world' }];
-        const allTokens = new Uint16Array(await flattenTokens([textData], mockTokenizer));
-        const indexes = [0, 6, 12, 18]; // Only take the first token of each "hello"
-        const { dataset, state } = await datasetBuilder.createTextDataset([allTokens], 2, new Uint32Array(indexes));
+        await moveToNext(state, mockStore);
 
-        // Assertions
-        expect(dataset).toBeDefined();
+        expect(state.step).toBe(0);
+        expect(state.shardIndex).toBe(1);
+        expect(state.currentShard).toEqual(new Uint16Array([4, 5, 6]));
+    });
 
-        const iterator = await dataset.iterator();
-        const firstBatch = await iterator.next();
-        const value: { xs: tf.Tensor; ys: tf.Tensor } = firstBatch.value;
-        expect(value).toBeDefined();
-        expect(value.xs.shape).toEqual([2, blockSize]);
-        expect(value.ys.shape).toEqual([2, blockSize]); //, mockTokenizer.vocabSize]);
+    it('start again after last shard', async ({ expect }) => {
+        const state: DatasetState = {
+            shuffledShards: new Uint32Array([0, 1]),
+            shuffledIndexes: new Uint32Array([0, 1, 2]),
+            lastShardIndexes: new Uint32Array([0, 1, 2]),
+            currentShard: new Uint16Array([4, 5, 6]),
+            nextShard: null,
+            currentMask: null,
+            nextMask: null,
+            shardIndex: 1,
+            step: 2,
+        };
 
-        // Check that the tokens correspond to the provided indexes
-        const xsData = (await value.xs.array()) as number[][];
-        const ysData = (await value.ys.array()) as number[][];
-        expect(xsData[0][0]).toBe('h'.charCodeAt(0)); // 'hello' first token
-        expect(xsData[1][0]).toBe('w'.charCodeAt(0)); // 'world' first token
-        expect(ysData[0][0]).toBe('e'.charCodeAt(0)); // 'hello' second token
-        expect(ysData[1][0]).toBe('o'.charCodeAt(0)); // 'world' second token
+        const mockStore = {
+            hasMask: vi.fn(() => false),
+            getShard: vi.fn(async (index: number) => {
+                if (index === 0) return new Uint16Array([1, 2, 3]);
+                if (index === 1) return new Uint16Array([4, 5, 6]);
+                throw new Error('Invalid shard index');
+            }),
+        } as unknown as TokenStore;
 
-        for (let i = 0; i < 4; i++) {
-            const nextBatch = await iterator.next();
-            if (nextBatch.done) break;
-        }
+        await moveToNext(state, mockStore, true);
 
-        expect(state.step).toBe(0); // Should reset after going through all indexes
+        expect(state.step).toBe(0);
+        expect(state.shardIndex).toBe(0);
+        expect(state.currentShard).toEqual(new Uint16Array([1, 2, 3]));
     });
 });

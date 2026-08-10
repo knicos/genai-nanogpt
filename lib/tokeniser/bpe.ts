@@ -196,6 +196,11 @@ export default class BPETokeniser extends BaseTokeniser {
         let lastYield = performance.now();
 
         const preTokenSet = new Set<string>();
+        this.vocab = new Set();
+        this.pretokenMap.clear();
+        this.merges = [];
+
+        this.addSpecialTokens();
 
         for (const stream of text) {
             const cursor = stream.cursor();
@@ -204,7 +209,11 @@ export default class BPETokeniser extends BaseTokeniser {
                 for (const message of conversation) {
                     const tokens = parseTokens(message.content);
                     for (const token of tokens) {
-                        preTokenSet.add(token);
+                        if (!preTokenSet.has(token)) {
+                            preTokenSet.add(token);
+                            const chars = Array.from(token);
+                            chars.forEach((c) => this.vocab.add(c));
+                        }
                     }
                 }
                 lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
@@ -212,19 +221,10 @@ export default class BPETokeniser extends BaseTokeniser {
             }
         }
 
-        this.vocab = new Set();
-        this.pretokenMap.clear();
-        this.merges = [];
-
-        this.addSpecialTokens();
-
         const pretokensArray = Array.from(preTokenSet);
         const tokens = pretokensArray.map((token) => {
             const chars = Array.from(token);
-            return chars.map((c) => {
-                this.vocab.add(c);
-                return c;
-            });
+            return chars;
         });
 
         const state = initPairs(tokens);
