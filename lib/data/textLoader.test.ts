@@ -3,17 +3,22 @@ import { describe, it } from 'vitest';
 import zip from 'jszip';
 import loadTextData from './textLoader';
 
+async function collectConversations(file: File) {
+    const result = await loadTextData(file);
+    const conversations: { role: string; content: string }[][] = [];
+    await result.begin((conv) => {
+        conversations.push(conv);
+    });
+    return conversations;
+}
+
 describe('Text loading', () => {
     it('should load a json file', async ({ expect }) => {
         const file = new NodeFile([JSON.stringify([{ text: 'Hello' }, { text: 'World' }])], 'test.json', {
             type: 'application/json',
         });
-        const result = await loadTextData(file as unknown as File);
-        const cursor = result.cursor();
-        const first = await cursor.next();
-        const second = await cursor.next();
-        expect(first).toEqual([{ role: 'text', content: 'Hello' }]);
-        expect(second).toEqual([{ role: 'text', content: 'World' }]);
+        const conversations = await collectConversations(file as unknown as File);
+        expect(conversations).toEqual([[{ role: 'text', content: 'Hello' }], [{ role: 'text', content: 'World' }]]);
     });
 
     it('should load a jsonl file', async ({ expect }) => {
@@ -24,24 +29,16 @@ describe('Text loading', () => {
                 type: 'application/jsonl',
             }
         );
-        const result = await loadTextData(file as unknown as File);
-        const stream = result.cursor();
-        const first = await stream.next();
-        const second = await stream.next();
-        expect(first).toEqual([{ role: 'text', content: 'Hello' }]);
-        expect(second).toEqual([{ role: 'text', content: 'World' }]);
+        const conversations = await collectConversations(file as unknown as File);
+        expect(conversations).toEqual([[{ role: 'text', content: 'Hello' }], [{ role: 'text', content: 'World' }]]);
     });
 
     it('should load a csv file', async ({ expect }) => {
         const file = new NodeFile(['text,title,other\nHello,some,thing\nWorld,another,thing'], 'test.csv', {
             type: 'text/csv',
         });
-        const result = await loadTextData(file as unknown as File);
-        const stream = result.cursor();
-        const first = await stream.next();
-        const second = await stream.next();
-        expect(first).toEqual([{ role: 'text', content: 'Hello' }]);
-        expect(second).toEqual([{ role: 'text', content: 'World' }]);
+        const conversations = await collectConversations(file as unknown as File);
+        expect(conversations).toEqual([[{ role: 'text', content: 'Hello' }], [{ role: 'text', content: 'World' }]]);
     });
 
     it('should load a jsonl conversation file', async ({ expect }) => {
@@ -62,17 +59,16 @@ describe('Text loading', () => {
                 type: 'application/jsonl',
             }
         );
-        const result = await loadTextData(file as unknown as File);
-        const stream = result.cursor();
-        const first = await stream.next();
-        const second = await stream.next();
-        expect(first).toEqual([
-            { role: 'user', content: 'Hello' },
-            { role: 'assistant', content: 'Hi there!' },
-        ]);
-        expect(second).toEqual([
-            { role: 'user', content: 'World' },
-            { role: 'assistant', content: 'Hello!' },
+        const conversations = await collectConversations(file as unknown as File);
+        expect(conversations).toEqual([
+            [
+                { role: 'user', content: 'Hello' },
+                { role: 'assistant', content: 'Hi there!' },
+            ],
+            [
+                { role: 'user', content: 'World' },
+                { role: 'assistant', content: 'Hello!' },
+            ],
         ]);
     });
 
@@ -85,12 +81,7 @@ describe('Text loading', () => {
             type: 'application/zip',
         });
 
-        const result = await loadTextData(file as unknown as File);
-        const stream = result.cursor();
-        const first = await stream.next();
-        const second = await stream.next();
-
-        expect(first).toEqual([{ role: 'text', content: 'Hello' }]);
-        expect(second).toEqual([{ role: 'text', content: 'World' }]);
+        const conversations = await collectConversations(file as unknown as File);
+        expect(conversations).toEqual([[{ role: 'text', content: 'Hello' }], [{ role: 'text', content: 'World' }]]);
     });
 });

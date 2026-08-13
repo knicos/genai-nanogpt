@@ -173,7 +173,8 @@ describe('TokenStore (memory-only)', () => {
 
     it('rejects invalid shard and slice ranges', async () => {
         const store = new TokenStore('tok-b', 'ds-b', 'memory-ranges', 8, 4);
-        await store.appendShard(makeRandomShard(4, 1));
+        store.appendShard(makeRandomShard(4, 1));
+        await store.finish();
 
         expect(() => store.getShardLength(-1)).toThrow(/out of range/i);
         expect(() => store.getShardLength(2)).toThrow(/out of range/i);
@@ -186,8 +187,18 @@ describe('TokenStore (memory-only)', () => {
 
     it('requires all non-final shards to be full', async () => {
         const store = new TokenStore('tok-c', 'ds-c', 'memory-shape', 8, 5);
-        await store.appendShard(makeRandomShard(3, 1));
-        await expect(store.appendShard(makeRandomShard(2, 10))).rejects.toThrow(/previous shard was not full/i);
+        store.appendShard(makeRandomShard(3, 1));
+        await expect(
+            new Promise((resolve, reject) => {
+                try {
+                    store.appendShard(makeRandomShard(2, 10));
+                    resolve(undefined);
+                } catch (e) {
+                    reject(e);
+                }
+            })
+        ).rejects.toThrow(/previous shard was not full/i);
+        await store.finish();
     });
 
     it('evicts old shards without OPFS and still serves latest cached shards', async () => {
@@ -195,8 +206,9 @@ describe('TokenStore (memory-only)', () => {
         const s0 = makeRandomShard(16, 1);
         const s1 = makeRandomShard(16, 100);
 
-        await store.appendShard(s0);
-        await store.appendShard(s1);
+        store.appendShard(s0);
+        store.appendShard(s1);
+        await store.finish();
 
         expect(store.getShardCount()).toBe(2);
         const got1 = await store.getShard(1);
@@ -247,8 +259,9 @@ describe('TokenStore (OPFS-backed, mocked)', () => {
         });
         const s0 = makeRandomShard(32, 1);
         const s1 = makeRandomShard(20, 1000);
-        await store.appendShard(s0);
-        await store.appendShard(s1);
+        store.appendShard(s0);
+        store.appendShard(s1);
+        await store.finish();
 
         await waitForCondition(() => {
             const dirs = (opfs.directories.get(storeId) ?? new Map()).keys();
@@ -277,7 +290,8 @@ describe('TokenStore (OPFS-backed, mocked)', () => {
             maxCachedShards: 1,
             shardSize: 8,
         });
-        await original.appendShard(makeRandomShard(8, 1));
+        original.appendShard(makeRandomShard(8, 1));
+        await original.finish();
 
         await waitForCondition(() => {
             const d = opfs.directories.get(storeId) ?? new Map();
@@ -301,9 +315,10 @@ describe('TokenStore (OPFS-backed, mocked)', () => {
         const s0 = makeRandomShard(8, 11);
         const s1 = makeRandomShard(8, 111);
         const s2 = makeRandomShard(8, 211);
-        await store.appendShard(s0);
-        await store.appendShard(s1);
-        await store.appendShard(s2);
+        store.appendShard(s0);
+        store.appendShard(s1);
+        store.appendShard(s2);
+        await store.finish();
 
         await waitForCondition(() => {
             const d = opfs.directories.get(storeId) ?? new Map();
@@ -328,7 +343,8 @@ describe('TokenStore (OPFS-backed, mocked)', () => {
         });
         const shard = makeRandomShard(6, 500);
         const mask = new Uint8Array([1, 0, 1, 1, 0, 1]);
-        await store.appendShard(shard, mask);
+        store.appendShard(shard, mask);
+        await store.finish();
 
         const store2 = new TokenStore('tok-mask', 'ds-mask', storeId, 1, 6);
         await store2.init();
@@ -344,7 +360,8 @@ describe('TokenStore (OPFS-backed, mocked)', () => {
             maxCachedShards: 1,
             shardSize: 8,
         });
-        await store.appendShard(makeRandomShard(8, 10));
+        store.appendShard(makeRandomShard(8, 10));
+        await store.finish();
         await store.clear();
 
         expect(store.getShardCount()).toBe(0);
@@ -360,7 +377,8 @@ describe('TokenStore (OPFS-backed, mocked)', () => {
             maxCachedShards: 1,
             shardSize: 8,
         });
-        await store.appendShard(makeRandomShard(8, 50));
+        store.appendShard(makeRandomShard(8, 50));
+        await store.finish();
 
         await waitForCondition(() => {
             const d = opfs.directories.get(storeId) ?? new Map();
@@ -412,7 +430,8 @@ describe('TokenStore registry helpers', () => {
 
     it('deleteTokenStore removes persisted data even if the store is not in registry', async () => {
         const store = await createTokenStore(storeId, 'tok-delete', 'ds-delete', { shardSize: 4 });
-        await store.appendShard(makeRandomShard(4, 1));
+        store.appendShard(makeRandomShard(4, 1));
+        await store.finish();
         await deleteTokenStore(storeId);
 
         expect(opfs.directories.has(storeId)).toBe(false);

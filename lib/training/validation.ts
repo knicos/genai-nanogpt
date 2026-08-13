@@ -6,8 +6,10 @@ import { createTokenStore, TokenStore } from './tasks/TokenStore';
 
 export async function storeFromArray(tokens: Uint16Array[], tokenizer: ITokeniser): Promise<TokenStore> {
     const store = await createTokenStore('training-tokens', tokenizer.id, tokenizer.datasetID ?? '');
-    const promises = tokens.map((shard) => store.appendShard(shard));
-    await Promise.all(promises);
+    tokens.forEach((tokenArray) => {
+        store.appendShard(tokenArray);
+    });
+    await store.finish();
     return store;
 }
 

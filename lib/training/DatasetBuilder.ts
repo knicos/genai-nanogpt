@@ -23,7 +23,7 @@ export function flattenTokensWithMask(
     return { tokens: new Uint16Array(flatTokens), mask: new Uint8Array(mask.map((m) => (m ? 1 : 0))) };
 }
 
-export function shuffle(array: Uint32Array): Uint32Array {
+export function shuffle(array: Uint32Array | Uint16Array): Uint32Array | Uint16Array {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [array[i], array[j]] = [array[j], array[i]];
@@ -32,9 +32,9 @@ export function shuffle(array: Uint32Array): Uint32Array {
 }
 
 export interface DatasetState {
-    shuffledShards: Uint32Array;
-    shuffledIndexes: Uint32Array;
-    lastShardIndexes: Uint32Array;
+    shuffledShards: Uint16Array;
+    shuffledIndexes: Uint16Array;
+    lastShardIndexes: Uint16Array;
     currentShard: Uint16Array | null;
     nextShard: Uint16Array | null;
     currentMask: Uint8Array | null;
@@ -123,9 +123,9 @@ export class DatasetBuilder {
         const blocksPerShard = Math.ceil(store.shardSize / this.blockSize);
 
         const state: DatasetState = {
-            shuffledShards: new Uint32Array(store.getShardCount()),
-            shuffledIndexes: new Uint32Array(blocksPerShard),
-            lastShardIndexes: new Uint32Array(
+            shuffledShards: new Uint16Array(store.getShardCount()),
+            shuffledIndexes: new Uint16Array(blocksPerShard),
+            lastShardIndexes: new Uint16Array(
                 Math.ceil(store.getShardLength(store.getShardCount() - 1) / this.blockSize)
             ),
             currentMask: null,
@@ -179,7 +179,7 @@ export class DatasetBuilder {
                         ? state.lastShardIndexes
                         : state.shuffledIndexes;
                 const step = indexes[state.step];
-                const i = step * this.blockSize;
+                let i = step * this.blockSize;
                 const flatTokens = state.currentShard;
                 const mask = state.currentMask;
 
@@ -189,13 +189,7 @@ export class DatasetBuilder {
                     break;
                 }
                 if (i + this.blockSize + 1 > flatTokens.length) {
-                    console.warn(
-                        'Index out of bounds for current shard, moving to next shard',
-                        step,
-                        i,
-                        flatTokens.length
-                    );
-                    continue; // Skip if out of bounds
+                    i = flatTokens.length - this.blockSize - 1;
                 }
 
                 const xs = new Int32Array(flatTokens.slice(i, i + this.blockSize));

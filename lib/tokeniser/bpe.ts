@@ -193,7 +193,6 @@ export default class BPETokeniser extends BaseTokeniser {
         datasetID?: string
     ): Promise<number> {
         this.datasetID = datasetID;
-        let lastYield = performance.now();
 
         const preTokenSet = new Set<string>();
         this.vocab = new Set();
@@ -203,23 +202,24 @@ export default class BPETokeniser extends BaseTokeniser {
         this.addSpecialTokens();
 
         for (const stream of text) {
-            const cursor = stream.cursor();
-            let conversation = await cursor.next();
-            while (conversation !== null) {
-                for (const message of conversation) {
-                    const tokens = parseTokens(message.content);
-                    for (const token of tokens) {
-                        if (!preTokenSet.has(token)) {
-                            preTokenSet.add(token);
-                            const chars = Array.from(token);
-                            chars.forEach((c) => this.vocab.add(c));
+            await stream.begin(
+                (conversation) => {
+                    for (const message of conversation) {
+                        const tokens = parseTokens(message.content);
+                        for (const token of tokens) {
+                            if (!preTokenSet.has(token)) {
+                                preTokenSet.add(token);
+                                const chars = Array.from(token);
+                                chars.forEach((c) => this.vocab.add(c));
+                            }
                         }
                     }
-                }
-                lastYield = await yieldIfNeeded(lastYield, cb, this.vocab.size);
-                conversation = await cursor.next();
-            }
+                },
+                cb ? () => cb(this.vocab.size) : undefined
+            );
         }
+
+        let lastYield = performance.now();
 
         const pretokensArray = Array.from(preTokenSet);
         const tokens = pretokensArray.map((token) => {

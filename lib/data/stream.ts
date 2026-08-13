@@ -1,12 +1,10 @@
 import type { Conversation } from '@base/tokeniser/type';
+import { yieldIfNeeded } from '@base/utilities/yielder';
 import { ZipReaderStream } from '@zip.js/zip.js';
 
-export interface ConversationCursor {
-    next(): Promise<Conversation[] | null>;
-}
-
 export interface ConversationStream {
-    cursor(): ConversationCursor;
+    begin(cb: (conv: Conversation[]) => void, yieldCb?: () => void): Promise<void>;
+    step(cb: (conv: Conversation[]) => void): Promise<() => Promise<boolean>>;
 }
 
 export class MemoryConversationStream implements ConversationStream {
@@ -16,17 +14,25 @@ export class MemoryConversationStream implements ConversationStream {
         this.conversations = conversations;
     }
 
-    cursor(): ConversationCursor {
-        let index = 0;
-        const conversations = this.conversations;
-        return {
-            async next(): Promise<Conversation[] | null> {
-                if (index < conversations.length) {
-                    return conversations[index++];
-                }
-                return null;
-            },
+    async step(cb: (conv: Conversation[]) => void) {
+        let i = 0;
+        const next = async () => {
+            if (i < this.conversations.length) {
+                cb(this.conversations[i++]);
+            }
+            return i < this.conversations.length;
         };
+        return next;
+    }
+
+    async begin(cb: (conv: Conversation[]) => void, yieldCb?: () => void) {
+        let lastYield = performance.now();
+        for (const conversation of this.conversations) {
+            cb(conversation);
+            if (yieldCb) {
+                lastYield = await yieldIfNeeded(lastYield, yieldCb);
+            }
+        }
     }
 }
 
@@ -67,9 +73,6 @@ function parseJsonlLine(line: string): Conversation[] {
     }
 }
 
-const MIN_QUEUE_SIZE = 100;
-const MAX_QUEUE_SIZE = 1000;
-
 class JSONLFromReadableStream implements ConversationStream {
     private sourceFactory: () => Promise<ReadableStream<Uint8Array>>;
 
@@ -77,91 +80,78 @@ class JSONLFromReadableStream implements ConversationStream {
         this.sourceFactory = sourceFactory;
     }
 
-    cursor(): ConversationCursor {
-        let initialized = false;
-        let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    async step(cb: (conv: Conversation[]) => void) {
+        const source = await this.sourceFactory();
+        const reader = source.getReader();
         const decoder = new TextDecoder();
         let remainder = '';
-        let done = false;
-        let filling = false;
-        const queue: Conversation[][] = [];
 
-        const init = async () => {
-            if (!initialized) {
-                const source = await this.sourceFactory();
-                reader = source.getReader();
-                initialized = true;
-            }
-        };
+        const handleOne = async () => {
+            const result = await reader.read();
 
-        let resolveSomeData: (() => void) | null = null;
-
-        const fillQueue = async () => {
-            if (filling) return;
-            filling = true;
-            await init();
-
-            while (queue.length < MAX_QUEUE_SIZE && !done) {
-                const result = await reader!.read();
-                if (resolveSomeData && queue.length > 0) {
-                    resolveSomeData();
-                    resolveSomeData = null;
+            if (result.value || remainder.length > 0) {
+                if (result.value) {
+                    remainder += decoder.decode(result.value, { stream: true });
                 }
-
-                if (result.done) {
-                    remainder += decoder.decode();
-                    done = true;
-
-                    const finalLine = remainder.trim();
-                    if (finalLine.length > 0) {
-                        queue.push(parseJsonlLine(finalLine));
-                    }
-                    remainder = '';
-                    break;
-                }
-
-                remainder += decoder.decode(result.value, { stream: true });
-
                 const lines = remainder.split('\n');
-                remainder = lines.pop() ?? '';
+
+                if (!result.done) {
+                    remainder = lines.pop() ?? '';
+                }
 
                 for (const raw of lines) {
                     const line = raw.trim();
                     if (line.length === 0) continue;
-                    queue.push(parseJsonlLine(line));
+                    const conv = parseJsonlLine(line);
+                    cb(conv);
                 }
             }
-            filling = false;
-            if (resolveSomeData && (queue.length > 0 || done)) {
-                resolveSomeData();
-                resolveSomeData = null;
-            }
+            return !result.done;
         };
 
-        let fillPromise: Promise<void> | null = null;
+        return handleOne;
+    }
 
-        return {
-            async next(): Promise<Conversation[] | null> {
-                if (queue.length < MIN_QUEUE_SIZE && !done && !filling) {
-                    fillPromise = fillQueue().then(() => {
-                        fillPromise = null;
-                    });
+    async begin(cb: (conv: Conversation[]) => void, yieldCb?: () => void) {
+        const source = await this.sourceFactory();
+        const reader = source.getReader();
+        const decoder = new TextDecoder();
+        let remainder = '';
+        let lastYield = performance.now();
+
+        return new Promise<void>((resolve) => {
+            const handleOne = async () => {
+                const result = await reader.read();
+                if (yieldCb) {
+                    lastYield = await yieldIfNeeded(lastYield, yieldCb);
                 }
-                if (queue.length === 0 && fillPromise) {
-                    await new Promise<void>((resolve) => {
-                        resolveSomeData = resolve;
-                    });
+                if (!result.done) {
+                    handleOne();
                 }
-                if (queue.length === 0 && !done) {
-                    console.warn('Queue is empty but not done');
+                if (result.value || remainder.length > 0) {
+                    if (result.value) {
+                        remainder += decoder.decode(result.value, { stream: true });
+                    }
+                    const lines = remainder.split('\n');
+
+                    if (!result.done) {
+                        remainder = lines.pop() ?? '';
+                    }
+
+                    for (const raw of lines) {
+                        const line = raw.trim();
+                        if (line.length === 0) continue;
+                        const conv = parseJsonlLine(line);
+                        cb(conv);
+                    }
                 }
-                const r = queue.length > 0 ? (queue.shift() ?? null) : null;
-                if (r === null && !done) {
-                    console.warn('Queue is empty and not done');
+                if (result.done) {
+                    resolve();
                 }
-                return r;
-            },
-        };
+            };
+
+            handleOne();
+        });
     }
 }
 

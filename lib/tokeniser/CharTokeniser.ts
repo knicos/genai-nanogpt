@@ -1,4 +1,3 @@
-import { yieldIfNeeded } from '@base/utilities/yielder';
 import BaseTokeniser, { SPECIALS } from './BaseTokeniser';
 import { ConversationStream } from '@base/data/stream';
 
@@ -111,21 +110,19 @@ export default class CharTokeniser extends BaseTokeniser {
         this.datasetID = datasetID;
         //const flatText = text.map((t) => t.map((c) => c.content.split(''))).flat(2);
         const charSet = new Set<string>();
-        let lastYield = performance.now();
 
         // Build charset
         for (const stream of text) {
-            const cursor = stream.cursor();
-            let conversation = await cursor.next();
-            while (conversation !== null) {
-                conversation.forEach((fragment) => {
-                    for (const char of fragment.content) {
-                        charSet.add(char);
-                    }
-                });
-                lastYield = await yieldIfNeeded(lastYield, cb, 0);
-                conversation = await cursor.next();
-            }
+            await stream.begin(
+                (conversation) => {
+                    conversation.forEach((fragment) => {
+                        for (const char of fragment.content) {
+                            charSet.add(char);
+                        }
+                    });
+                },
+                cb ? () => cb(charSet.size) : undefined
+            );
         }
 
         const charArray = Array.from(charSet);

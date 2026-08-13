@@ -21,7 +21,7 @@ export class TokenStore {
     private masks?: MaybeMask[];
     private shardCount = 0;
     private lastShardLength = -1;
-    private _shardSize: number = 4_000 * 1024; // 4 million tokens
+    private _shardSize: number = 8_000 * 1024; // 8 million tokens
 
     // OPFS
     private dirHandle: FileSystemDirectoryHandle | null = null;
@@ -33,7 +33,7 @@ export class TokenStore {
     // Maximum number of shards to keep in memory
     private maxCachedShards: number;
 
-    constructor(tokeniserId: string, datasetId: string, name?: string, maxCachedShards = 8, shardSize = 4_000 * 1024) {
+    constructor(tokeniserId: string, datasetId: string, name?: string, maxCachedShards = 2, shardSize = 8_000 * 1024) {
         this.tokeniserId = tokeniserId;
         this.datasetId = datasetId;
         this.maxCachedShards = Math.max(1, Math.trunc(maxCachedShards));
@@ -305,7 +305,11 @@ export class TokenStore {
         return (this.shardCount - 1) * this._shardSize + this.lastShardLength;
     }
 
-    public async appendShard(shard: Uint16Array, mask?: Uint8Array): Promise<void> {
+    public async finish() {
+        await this.writeManifest();
+    }
+
+    public appendShard(shard: Uint16Array, mask?: Uint8Array) {
         if (this.lastShardLength >= 0 && this.lastShardLength < this._shardSize) {
             throw new Error('Previous shard was not full');
         }
@@ -327,9 +331,9 @@ export class TokenStore {
         // Attempt OPFS writes; resolve when complete. Do not throw to callers on failure.
         try {
             if (this.opfsAvailable && this.dirHandle) {
-                await this.writeShardToOPFS(index, shard);
-                if (mask) await this.writeMaskToOPFS(index, mask);
-                await this.writeManifest();
+                this.writeShardToOPFS(index, shard);
+                if (mask) this.writeMaskToOPFS(index, mask);
+                //this.writeManifest();
             }
         } catch (e) {
             console.error(e);
@@ -461,13 +465,7 @@ export async function createTokenStore(
         await existingStore.dispose();
         existingStores.delete(name);
     }
-    const store = new TokenStore(
-        tokeniserId,
-        datasetId,
-        name,
-        options?.maxCachedShards ?? 8,
-        options?.shardSize ?? 4_000 * 1024
-    );
+    const store = new TokenStore(tokeniserId, datasetId, name, options?.maxCachedShards, options?.shardSize);
     if (!options?.noOPFS) {
         await store.init();
     }

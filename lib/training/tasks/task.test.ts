@@ -1,7 +1,6 @@
 import { describe, it, vi, afterEach } from 'vitest';
-import { tokensFromTasks } from './Task';
+import { tokensFromStreams } from './tokenStream';
 import { CharTokeniser, Conversation } from '@base/main';
-import ConversationTask from './ConversationTask';
 import { MemoryConversationStream } from '@base/data/stream';
 
 async function collectAllTokens(tokens: { getShardCount(): number; getShard(index: number): Promise<Uint16Array> }) {
@@ -12,7 +11,7 @@ async function collectAllTokens(tokens: { getShardCount(): number; getShard(inde
     return new Uint16Array(parts);
 }
 
-describe('tokensFromTasks', () => {
+describe('tokensFromStreams', () => {
     afterEach(() => {
         vi.restoreAllMocks();
     });
@@ -32,15 +31,14 @@ describe('tokensFromTasks', () => {
         ];
         const stream1 = new MemoryConversationStream(data1);
         const stream2 = new MemoryConversationStream(data2);
-        const task1 = new ConversationTask([stream1]);
-        const task2 = new ConversationTask([stream2]);
-
-        const tasks = [task1, task2];
+        const tasks = [stream1, stream2];
 
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream1, stream2]);
         tokeniser.datasetID = 'test-dataset1';
-        const { trainingTokens: tokens, validationTokens } = await tokensFromTasks(tasks, tokeniser, { noOPFS: true });
+        const { trainingTokens: tokens, validationTokens } = await tokensFromStreams(tasks, tokeniser, {
+            noOPFS: true,
+        });
 
         expect(validationTokens).toBeUndefined();
         expect(tokens.getTokenCount()).toBeGreaterThan(data1.length + data2.length);
@@ -67,10 +65,7 @@ describe('tokensFromTasks', () => {
         ];
         const stream1 = new MemoryConversationStream(data1);
         const stream2 = new MemoryConversationStream(data2);
-        const task1 = new ConversationTask([stream1]);
-        const task2 = new ConversationTask([stream2]);
-
-        const tasks = [task1, task2];
+        const tasks = [stream1, stream2];
 
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream1, stream2]);
@@ -78,7 +73,7 @@ describe('tokensFromTasks', () => {
 
         vi.spyOn(Math, 'random').mockReturnValue(0);
 
-        const { trainingTokens: tokens, validationTokens } = await tokensFromTasks(tasks, tokeniser, {
+        const { trainingTokens: tokens, validationTokens } = await tokensFromStreams(tasks, tokeniser, {
             validationSplit: 1,
             noOPFS: true,
         });
@@ -97,13 +92,12 @@ describe('tokensFromTasks', () => {
     it('does not create validation store when validationSplit is 0', async ({ expect }) => {
         const data: Conversation[][] = [[{ role: 'text', content: 'Only training split.' }]];
         const stream = new MemoryConversationStream(data);
-        const task = new ConversationTask([stream]);
 
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream]);
         tokeniser.datasetID = 'test-dataset-val-0';
 
-        const { trainingTokens, validationTokens } = await tokensFromTasks([task], tokeniser, {
+        const { trainingTokens, validationTokens } = await tokensFromStreams([stream], tokeniser, {
             validationSplit: 0,
             noOPFS: true,
         });
@@ -120,7 +114,6 @@ describe('tokensFromTasks', () => {
             [{ role: 'text', content: 'conv-D' }],
         ];
         const stream = new MemoryConversationStream(data);
-        const task = new ConversationTask([stream]);
 
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream]);
@@ -130,7 +123,7 @@ describe('tokensFromTasks', () => {
         let idx = 0;
         vi.spyOn(Math, 'random').mockImplementation(() => randomValues[idx++] ?? 0.9);
 
-        const { trainingTokens, validationTokens } = await tokensFromTasks([task], tokeniser, {
+        const { trainingTokens, validationTokens } = await tokensFromStreams([stream], tokeniser, {
             validationSplit: 0.5,
             noOPFS: true,
         });
@@ -161,15 +154,14 @@ describe('tokensFromTasks', () => {
         ];
         const stream1 = new MemoryConversationStream(data1);
         const stream2 = new MemoryConversationStream(data2);
-        const task1 = new ConversationTask([stream1]);
-        const task2 = new ConversationTask([stream2]);
-
-        const tasks = [task1, task2];
 
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream1, stream2]);
         tokeniser.datasetID = 'test-dataset2';
-        const { trainingTokens: tokens } = await tokensFromTasks(tasks, tokeniser, { masking: true, noOPFS: true });
+        const { trainingTokens: tokens } = await tokensFromStreams([stream1, stream2], tokeniser, {
+            masking: true,
+            noOPFS: true,
+        });
 
         const decodedText = tokeniser.decodeConversation(await tokens.getShard(0));
 
@@ -194,7 +186,6 @@ describe('tokensFromTasks', () => {
             ],
         ];
         const stream = new MemoryConversationStream(data);
-        const task = new ConversationTask([stream]);
 
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream]);
@@ -202,7 +193,7 @@ describe('tokensFromTasks', () => {
 
         vi.spyOn(Math, 'random').mockReturnValue(0);
 
-        const { validationTokens } = await tokensFromTasks([task], tokeniser, {
+        const { validationTokens } = await tokensFromStreams([stream], tokeniser, {
             masking: true,
             validationSplit: 1,
             noOPFS: true,
@@ -222,15 +213,12 @@ describe('tokensFromTasks', () => {
             data1.push([{ role: 'text', content: `This is sentence number ${i}. ` + 'A'.repeat(80) }]);
         }
         const stream1 = new MemoryConversationStream(data1);
-        const task1 = new ConversationTask([stream1]);
-
-        const tasks = [task1];
 
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream1]);
         tokeniser.datasetID = 'test-dataset3';
 
-        const { trainingTokens: tokens } = await tokensFromTasks(tasks, tokeniser, {
+        const { trainingTokens: tokens } = await tokensFromStreams([stream1], tokeniser, {
             noOPFS: true,
             shardSize: 128,
             maxCachedShards: 10_000,
@@ -252,13 +240,12 @@ describe('tokensFromTasks', () => {
         const s2Data: Conversation[][] = [[{ role: 'text', content: 'stream-2 message' }]];
         const stream1 = new MemoryConversationStream(s1Data);
         const stream2 = new MemoryConversationStream(s2Data);
-        const task = new ConversationTask([stream1, stream2]);
 
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream1, stream2]);
         tokeniser.datasetID = 'test-dataset-multi-stream';
 
-        const { trainingTokens: tokens } = await tokensFromTasks([task], tokeniser, { noOPFS: true });
+        const { trainingTokens: tokens } = await tokensFromStreams([stream1, stream2], tokeniser, { noOPFS: true });
         const decoded = tokeniser.decode(await collectAllTokens(tokens));
 
         expect(decoded).toContain('stream-1 message');
@@ -280,16 +267,12 @@ describe('tokensFromTasks', () => {
         ];
         const stream1 = new MemoryConversationStream(data1);
         const stream2 = new MemoryConversationStream(data2);
-        const task1 = new ConversationTask([stream1]);
-        const task2 = new ConversationTask([stream2]);
-
-        const tasks = [task1, task2];
 
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream1, stream2]);
         tokeniser.datasetID = 'test-dataset4';
 
-        const { trainingTokens: tokens } = await tokensFromTasks(tasks, tokeniser, { noOPFS: true });
+        const { trainingTokens: tokens } = await tokensFromStreams([stream1, stream2], tokeniser, { noOPFS: true });
 
         expect(tokens.getTokenCount()).toBeGreaterThan(data1.length + data2.length);
         const decodedText = await tokeniser.decode(await tokens.getShard(0));
@@ -302,13 +285,13 @@ describe('tokensFromTasks', () => {
     it('throws when one encoded conversation exceeds shard size', async ({ expect }) => {
         const data: Conversation[][] = [[{ role: 'text', content: 'X'.repeat(200) }]];
         const stream = new MemoryConversationStream(data);
-        const task = new ConversationTask([stream]);
+
         const tokeniser = new CharTokeniser(300);
         await tokeniser.train([stream]);
         tokeniser.datasetID = 'test-dataset-too-large';
 
         await expect(
-            tokensFromTasks([task], tokeniser, {
+            tokensFromStreams([stream], tokeniser, {
                 noOPFS: true,
                 shardSize: 32,
             })

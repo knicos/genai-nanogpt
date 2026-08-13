@@ -4,7 +4,7 @@ import PreTrainer from './training/PreTrainer';
 import { Dataset } from '@tensorflow/tfjs-data';
 import { Tensor } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from './models/model';
-import { Task, tokensFromTasks } from './training/tasks/Task';
+import { tokensFromStreams } from './training/tasks/tokenStream';
 import { TrainingOptions, TrainingLogEntry } from './training/types';
 import { createTrainValidationDatasets, storeFromArray } from './training/validation';
 import SFTTrainer from './training/SFTTrainer';
@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { DatasetMetadata } from './loader/types';
 import { packingSupported } from './utilities/packed';
 import { TokenStore } from './training/tasks/TokenStore';
+import { ConversationStream } from './data/stream';
 
 interface TrainingProgress {
     lastLog: TrainingLogEntry;
@@ -209,7 +210,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
     }
 
     async prepare(
-        tasks: Task[] | Uint16Array[] | TokenStore = [],
+        tasks: ConversationStream[] | Uint16Array[] | TokenStore = [],
         validation?: Uint16Array[] | TokenStore,
         datasets?: DatasetMetadata[]
     ): Promise<void> {
@@ -262,7 +263,7 @@ export default class Trainer extends EE<'start' | 'stop' | 'log'> {
             if (tasks[0] instanceof Uint16Array) {
                 trainingTokens = tasks as Uint16Array[];
             } else {
-                const result = await tokensFromTasks(tasks as Task[], this.trainer.tokenizer, {
+                const result = await tokensFromStreams(tasks as ConversationStream[], this.trainer.tokenizer, {
                     masking: maskedLoss,
                     validationSplit: options.validationSplit,
                 });

@@ -11,7 +11,6 @@ import MemoryProfiler from './utilities/profile';
 import BPETokeniser from './tokeniser/bpe';
 import Model, { ModelForwardAttributes } from './models/model';
 import createModelInstance from './models/factory';
-import { Task } from './training/tasks/Task';
 import { TrainingLogEntry, TrainingOptions } from './training/types';
 import { ModelMode, TransformersMetadata } from './loader/types';
 
@@ -356,7 +355,7 @@ export default class TeachableLLM {
         return trainer;
     }
 
-    async train(text: Task[], options?: TrainingOptions, trainingType?: TrainingType): Promise<void> {
+    async train(text: ConversationStream[], options?: TrainingOptions, trainingType?: TrainingType): Promise<void> {
         const trainer = this.trainer(trainingType, options);
         await trainer.prepare(text);
         await trainer.train();
