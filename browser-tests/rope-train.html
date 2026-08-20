@@ -23,10 +23,10 @@
     </head>
     <body>
         <script type="module">
-            import { TeachableLLM, waitForModel, tasks } from '/dist/main.js';
+            import { TeachableLLM, models, data, tokenise } from '/dist/main.js';
 
             const model = TeachableLLM.create('char', {
-                vocabSize: 20,
+                vocabSize: 50,
                 blockSize: 8, // Context window size
                 nLayer: 2,
                 nHead: 2,
@@ -47,10 +47,11 @@
                 'In the end, we will remember not the words of our enemies, but the silence of our friends.',
             ];
             const textConversations = textData.map((text) => [{ role: 'text', content: text }]);
+            const stream = new data.MemoryConversationStream(textConversations);
 
             const tokeniser = model.tokeniser;
-            await tokeniser.train(textConversations);
-            await waitForModel(model);
+            await tokeniser.train([stream]);
+            await models.waitForModel(model);
 
             model.model.checkpointing = true;
 
@@ -65,21 +66,34 @@
                 advancedMetrics: false,
             };
 
-            const trainer = model.trainer('pretraining', options);
+            const datasets = [{ id: 'demo', name: 'demo' }];
 
-            trainer.on('log', (log, progress) => {
-                console.log('Step', log, progress);
+            // Listen for progress and completion for this job
+            let currentJob = null;
+            model.training.on('progress', (job) => {
+                if (currentJob && job.id === currentJob.id) {
+                    console.log('Training job progress:', job.progress);
+                    console.log('Latest log entry:', job.history?.[job.history.length - 1]);
+                }
             });
 
-            await trainer.prepare([new tasks.ConversationTask(textConversations)], []);
-            await trainer.train(options);
+            model.training.on('completed', (id) => {
+                if (currentJob && id === currentJob.id) {
+                    console.log('Training complete');
+                    document.body.innerText = 'PASS';
+                    model.getProfiler().printSummary();
+                }
+            });
 
-            //await trainer.step(options);
+            const tokens = await tokenise.tokensFromStreams([stream], tokeniser);
+            console.log('Tokens:', tokens);
 
-            console.log('Training complete');
-            document.body.innerText = 'PASS';
-
-            model.getProfiler().printSummary();
+            // Start a training job using the new training API
+            currentJob = await model.training.job(
+                { ...options, method: { type: 'pretraining' } },
+                tokens.trainingTokens,
+                datasets
+            );
             console.log('Final memory:', tf.memory());
         </script>
     </body>

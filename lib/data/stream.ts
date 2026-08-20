@@ -156,7 +156,7 @@ class JSONLFromReadableStream implements ConversationStream {
 }
 
 export class JSONLConversationStream extends JSONLFromReadableStream {
-    constructor(file: File) {
+    constructor(file: Blob) {
         super(async () => file.stream());
     }
 }
@@ -168,7 +168,7 @@ interface ZipEntryLike {
 }
 
 export class ZipJSONLConversationStream extends JSONLFromReadableStream {
-    constructor(file: File, preferredEntryName?: string) {
+    constructor(file: Blob, preferredEntryName?: string) {
         super(async () => {
             const zipReaderStream = new ZipReaderStream<Uint8Array>();
             const entriesReader = file.stream().pipeThrough(zipReaderStream).getReader();

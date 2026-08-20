@@ -1,21 +1,23 @@
 import { GPTConfig, LoRAConfig, validateConfig } from './models/config';
-import type { Conversation, ITokeniser } from './tokeniser/type';
+import type { ITokeniser } from './tokeniser/type';
 import { saveModel, SaveOptions } from './loader/save';
 import { loadModel, LoadModelOptions } from './loader/load';
-import Generator, { IGenerateOptions, IGenerator } from './Generator';
-import Trainer, { TrainingType } from './Trainer';
 import EE from 'eventemitter3';
 import { dummyPassTrainAsync, MemoryRequirements } from './utilities/dummy';
-import { CharTokeniser, ConversationStream } from './main';
+import CharTokeniser from './tokeniser/CharTokeniser';
+import { ConversationStream } from './data/stream';
 import MemoryProfiler from './utilities/profile';
 import BPETokeniser from './tokeniser/bpe';
 import Model, { ModelForwardAttributes } from './models/model';
 import createModelInstance from './models/factory';
-import { TrainingLogEntry, TrainingOptions } from './training/types';
 import { ModelMode, TransformersMetadata } from './loader/types';
+import Responses from './api/responses';
+import Training from './api/training';
+import { selectBackend } from './backend';
+import { GPUOptions } from './patches/webgpu_base';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
-type TeachableLLMEvents = 'status' | 'error' | 'trainStep' | 'loaded' | 'mode' | 'changeLoRA';
+type TeachableLLMEvents = 'status' | 'error' | 'loaded' | 'mode' | 'changeLoRA';
 
 export default class TeachableLLM {
     private ee = new EE<TeachableLLMEvents>();
@@ -24,11 +26,16 @@ export default class TeachableLLM {
     private _tokeniser?: ITokeniser;
     private _status: TeachableLLMStatus = 'loading';
     private _memoryRequirements?: MemoryRequirements;
+    private _responses: Responses | null = null;
+    private _training: Training | null = null;
     public meta: TransformersMetadata = {
         version: 2,
         application: '@genai-fi/nanogpt',
     };
-    private _trainer: Trainer | null = null;
+
+    static selectBackend(backend: 'cpu' | 'webgl' | 'webgpu', options?: GPUOptions) {
+        return selectBackend(backend, options);
+    }
 
     constructor(tokeniser?: ITokeniser, model?: Model<ModelForwardAttributes, GPTConfig>) {
         this._config = model?.config;
@@ -37,10 +44,6 @@ export default class TeachableLLM {
         if (model?.metaData) {
             this.meta = model.metaData;
         }
-    }
-
-    get currentTrainer(): Trainer | null {
-        return this._trainer;
     }
 
     get vocab(): string[] {
@@ -137,10 +140,6 @@ export default class TeachableLLM {
         if (this.model.lora?.name === name) {
             return; // Already attached
         }
-        if (this._trainer) {
-            this._trainer.dispose();
-            this._trainer = null;
-        }
         this._model.attachLoRA(name);
         this.ee.emit('changeLoRA');
     }
@@ -185,6 +184,9 @@ export default class TeachableLLM {
         if (!this._model || !this._tokeniser) {
             throw new Error('model_or_tokeniser_not_initialized.');
         }
+
+        const trainingJob = (options?.includeOptimizer && this._training?.getPretrainingJob()) ?? null;
+
         return saveModel(
             this._model,
             this._tokeniser,
@@ -192,9 +194,7 @@ export default class TeachableLLM {
                 ...options,
                 name: options?.name || this.meta.name,
             },
-            options?.includeOptimizer && this._trainer?.trainingType === 'pretraining'
-                ? { optimizer: this._trainer.optimizer, trainingLog: this._trainer.log }
-                : undefined
+            trainingJob ? { optimizer: trainingJob.trainer.optimizer, trainingLog: trainingJob.trainer.log } : undefined
         );
     }
 
@@ -215,17 +215,13 @@ export default class TeachableLLM {
                     .then((memoryReqs) => {
                         teachableLLM._memoryRequirements = memoryReqs;
 
-                        if (optimizer) {
-                            teachableLLM._trainer = new Trainer(
-                                model,
-                                tokeniser,
-                                'pretraining',
+                        if (optimizer && model.metaData.pretrainingSettings && model.metaData.pretrainingData) {
+                            teachableLLM.training.restore(
                                 model.metaData.pretrainingSettings,
-                                optimizer
+                                log || [],
+                                optimizer,
+                                model.metaData.pretrainingData
                             );
-                            if (log) {
-                                teachableLLM._trainer.log = log;
-                            }
                         }
 
                         teachableLLM.setStatus('ready');
@@ -317,50 +313,6 @@ export default class TeachableLLM {
         return this._model.getNumParams();
     }
 
-    trainer(trainingType?: TrainingType, options?: TrainingOptions): Trainer {
-        if (!this._model || !this._tokeniser) {
-            throw new Error('model_or_tokeniser_not_initialized.');
-        }
-
-        if (this._trainer && trainingType && this._trainer.trainingType !== trainingType) {
-            this._trainer.dispose();
-            this._trainer = null;
-        }
-
-        // Keep the trainer if possible to keep the optimizer state
-        const trainer =
-            this._trainer === null
-                ? new Trainer(this._model, this._tokeniser, trainingType, options)
-                : new Trainer(this._trainer, options);
-
-        trainer.on('start', () => {
-            this.setStatus('training');
-            this.ee.emit('mode', this.mode);
-        });
-        trainer.on('stop', () => this.setStatus('ready'));
-        trainer.on('log', async (step: TrainingLogEntry) => {
-            const listeners = this.ee.listeners('trainStep');
-            for (const listener of listeners) {
-                // These listeners can be async, so we await them
-                await listener(step);
-            }
-        });
-
-        if (this._trainer && this._trainer !== trainer) {
-            // this._trainer.dispose();
-            this._trainer.removeAllListeners();
-        }
-
-        this._trainer = trainer;
-        return trainer;
-    }
-
-    async train(text: ConversationStream[], options?: TrainingOptions, trainingType?: TrainingType): Promise<void> {
-        const trainer = this.trainer(trainingType, options);
-        await trainer.prepare(text);
-        await trainer.train();
-    }
-
     async trainTokeniser(text: ConversationStream[]): Promise<number> {
         if (!this._tokeniser) {
             throw new Error('tokeniser_not_initialized.');
@@ -372,33 +324,62 @@ export default class TeachableLLM {
         return tokenCount;
     }
 
-    generator(): IGenerator {
-        if (!this._model || !this._tokeniser) {
-            throw new Error('model_or_tokeniser_not_initialized.');
+    get responses() {
+        if (!this._responses) {
+            if (!this._model || !this._tokeniser) {
+                throw new Error('model_or_tokeniser_not_initialized.');
+            }
+            this._responses = new Responses(this._model, this._tokeniser);
+            this._responses.on('error', (error) => {
+                this.setStatus('error');
+                this.ee.emit('error', error);
+            });
+            this._responses.on('status', (status) => {
+                if (status === 'busy') {
+                    this.setStatus('busy');
+                } else if (status === 'ready') {
+                    this.setStatus('ready');
+                }
+            });
         }
-        const generator = new Generator(this._model, this._tokeniser);
-        generator.on('start', () => {
-            if (this.status === 'ready') this.setStatus('busy');
-        });
-        generator.on('stop', () => {
-            if (this.status === 'busy') this.setStatus('ready');
-        });
-        return generator;
+        return this._responses;
     }
 
-    generateText(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;
-    generateText(options?: IGenerateOptions): Promise<Conversation[]>;
-    generateText(prompt?: Conversation[] | IGenerateOptions, options?: IGenerateOptions): Promise<Conversation[]> {
-        if (Array.isArray(prompt)) {
-            return this.generator().generate(prompt, options);
+    get training() {
+        if (!this._training) {
+            if (!this._model || !this._tokeniser) {
+                throw new Error('model_or_tokeniser_not_initialized.');
+            }
+            this._training = new Training(this._model, this._tokeniser);
+            this._training.on('running', () => {
+                this.setStatus('busy');
+            });
+            this._training.on('completed', () => {
+                if (!this._training?.training) {
+                    this.setStatus('ready');
+                }
+            });
+            this._training.on('cancelled', () => {
+                if (!this._training?.training) {
+                    this.setStatus('ready');
+                }
+            });
+            this._training.on('error', (error) => {
+                this.setStatus('error');
+                this.ee.emit('error', error);
+            });
         }
-        return this.generator().generate([], options);
+        return this._training;
     }
 
     dispose() {
-        if (this._trainer) {
-            this._trainer.dispose();
-            this._trainer = null;
+        if (this._responses) {
+            this._responses.dispose();
+            this._responses = null;
+        }
+        if (this._training) {
+            this._training.dispose();
+            this._training = null;
         }
         this._model?.dispose();
         this.ee.removeAllListeners();
@@ -407,7 +388,6 @@ export default class TeachableLLM {
     on(event: 'status', listener: (status: TeachableLLMStatus) => void): void;
     on(event: 'mode', listener: (mode: ModelMode) => void): void;
     on(event: 'error', listener: (error: Error) => void): void;
-    on(event: 'trainStep', listener: (step: TrainingLogEntry) => void): void;
     on(event: 'loaded' | 'changeLoRA', listener: () => void): void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     on(event: TeachableLLMEvents, listener: (...args: any[]) => void): void {
@@ -422,7 +402,6 @@ export default class TeachableLLM {
     off(event: 'status', listener: (status: TeachableLLMStatus) => void): void;
     off(event: 'mode', listener: (mode: ModelMode) => void): void;
     off(event: 'error', listener: (error: Error) => void): void;
-    off(event: 'trainStep', listener: (step: TrainingLogEntry) => void): void;
     off(event: 'loaded' | 'changeLoRA', listener: () => void): void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     off(event: TeachableLLMEvents, listener: (...args: any[]) => void): void {

@@ -1,6 +1,6 @@
-import type { Conversation, ITokeniser } from './tokeniser/type';
+import type { Conversation, ITokeniser } from '../tokeniser/type';
 import EE from 'eventemitter3';
-import { KVCache } from './layers/CausalSelfAttention';
+import { KVCache } from '../layers/CausalSelfAttention';
 import {
     concat,
     gather,
@@ -14,13 +14,15 @@ import {
     tidy,
     topk,
 } from '@tensorflow/tfjs-core';
-import { CharTokeniser } from './main';
-import multinomialCPU from './utilities/multinomialCPU';
-import Model, { ModelForwardAttributes } from './models/model';
-import topP from './utilities/topP';
-import { sparseSoftmaxCrossEntropy } from './training/sparseCrossEntropy';
-import { SPECIALS } from './tokeniser/BaseTokeniser';
-import { GenerateOptions, GeneratorConversation } from './inference/types';
+import CharTokeniser from '../tokeniser/CharTokeniser';
+import multinomialCPU from '../utilities/multinomialCPU';
+import Model, { ModelForwardAttributes } from '../models/model';
+import topP from '../utilities/topP';
+import { sparseSoftmaxCrossEntropy } from '../training/sparseCrossEntropy';
+import { SPECIALS } from '../tokeniser/BaseTokeniser';
+import { IGenerateOptions, GeneratorConversation, IGeneratorOutput } from './types';
+import tokenisePrompt from './tokenisePrompt';
+import { getTokenConfidence } from './utilities';
 
 interface JobItem {
     prompt?: Conversation[];
@@ -52,27 +54,14 @@ function padArray(arr: string[], length: number): string[] {
     return arr.concat(Array(length - arr.length).fill(''));
 }
 
-export interface IGenerateOptions extends GenerateOptions {
-    maxLength?: number; /// Maximum length of the generated text
-    noCache?: boolean;
-    allowSpecial?: boolean;
-    nonConversational?: boolean;
-    continuation?: boolean;
-}
-
 export interface IGenerator extends EE<'start' | 'stop' | 'tokens' | 'reset'> {
-    generate(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;
-    generate(options?: IGenerateOptions): Promise<Conversation[]>;
-    step(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;
-    step(options?: IGenerateOptions): Promise<Conversation[]>;
+    generate(prompt: Conversation[], options?: IGenerateOptions): Promise<GeneratorConversation[]>;
+    generate(options?: IGenerateOptions): Promise<GeneratorConversation[]>;
+    step(prompt: Conversation[], options?: IGenerateOptions): Promise<GeneratorConversation[]>;
+    step(options?: IGenerateOptions): Promise<GeneratorConversation[]>;
     stop(): void;
-    getConversation(): Conversation[];
-    getAttentionData(): number[][][][][];
-    getProbabilitiesData(): number[][][];
-    getEmbeddingsData(): { name: string; tensor: number[][] }[][];
-    getTokens(): number[];
-    getLastLoss(): number | null;
-    getLastMultinomialRand(): number | null;
+    getConversation(): GeneratorConversation[];
+    getRawOutput(): IGeneratorOutput[];
     dispose(): void;
     reset(): void;
 }
@@ -88,15 +77,12 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
     private outputConversation: GeneratorConversation[] = [];
     private actualTokeniser: ITokeniser;
     private lastToken = -1;
-    private attentionData: number[][][][][] = [];
-    private probabilitiesData: number[][][] = [];
-    private embeddingsData: { name: string; tensor: number[][] }[][] = [];
-    private tokens: number[] = [];
     private lastLoss: number | null = null;
-    private lastMultinomialRand: number | null = null;
+    private rawOutput: IGeneratorOutput[] = [];
     private jobQueue: JobItem[] = [];
     private processingJob = false;
     private startTime: number | null = null;
+    private tokenCount = 0;
 
     constructor(
         private readonly model: Model<ModelForwardAttributes>,
@@ -106,86 +92,12 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         this.actualTokeniser = tokeniser;
     }
 
-    private async tokenisePrompt(
-        tokeniser: ITokeniser,
-        prompt?: Conversation[],
-        options?: IGenerateOptions
-    ): Promise<Tensor> {
-        if (prompt) {
-            const isAssistant = prompt.length > 0 && prompt[prompt.length - 1].role === 'text';
-            let tokenisedPrompt: number[];
-            if (options?.nonConversational) {
-                if (isAssistant && options?.continuation) {
-                    tokenisedPrompt = [tokeniser.bosToken, ...tokeniser.encode(prompt[prompt.length - 1].content)];
-                } else {
-                    tokenisedPrompt = tokeniser.encodeAsSequence(prompt, true);
-                }
-            } else {
-                tokenisedPrompt = tokeniser.encodeConversation(prompt, true);
-            }
-            if (tokenisedPrompt.length > this.model.config.blockSize) {
-                tokenisedPrompt = tokenisedPrompt.slice(-this.model.config.blockSize);
-            }
-
-            const inputTensor: Tensor = tensor2d([tokenisedPrompt], [1, tokenisedPrompt.length], 'int32');
-            return inputTensor;
-        } else {
-            const startToken = options?.nonConversational
-                ? undefined
-                : tokeniser.getSpecialTokenIndex('<|assistant_start|>');
-            const tokenisedPrompt = startToken !== undefined ? [tokeniser.bosToken, startToken] : [tokeniser.bosToken];
-            const inputTensor: Tensor = tensor2d([tokenisedPrompt], [1, tokenisedPrompt.length], 'int32');
-            return inputTensor;
-        }
-    }
-
-    private async processResponse(
-        tokeniser: ITokeniser,
-        generatedToken: Tensor,
-        allowSpecial: boolean,
-        attention: Tensor[] | undefined,
-        probabilities: number[][] | undefined
-    ): Promise<string | null> {
-        const newToken = ((await generatedToken.array()) as number[][])[0][0];
-        this.lastToken = newToken;
-
-        // Todo: Handle special tokens properly
-        if (!allowSpecial && this.tokeniser.isSpecialToken(newToken)) {
-            return null;
-        }
-
-        const newText = await tokeniser.decode([newToken]);
-
-        if (attention) {
-            const attentionArray = await Promise.all(
-                attention.map((a) => a.array().then((arr) => arr as number[][][]))
-            );
-            attention.forEach((a) => a.dispose());
-            this.attentionData.push(attentionArray);
-        }
-
-        if (probabilities) {
-            this.probabilitiesData.push(probabilities);
-        }
-
-        this.tokens.push(newToken);
-
-        this.emit('tokens', [newToken], newText);
-        return newText;
-    }
-
     /** Generate logits and select a token. */
     private async _generateToken(
         idx: Tensor,
         cache?: KVCache[],
-        options?: GenerateOptions
-    ): Promise<{
-        output: Tensor;
-        probabilities?: number[][];
-        attention?: Tensor[];
-        loss?: number;
-        multinomialRand: number;
-    }> {
+        options?: IGenerateOptions
+    ): Promise<IGeneratorOutput> {
         const temperature = options?.temperature ?? 1.0;
         const tK = options?.topK;
         const tP = options?.topP;
@@ -193,13 +105,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
 
         const attrs: ModelForwardAttributes = {
             training: false,
-            attentionScores: options?.attentionScores
+            attentionScores: options?.outputAttention
                 ? {
                       attentionOut: [],
                   }
                 : undefined,
             cache,
-            outputEmbeddings: !!options?.embeddings,
+            outputEmbeddings: !!options?.outputHiddenStates,
         };
 
         const [logits, loss] = tidy(() => {
@@ -264,6 +176,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
 
         let nextToken: Tensor;
         let probabilities: number[][] | undefined;
+        let embeddings: { name: string; tensor: number[][] }[] | undefined;
 
         const rand = Math.random();
 
@@ -276,7 +189,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             // Do topP on CPU.
             const renormProbs = topP(probsArray, tP);
 
-            if (options?.includeProbabilities) {
+            if (options?.outputScores || options?.outputConfidence) {
                 probabilities = probsArray;
             }
 
@@ -285,7 +198,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         } else if (tK) {
             const { values: topKValues, indices: topKIndices } = topk(logits, tK);
             // FIXME: Broken in Tensorflow.js for WebGPU backend
-            console.warn('Using broken multinomial');
+            //console.warn('Using broken multinomial');
             const sampledIdx = multinomial(topKValues, 1);
             nextToken = gather(topKIndices, sampledIdx, 1);
 
@@ -294,9 +207,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             sampledIdx.dispose();
         } else {
             // FIXME: Broken in Tensorflow.js for WebGPU backend
-            console.warn('Using broken multinomial');
+            //console.warn('Using broken multinomial');
             nextToken = multinomial(logits, 1);
-            if (options?.includeProbabilities) {
+            if (options?.outputScores || options?.outputConfidence) {
                 const probs = softmax(logits);
                 probabilities = (await probs.array()) as number[][];
                 probs.dispose();
@@ -304,11 +217,10 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         }
 
         if (attrs.embeddings) {
-            /*const filtered =
-                options?.embeddings === 'all'
+            const filtered =
+                options?.outputHiddenStates === 'all'
                     ? attrs.embeddings
-                    : attrs.embeddings.filter((e) => e.name.startsWith('block_output_'));*/
-            const filtered = attrs.embeddings; // No filter
+                    : attrs.embeddings.filter((e) => e.name.startsWith('block_output_'));
             const promises = filtered.map(async (e) => {
                 const seqLen = e.tensor.shape[1]!;
                 const lastStep = e.tensor.slice([0, seqLen - 1, 0], [e.tensor.shape[0], 1, e.tensor.shape[2]!]);
@@ -316,7 +228,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                 const squeezed = lastStep.squeeze([1]);
                 lastStep.dispose();
 
-                if (options?.embeddings === 'softmax') {
+                if (options?.outputHiddenStates === 'softmax') {
                     const projected = this.model.project(squeezed);
                     squeezed.dispose();
                     const softmaxed = softmax(projected, -1);
@@ -324,7 +236,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                     const result = { name: e.name, tensor: (await softmaxed.array()) as number[][] };
                     softmaxed.dispose();
                     return result;
-                } else if (options?.embeddings === 'logits') {
+                } else if (options?.outputHiddenStates === 'logits') {
                     const projected = this.model.project(squeezed);
                     squeezed.dispose();
                     const result = { name: e.name, tensor: (await projected.array()) as number[][] };
@@ -337,32 +249,57 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                 }
             });
             const embeddingsResult = await Promise.all(promises);
-            this.embeddingsData.push(embeddingsResult);
+            embeddings = embeddingsResult;
         }
 
         const reshaped = nextToken.reshape([1, 1]);
         nextToken.dispose();
         nextToken = reshaped;
 
+        const tokenNumber = ((await nextToken.array()) as number[][])[0][0];
+        const tokenText = this.actualTokeniser.decode([tokenNumber]);
+        this.lastToken = tokenNumber;
+        const terminated = !options?.allowSpecial && this.tokeniser.isSpecialToken(tokenNumber);
+
+        const output: IGeneratorOutput = {
+            outputTensor: nextToken,
+            token: tokenNumber,
+            text: tokenText,
+            confidence: options?.outputConfidence && probabilities ? getTokenConfidence(probabilities[0]) : null,
+            score: options?.outputScore && probabilities ? probabilities[0][tokenNumber] : null,
+            logits: options?.outputLogits ? ((await logits.array()) as number[][])[0] : null,
+            scores: options?.outputScores && probabilities ? probabilities[0] : null,
+            hiddenStates: embeddings ? embeddings.map((e) => e.tensor[0]) : null,
+            attention: options?.outputAttention
+                ? ((await Promise.all(
+                      attrs.attentionScores?.attentionOut?.map((a) => a.array()) ?? []
+                  )) as number[][][][])
+                : null,
+            loss: this.lastLoss,
+            multinomialRand: rand,
+            terminated,
+        };
+
         logits.dispose();
 
-        let lossValue: number | undefined = undefined;
         if (loss) {
-            lossValue = (await loss.array()) as number;
+            const lossValue = (await loss.array()) as number;
             loss.dispose();
+            output.loss = lossValue;
         }
 
-        return {
-            output: nextToken,
-            probabilities,
-            attention: attrs.attentionScores?.attentionOut,
-            loss: lossValue,
-            multinomialRand: rand,
-        };
+        this.rawOutput.push(output);
+        if (!options?.chunkSize || this.tokenCount++ % options.chunkSize === 0) {
+            this.emit('tokens', output);
+            if (options?._onChunk) {
+                await options._onChunk(output);
+            }
+        }
+        return output;
     }
 
     /** Generate multiple tokens in a loop and produce text */
-    private async _generate(options?: IGenerateOptions, hasPrompt?: boolean): Promise<Conversation[]> {
+    private async _generate(options?: IGenerateOptions, hasPrompt?: boolean): Promise<GeneratorConversation[]> {
         let appended = false;
 
         // Begin a new assistant response in conversation
@@ -389,8 +326,9 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         let inputTensor =
             this.lastToken >= 0 && this.cache
                 ? tensor2d([this.lastToken], [1, 1], 'int32')
-                : await this.tokenisePrompt(
+                : await tokenisePrompt(
                       this.actualTokeniser,
+                      this.model.config.blockSize,
                       hasPrompt
                           ? appended
                               ? this.outputConversation.slice(0, -1)
@@ -407,51 +345,39 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                 break;
             }
 
-            const {
-                output: generatedToken,
-                probabilities,
-                attention,
-                loss,
-                multinomialRand,
-            } = await this._generateToken(inputTensor, this.cache ? this.cache : undefined, {
+            const output = await this._generateToken(inputTensor, this.cache ? this.cache : undefined, {
                 ...options,
                 usePadding: !this.cache,
             });
 
-            this.lastMultinomialRand = multinomialRand;
-
-            if (loss !== undefined) {
-                this.lastLoss = loss;
-            }
-
             if (this.cache) {
                 inputTensor.dispose();
-                inputTensor = generatedToken;
+                inputTensor = output.outputTensor;
             } else {
                 const oldInput = inputTensor;
-                inputTensor = concat([inputTensor, generatedToken], 1);
+                inputTensor = concat([inputTensor, output.outputTensor], 1);
                 oldInput.dispose();
             }
 
-            const newText = await this.processResponse(
-                this.actualTokeniser,
-                generatedToken,
-                options?.allowSpecial ?? false,
-                attention,
-                probabilities
-            );
+            const currentConversation = this.outputConversation[this.outputConversation.length - 1];
+
             if (!this.cache) {
-                generatedToken.dispose();
+                output.outputTensor.dispose();
             }
-            if (newText === null) {
-                this.outputConversation[this.outputConversation.length - 1]._completed = true;
+            if (output.terminated) {
+                currentConversation._completed = true;
                 break;
             }
             if (i === maxTokens - 1 && maxTokens > 1) {
-                this.outputConversation[this.outputConversation.length - 1]._completed = true;
+                currentConversation._completed = true;
+                output.terminated = true;
             }
 
-            this.outputConversation[this.outputConversation.length - 1].content += newText;
+            currentConversation.content += output.text;
+            if (!currentConversation._output) {
+                currentConversation._output = [];
+            }
+            currentConversation._output.push(output);
         }
 
         inputTensor.dispose();
@@ -481,9 +407,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         this.resetCache();
         this.outputConversation = [];
         this.initialPrompt = null;
-        this.attentionData = [];
-        this.probabilitiesData = [];
-        this.tokens = [];
+        this.rawOutput = [];
         this.lastLoss = null;
         this.emit('reset');
     }
@@ -531,12 +455,12 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         }
     }
 
-    async step(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;
-    async step(options?: IGenerateOptions): Promise<Conversation[]>;
+    async step(prompt: Conversation[], options?: IGenerateOptions): Promise<GeneratorConversation[]>;
+    async step(options?: IGenerateOptions): Promise<GeneratorConversation[]>;
     public async step(
         promptOrOptions?: Conversation[] | IGenerateOptions,
         options?: IGenerateOptions
-    ): Promise<Conversation[]> {
+    ): Promise<GeneratorConversation[]> {
         const stepOptions = { ...options, maxLength: 1 };
         if (isConversation(promptOrOptions)) {
             return this.generate(promptOrOptions, stepOptions);
@@ -545,12 +469,12 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         }
     }
 
-    async generate(prompt: Conversation[], options?: IGenerateOptions): Promise<Conversation[]>;
-    async generate(options?: IGenerateOptions): Promise<Conversation[]>;
+    async generate(prompt: Conversation[], options?: IGenerateOptions): Promise<GeneratorConversation[]>;
+    async generate(options?: IGenerateOptions): Promise<GeneratorConversation[]>;
     public async generate(
         promptOrOptions?: Conversation[] | IGenerateOptions,
         options?: IGenerateOptions
-    ): Promise<Conversation[]> {
+    ): Promise<GeneratorConversation[]> {
         let prompt: Conversation[] | undefined = undefined;
         if (Array.isArray(promptOrOptions)) {
             prompt = promptOrOptions;
@@ -562,7 +486,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             if (this.jobQueue.length > 10) {
                 throw new Error('Job queue is too long, rejecting new job');
             }
-            return new Promise<Conversation[]>((resolve, reject) => {
+            return new Promise<GeneratorConversation[]>((resolve, reject) => {
                 this.jobQueue.push({ prompt, options, resolve, reject });
             });
         }
@@ -608,7 +532,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                 action: 'generate',
                 timestamp: endTime,
                 duration,
-                tokensProcessed: this.tokens.length,
+                tokensProcessed: this.rawOutput.length,
                 options: options || {},
             });
         }
@@ -629,27 +553,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         return this.outputConversation;
     }
 
-    public getAttentionData(): number[][][][][] {
-        return this.attentionData;
-    }
-
-    public getProbabilitiesData(): number[][][] {
-        return this.probabilitiesData;
-    }
-
-    public getEmbeddingsData(): { name: string; tensor: number[][] }[][] {
-        return this.embeddingsData;
-    }
-
-    public getTokens(): number[] {
-        return this.tokens;
-    }
-
-    public getLastLoss(): number | null {
-        return this.lastLoss;
-    }
-
-    public getLastMultinomialRand(): number | null {
-        return this.lastMultinomialRand;
+    public getRawOutput(): IGeneratorOutput[] {
+        return this.rawOutput;
     }
 }

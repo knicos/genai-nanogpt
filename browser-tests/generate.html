@@ -37,57 +37,61 @@
             const stepButton = document.getElementById('stepButton');
             const output = document.getElementById('output');
             let model = null;
-            let generator = null;
             fileInput.addEventListener('change', async (event) => {
                 const file = event.target.files[0];
                 if (file) {
                     model = await TeachableLLM.loadModel(file);
                     await waitForModel(model);
                     model.enableProfiler = true;
-                    generator = model.generator();
                 }
             });
 
             generateButton.addEventListener('click', async () => {
-                if (!model || !generator) {
+                if (!model) {
                     alert('Please load a model first.');
                     return;
                 }
                 const prompt = 'Once upon a time';
                 console.log('Generating text for prompt:', prompt);
                 const options = {
+                    input: prompt,
                     maxLength: 128 * 4 * 2,
                     temperature: 0.7,
                     attentionScores: false,
                     topP: 0.8,
                 };
-                const generated = await generator.generate(prompt, options);
-                output.innerText = '\n\nGenerated Text:\n' + generated;
+
+                const resp = await model.responses.create(options, (chunk) => {
+                    // intermediate chunk updates
+                    output.innerText = '\n\nGenerated Text:\n' + (chunk.output || '');
+                });
+
+                output.innerText = '\n\nGenerated Text:\n' + (resp.output || '');
                 console.log('Attention', options.attentionScores);
                 model.getProfiler().printSummary();
             });
 
             stepButton.addEventListener('click', async () => {
-                if (!model || !generator) {
+                if (!model) {
                     alert('Please load a model first.');
                     return;
                 }
-                const innerText = output.innerText;
                 const prompt = 'Once upon a time';
                 console.log('Step generating text for prompt:', prompt);
                 const options = {
-                    maxLength: 128 * 4 * 2,
+                    input: prompt,
+                    maxLength: 32,
                     temperature: 0.7,
                     attentionScores: false,
                     topP: 0.8,
                 };
 
-                const stepGen = await generator.step(prompt, options);
+                const resp = await model.responses.create(options, (chunk) => {
+                    output.innerText = chunk.output || '';
+                });
 
-                console.log('Step Generated Text:', stepGen);
-
-                output.innerText = stepGen;
-
+                console.log('Step Generated Text:', resp.output);
+                output.innerText = resp.output || '';
                 model.getProfiler().printSummary();
             });
         </script>

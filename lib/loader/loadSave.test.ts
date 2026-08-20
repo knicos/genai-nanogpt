@@ -11,7 +11,8 @@ import loadZipFile from './newZipLoad';
 import { TransformersMetadata } from './types';
 import '@tensorflow/tfjs';
 import createModelInstance from '@base/models/factory';
-import { AdamWOptimizer, CharTokeniser } from '@base/main';
+import CharTokeniser from '@base/tokeniser/CharTokeniser';
+import { AdamWOptimizer } from '@base/training/AdamW';
 
 vi.mock('./newZipLoad', () => ({ default: vi.fn() }));
 vi.mock('./oldZipLoad', () => ({ default: vi.fn() }));

@@ -1,4 +1,4 @@
-import { GenerateOptions } from '@base/inference/types';
+import { IGenerateOptions } from '@base/inference/types';
 import { LoRAConfig } from '@base/models/config';
 import Model, { ModelForwardAttributes, TrainingState } from '@base/models/model';
 import { ITokeniser } from '@base/tokeniser/type';
@@ -50,7 +50,7 @@ export interface ActionLogEntry {
     timestamp: number;
     duration: number;
     tokensProcessed: number;
-    options: TrainingOptions | GenerateOptions;
+    options: TrainingOptions | IGenerateOptions;
 }
 
 export interface TransformersMetadata {
@@ -64,7 +64,7 @@ export interface TransformersMetadata {
     mode?: ModelMode;
     pretrainingData?: DatasetMetadata[];
     pretrainingSettings?: TrainingOptions; // Last used training settings for pretraining
-    generationSettings?: GenerateOptions;
+    generationSettings?: IGenerateOptions;
     actionLog?: ActionLogEntry[];
     [key: string]: unknown;
 }

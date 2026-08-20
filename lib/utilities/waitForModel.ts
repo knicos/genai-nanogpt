@@ -1,4 +1,4 @@
-import { TeachableLLM } from '@base/main';
+import TeachableLLM from '@base/TeachableLLM';
 
 export default function waitForModel(model: TeachableLLM): Promise<void> {
     return new Promise((resolve, reject) => {

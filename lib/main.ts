@@ -1,35 +1,61 @@
 import '@tensorflow/tfjs';
 
-export { default as NanoGPT } from './models/NanoGPTV1';
+// Main API
 export { default as TeachableLLM } from './TeachableLLM';
-export { default as CharTokeniser } from './tokeniser/CharTokeniser';
-export { default as BPETokeniser } from './tokeniser/bpe';
-export { default as waitForModel } from './utilities/waitForModel';
-export { default as generateDatasetID } from './utilities/datasetID';
-export { default as loadTextData } from './data/textLoader';
-export type { ConversationStream } from './data/stream';
-export { MemoryConversationStream } from './data/stream';
-export type { DatasetMetadata, ModelMode } from './loader/types';
-export { default as Generator, type IGenerator } from './Generator';
-export { default as Evaluator } from './training/Evaluator';
-export { default as Trainer } from './Trainer';
-export type { IGenerateOptions } from './Generator';
-export { type ModelForwardAttributes, default as Model } from './models/model';
+
+// Tokenisers
+export * as tokenise from './tokenise';
 export type { ITokeniser, Conversation, Roles } from './tokeniser/type';
-export type { TrainingOptions, TrainingLogEntry } from './training/types';
+
+// Data
+export * as data from './data';
+export type { ConversationStream } from './data/stream';
+export type { DatasetMetadata, ModelMode } from './loader/types';
+
+// Models
+export * as models from './models';
 export type { GPTConfig } from './models/config';
-export {
+export type { ModelForwardAttributes } from './models/model';
+export type { IGenerateOptions, IGeneratorResponse, IGeneratorOutput, GeneratorConversation } from './inference/types';
+export type { TrainingOptions, TrainingLogEntry } from './training/types';
+export type { ITrainingJob } from './api/training';
+
+// Training
+import { default as Evaluator } from './training/Evaluator';
+import { AdamWOptimizer } from './training/AdamW';
+export const training = {
+    Evaluator,
+    AdamWOptimizer,
+};
+
+// Utilities
+import {
     estimateParameterCount,
     estimateMemoryUsage,
     estimateTrainingMemoryUsage,
     estimateResources,
     validateConfig,
 } from './utilities/parameters';
-export { default as topP } from './utilities/topP';
-export { sliceUint16Shards, sliceUint8Shards } from './utilities/tokens';
-export { TokenStore, createTokenStore } from './training/tasks/TokenStore';
-export { tokensFromStreams } from './training/tasks/tokenStream';
+import { default as topP } from './utilities/topP';
+import { sliceUint16Shards, sliceUint8Shards } from './utilities/tokens';
+import { default as performanceTest } from './utilities/performance';
+import { sentenceEmbeddings, sentenceEmbeddingsTensor } from './utilities/sentences';
 
+export const utilities = {
+    estimateParameterCount,
+    estimateMemoryUsage,
+    estimateTrainingMemoryUsage,
+    estimateResources,
+    validateConfig,
+    topP,
+    sliceUint16Shards,
+    sliceUint8Shards,
+    performanceTest,
+    sentenceEmbeddings,
+    sentenceEmbeddingsTensor,
+};
+
+// Ops
 import './ops/scatterSub';
 import './ops/gatherSub';
 import './ops/attentionMask';
@@ -48,30 +74,14 @@ import './ops/softmax16';
 import './ops/matMul16';
 import './ops/transpose16';
 
-const ops = {
+export const ops = {
     pack16,
     unpack16,
 };
 
-export { ops };
+// Layers
+export * as layers from './layers';
 
-export { selectBackend } from './backend';
-export { default as performanceTest } from './utilities/performance';
-
-import CausalSelfAttention from './layers/CausalSelfAttention';
-import MLP from './layers/MLP';
-import TransformerBlock from './layers/TransformerBlock';
-import RoPECache from './layers/RoPECache';
-
-export const layers = {
-    CausalSelfAttention,
-    MLP,
-    TransformerBlock,
-    RoPECache,
-};
-
-export { AdamWOptimizer } from './training/AdamW';
-
+// Checks
 export { default as checks } from './checks';
 export type { TensorStatistics } from './checks/weights';
-export { sentenceEmbeddings, sentenceEmbeddingsTensor } from './utilities/sentences';

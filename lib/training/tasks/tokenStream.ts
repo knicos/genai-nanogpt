@@ -1,4 +1,5 @@
-import { Conversation, ConversationStream, ITokeniser } from '@base/main';
+import { Conversation, ITokeniser } from '@base/tokeniser/type';
+import { ConversationStream } from '@base/data/stream';
 import { createTokenStore, deleteTokenStore, TokenStore } from './TokenStore';
 import { seededRng } from '@base/utilities/random';
 

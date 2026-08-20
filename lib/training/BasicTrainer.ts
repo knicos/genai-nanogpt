@@ -9,11 +9,12 @@ import { NamedVariableMap } from '@tensorflow/tfjs-core/dist/tensor_types';
 import { AdamWOptimizerConfig, TrainingLogEntry, TrainingMetrics, TrainingOptions, TrainingState } from './types';
 import { calculateAccuracy, calculateLoss } from './loss';
 import { AdamWOptimizer } from './AdamW';
+import configureModel from './configure';
 
 const DEFAULT_OPTIONS: TrainingOptions = {
     logInterval: 1,
     maxEpochs: 100,
-    sftMode: 'full',
+    method: { type: 'pretraining' },
     batchSize: 32,
 };
 
@@ -33,6 +34,7 @@ const DEFAULT_OPT_CONFIG: AdamWOptimizerConfig = {
 export default class BasicTrainer {
     public model: Model<ModelForwardAttributes>;
     public optimizer!: AdamWOptimizer;
+    public log: TrainingLogEntry[] = [];
     protected running = false;
     protected lastState?: TrainingState;
     protected _gradientCheckpointing = false;
@@ -43,6 +45,7 @@ export default class BasicTrainer {
     protected _labelSmoothing = 0.0;
     protected _layerDrop = 0.0;
     protected _dropout = 0.0;
+    protected _tokensProcessed = 0;
 
     constructor(
         model: Model<ModelForwardAttributes>,
@@ -96,9 +99,22 @@ export default class BasicTrainer {
         this.metrics = new Set(metrics);
     }
 
+    configure(options: TrainingOptions) {
+        this.setGradientCheckpointing(options?.gradientCheckpointing || false);
+        this.setMixedPrecision(options?.mixedPrecision || false);
+        this.setLabelSmoothing(options?.labelSmoothing || 0.0);
+        this.setDropout(options?.dropout || 0);
+        this.setLayerDrop(options?.layerDrop || 0);
+        if (!this.lastState) {
+            this.setLearningRate(options?.learningRate || 1e-3);
+        }
+        configureModel(this.model, options);
+    }
+
     reset() {
         this.lastState = undefined;
         this.running = false;
+        this.log = [];
     }
 
     stop() {
@@ -107,6 +123,10 @@ export default class BasicTrainer {
 
     get isRunning(): boolean {
         return this.running;
+    }
+
+    get tokensProcessed(): number {
+        return this._tokensProcessed;
     }
 
     getOptimizer(): AdamWOptimizer {
@@ -242,126 +262,42 @@ export default class BasicTrainer {
         return state;
     }
 
-    async stepDataset(
-        dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
-        options: Partial<TrainingOptions>,
-        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
-    ): Promise<{ log: TrainingLogEntry }> {
-        const { logInterval = 10 } = {
-            ...DEFAULT_OPTIONS,
-            ...options,
-        };
-
-        if (options.metrics) {
-            this.setMetrics(options.metrics);
-        }
-
-        const startTime = Date.now();
-
-        const state = this.createEmptyState();
-        this.lastState = state;
-
-        await this.dummyPass();
-        // this.model.trainable = true;
-
-        if (this.metrics.has('memoryUsage')) {
-            if (!this.model.getProfiler()) {
-                this.model.setProfiler(new MemoryProfiler());
-            }
-        }
-
-        this.running = true;
-        state.logStartTime = startTime;
-
-        const evaluator = validationDataset ? new Evaluator(this.model, validationDataset, this.maskedLoss) : undefined;
-        const iterator = await dataset.iterator();
-
-        try {
-            while (this.running) {
-                const result = await iterator.next();
-                if (result.done) break;
-                const batch = result.value;
-
-                const lossScalar = this.trainStep(state, batch, false);
-
-                if (options.debug) {
-                    const lossValue = (await lossScalar.data())[0];
-                    if (isNaN(lossValue) || !isFinite(lossValue)) {
-                        console.error('Invalid loss value:', lossValue);
-                        console.error('Batch xs:', batch.xs.toString());
-                        console.error('Batch ys:', batch.ys.toString());
-                        console.error('State:', state);
-                        throw new Error('Loss is NaN or Infinity');
-                    } else {
-                        console.log(`Step ${state.step}: Loss = ${lossValue}`);
-                    }
-                }
-
-                batch.xs.dispose();
-                batch.ys.dispose();
-
-                state.step++;
-                state.totalSteps++;
-
-                if (state.step % logInterval === 0) {
-                    await this.performLogging(lossScalar, batch.xs.shape[0], options, evaluator);
-                } else {
-                    if (state.gradientNorm) {
-                        state.gradientNorm.dispose();
-                        state.gradientNorm = undefined;
-                    }
-                    if (state.accuracy) {
-                        state.accuracy.dispose();
-                        state.accuracy = undefined;
-                    }
-                }
-                lossScalar.dispose();
-            }
-        } catch (error) {
-            console.error('Training error:', error);
-            throw error;
-        }
-
-        this.model.trainingState = {
-            steps: state.totalSteps,
-            learningRate: this.optimizer.lr,
-            batchSize: options.batchSize || 32,
-            loss: state.lastLoss,
-            tokensProcessed: state.totalSteps * (options.batchSize || 32) * this.model.config.blockSize,
-            duration: state.trainingDuration,
-        };
-
-        dispose();
-
-        this.running = false;
-
-        throw new Error('No log returned before training stopped.');
-    }
-
     private async performLogging(
         lossScalar: Scalar,
         batchSize: number,
-        options?: Partial<TrainingOptions>,
-        evaluator?: Evaluator
+        evaluator?: Evaluator,
+        onStep?: (log: TrainingLogEntry) => void
     ): Promise<void> {
-        const onStep = options?.onStep;
         const keepGrads = this.metrics.has('gradientStatistics');
-        const lossValue = (await lossScalar.data())[0];
         const state = this.lastState!;
+
+        // Collect async tensor reads up-front. Use null placeholders for unused reads.
+        const promises: (Promise<Float32Array> | null)[] = [];
+        promises.push(lossScalar.data<'float32'>());
+        promises.push(state.accuracy ? state.accuracy.data<'float32'>() : null);
+        promises.push(state.gradientNorm ? state.gradientNorm.data<'float32'>() : null);
+
+        const results = await Promise.all(promises);
+
+        const lossValue = results[0]?.[0] ?? 0;
+        const accuracyValue = results[1] ? results[1][0] : undefined;
+        const gradientNormValue = results[2] ? results[2][1] : undefined;
+
         state.lastLoss = lossValue;
         const logEndTime = Date.now();
         state.trainingDuration += logEndTime - state.logStartTime;
         const tokensProcessed = state.totalSteps * batchSize * this.model.config.blockSize;
+        this._tokensProcessed = tokensProcessed;
 
         const entry: TrainingLogEntry = {
             trainingMetrics: {
                 loss: state.lastLoss,
                 perplexity: this.metrics.has('perplexity') ? Math.exp(state.lastLoss) : undefined,
-                accuracy: state.accuracy ? (await state.accuracy.data())[0] : undefined,
+                accuracy: accuracyValue,
             },
             step: state.step,
             time: Date.now() - state.logStartTime,
-            gradientNorm: state.gradientNorm ? (await state.gradientNorm.data())[1] : undefined,
+            gradientNorm: gradientNormValue,
             batchSize: batchSize,
             learningRate: this.metrics.has('learningRate') ? this.optimizer.lr : undefined,
             duration: state.trainingDuration,
@@ -369,6 +305,7 @@ export default class BasicTrainer {
             tokensPerSecond: tokensProcessed / (state.trainingDuration / 1000),
             memoryUsage: this.metrics.has('memoryUsage') ? this.model.getProfiler()?.getPeakMemory() || 0 : undefined,
         };
+
         if (state.gradientNorm) {
             state.gradientNorm.dispose();
             state.gradientNorm = undefined;
@@ -414,8 +351,11 @@ export default class BasicTrainer {
                 console.error('Validation error:', error);
             }
         }
+
+        this.log.push(entry);
+
         if (onStep) {
-            await onStep(entry);
+            onStep(entry);
         }
 
         state.logStartTime = Date.now();
@@ -424,20 +364,24 @@ export default class BasicTrainer {
     async trainOnDataset(
         dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
         options: Partial<TrainingOptions>,
-        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>
+        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>,
+        onStep?: (log: TrainingLogEntry) => void
     ): Promise<{ losses: number[]; validationLosses: number[] }> {
         const { logInterval = 10, maxEpochs = Infinity } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
 
+        // Ensure trainer state is resumed
+        if (this.log.length > 0) {
+            this.resumeFromLog(this.log[this.log.length - 1]);
+        }
+
         const maxSteps = maxEpochs * (options?.epochSteps || 1000);
 
         if (options.metrics) {
             this.setMetrics(options.metrics);
         }
-
-        const startTime = Date.now();
 
         const state = this.createEmptyState();
         this.lastState = state;
@@ -451,17 +395,22 @@ export default class BasicTrainer {
             }
         }
 
+        const startTime = Date.now();
         this.running = true;
         state.logStartTime = startTime;
 
         const evaluator = validationDataset ? new Evaluator(this.model, validationDataset, this.maskedLoss) : undefined;
         const iterator = await dataset.iterator();
 
+        let resultPromise = iterator.next();
+
         try {
             while (this.running) {
-                const result = await iterator.next();
+                const result = await resultPromise;
+                resultPromise = iterator.next();
                 if (result.done) break;
                 const batch = result.value;
+
                 const isLogStep = state.step % logInterval === 0;
                 const keepGrads = (options?.metrics?.includes('gradientStatistics') || false) && isLogStep;
 
@@ -488,7 +437,7 @@ export default class BasicTrainer {
                 state.totalSteps++;
 
                 if (isLogStep) {
-                    await this.performLogging(lossScalar, batch.xs.shape[0], options, evaluator);
+                    await this.performLogging(lossScalar, batch.xs.shape[0], evaluator, onStep);
                 } else {
                     if (state.gradientNorm) {
                         state.gradientNorm.dispose();
@@ -514,6 +463,16 @@ export default class BasicTrainer {
         dispose();
 
         this.running = false;
+
+        this.model.metaData.actionLog = this.model.metaData.actionLog || [];
+        const endTime = Date.now();
+        this.model.metaData.actionLog.push({
+            action: 'pretrain',
+            timestamp: endTime,
+            duration: endTime - startTime,
+            tokensProcessed: this.tokensProcessed,
+            options,
+        });
 
         return { losses: state.losses, validationLosses: state.validationLosses };
     }

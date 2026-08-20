@@ -1,6 +1,8 @@
 import zip from 'jszip';
 import { GPTConfig } from '@base/models/config';
-import { BPETokeniser, CharTokeniser, ITokeniser } from '@base/main';
+import { ITokeniser } from '@base/tokeniser/type';
+import CharTokeniser from '@base/tokeniser/CharTokeniser';
+import BPETokeniser from '@base/tokeniser/bpe';
 import { importWeights, ITensorSpec, IWeightManifest } from '@base/utilities/weights';
 import { disposeVariables, Tensor } from '@tensorflow/tfjs-core';
 import { dummyPassAsync } from '@base/utilities/dummy';

@@ -1,7 +1,7 @@
 import { ones, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
 import BaseLayer, { ForwardAttributes } from './BaseLayer';
 import { normRMS } from '@base/ops/normRMS';
-import { GPTConfig } from '@base/main';
+import { GPTConfig } from '@base/models/config';
 
 export interface RMSNormConfig {
     useGamma?: boolean;

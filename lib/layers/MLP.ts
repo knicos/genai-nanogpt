@@ -1,6 +1,6 @@
 import { randomNormal, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
 import BaseLayer, { ForwardAttributes } from './BaseLayer';
-import { GPTConfig } from '@base/main';
+import { GPTConfig } from '@base/models/config';
 import { matMul16 } from '@base/ops/matMul16';
 import { reshape16 } from '@base/ops/reshape16';
 import { dropout16 } from '@base/ops/dropout16';

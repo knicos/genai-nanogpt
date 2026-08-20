@@ -2,7 +2,7 @@ import { Tensor } from '@tensorflow/tfjs-core';
 import type { ForwardAttributes } from '../layers/BaseLayer';
 import type { AttentionScores, KVCache } from '../layers/CausalSelfAttention';
 import BaseLayer from '../layers/BaseLayer';
-import { estimateParameterCount } from '../main';
+import { estimateParameterCount } from '../utilities/parameters';
 import { TransformersMetadata } from '@base/loader/types';
 import { GPTConfig, LoRAConfig } from './config';
 import LoRA from '@base/layers/LoRA';

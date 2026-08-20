@@ -29,7 +29,7 @@
     "devDependencies": {
         "@eslint/js": "^10.0.1",
         "@playwright/test": "^1.55.0",
-        "@types/node": "^22.13.14",
+        "@types/node": "^26.2.0",
         "@types/papaparse": "^5.3.16",
         "@types/picomatch": "^4.0.2",
         "@types/yargs": "^17.0.33",
@@ -60,5 +60,11 @@
         "pdfjs-dist": "^5.4.149",
         "picomatch": "^4.0.3",
         "uuid": "^14.0.0"
+    },
+    "allowScripts": {
+        "webgpu@0.4.0": true,
+        "esbuild@0.28.1": true,
+        "core-js@3.29.1": true,
+        "patch-package@8.0.1": true
     }
 }

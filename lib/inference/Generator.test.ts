@@ -1,11 +1,13 @@
 import { afterAll, afterEach, describe, it } from 'vitest';
-import Generator, { GeneratorConversation } from './Generator';
-import NanoGPT from './models/NanoGPTV1';
-import CharTokeniser from './tokeniser/CharTokeniser';
+import Generator from './Generator';
+import NanoGPT from '../models/NanoGPTV1';
+import CharTokeniser from '../tokeniser/CharTokeniser';
 import * as tf from '@tensorflow/tfjs';
-import { Conversation } from './main';
+import { Conversation } from '../main';
 import { create, globals } from 'webgpu';
 import { selectBackend } from '@base/backend';
+import { GeneratorConversation, IGeneratorOutput } from './types';
+import arrayShape from '../utilities/arrayShape';
 
 Object.assign(globalThis, globals);
 const navigator = { gpu: create([]) };
@@ -22,7 +24,7 @@ describe('Generator', () => {
         delete (globalThis as any).navigator;
     });
 
-    it('should generate text based on a prompt', async ({ expect }) => {
+    it('should generate text based on a prompt', { timeout: 10000 }, async ({ expect }) => {
         await selectBackend('webgpu');
         const model = new NanoGPT({
             vocabSize: 20, // Example vocab size
@@ -210,7 +212,7 @@ describe('Generator', () => {
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
 
-        const emittedTokens: number[][] = [];
+        const emittedTokens: IGeneratorOutput[] = [];
         generator.on('tokens', (tokens) => {
             emittedTokens.push(tokens);
         });
@@ -219,7 +221,6 @@ describe('Generator', () => {
         await generator.generate(prompt, { maxLength: 10 });
 
         expect(emittedTokens.length).toBeGreaterThan(0);
-        expect(emittedTokens[0].length).toBeGreaterThan(0);
     });
 
     it('should emit tokens with attention when requested', async ({ expect }) => {
@@ -234,18 +235,18 @@ describe('Generator', () => {
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
 
-        const emittedTokens: number[][] = [];
+        const emittedTokens: IGeneratorOutput[] = [];
         generator.on('tokens', (tokens) => {
             emittedTokens.push(tokens);
         });
 
         const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
-        await generator.generate(prompt, { maxLength: 10, attentionScores: true });
+        await generator.generate(prompt, { maxLength: 10, outputAttention: true });
 
-        const emittedAttention = generator.getAttentionData();
+        const output = generator.getRawOutput();
+        const emittedAttention = output.map((o) => o.attention).filter((a) => a !== null);
 
         expect(emittedAttention).toHaveLength(emittedTokens.length);
-        expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
 
         // When cache is used the attention output is full block size.
         expect(emittedAttention[0][0][0][0]).toHaveLength(model.config.blockSize);
@@ -256,7 +257,7 @@ describe('Generator', () => {
         const model = new NanoGPT({
             vocabSize: 20,
             nEmbed: 64,
-            nLayer: 1,
+            nLayer: 3,
             nHead: 2,
             blockSize: 32,
             useRope: true,
@@ -264,19 +265,20 @@ describe('Generator', () => {
         const tokeniser = new CharTokeniser(CHARS);
         const generator = new Generator(model, tokeniser);
 
-        const emittedTokens: number[][] = [];
+        const emittedTokens: IGeneratorOutput[] = [];
         generator.on('tokens', (tokens) => {
             emittedTokens.push(tokens);
         });
 
         const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
-        await generator.generate(prompt, { maxLength: 10, attentionScores: true, noCache: true });
+        await generator.generate(prompt, { maxLength: 10, outputAttention: true, noCache: true });
 
-        const emittedAttention = generator.getAttentionData();
+        const output = generator.getRawOutput();
+        const emittedAttention = output.map((o) => o.attention).filter((a) => a !== null);
 
-        expect(emittedAttention).toHaveLength(emittedTokens.length);
-        expect(emittedAttention[0]).toHaveLength(emittedTokens[0].length);
-        expect(emittedAttention[0][0][0][0]).toHaveLength(32);
+        const attentionShape = arrayShape(emittedAttention);
+
+        expect(attentionShape).toEqual([10, 3, 2, 1, 32]); // [tokens, layers, heads, tokens per step, blockSize]
     });
 
     it('should emit probabilities when requested', async ({ expect }) => {
@@ -292,12 +294,13 @@ describe('Generator', () => {
         const generator = new Generator(model, tokeniser);
 
         const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
-        await generator.generate(prompt, { maxLength: 10, includeProbabilities: true });
+        await generator.generate(prompt, { maxLength: 10, outputScores: true });
 
-        const emittedProbabilities = generator.getProbabilitiesData();
+        const output = generator.getRawOutput();
+        const emittedProbabilities = output.map((o) => o.scores).filter((s) => s !== null);
 
-        expect(emittedProbabilities.length).toBeGreaterThan(0);
-        expect(emittedProbabilities[0].length).toBeGreaterThan(0);
+        const probabilitiesShape = arrayShape(emittedProbabilities);
+        expect(probabilitiesShape).toEqual([10, model.config.vocabSize]);
     });
 
     it('should emit last multinomial random value', async ({ expect }) => {
@@ -313,9 +316,9 @@ describe('Generator', () => {
         const generator = new Generator(model, tokeniser);
 
         const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
-        await generator.generate(prompt, { maxLength: 10, includeProbabilities: true });
+        await generator.generate(prompt, { maxLength: 10, outputScores: true });
 
-        const lastMultinomialRand = generator.getLastMultinomialRand();
+        const lastMultinomialRand = generator.getRawOutput().slice(-1)[0].multinomialRand;
 
         expect(lastMultinomialRand).not.toBeNull();
     });

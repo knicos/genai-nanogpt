@@ -65,8 +65,8 @@ function getFileType(file: string): string {
     );
 }*/
 
-export default async function loadTextData(file: File, options?: DataOptions): Promise<ConversationStream> {
-    const type = file.type !== '' ? file.type : getFileType(file.name);
+export default async function loadTextData(file: Blob | File, options?: DataOptions): Promise<ConversationStream> {
+    const type = file.type !== '' ? file.type : file instanceof File ? getFileType(file.name) : 'application/zip';
     if (type === 'application/parquet') {
         throw new Error(
             'Parquet loading is not currently supported in the browser. Please convert your data to JSONL format.'

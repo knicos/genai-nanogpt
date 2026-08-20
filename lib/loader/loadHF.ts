@@ -1,5 +1,5 @@
 import loadTransformers from './loadTransformers';
-import { ITokeniser } from '@base/main';
+import { ITokeniser } from '@base/tokeniser/type';
 import Model, { ModelForwardAttributes } from '@base/models/model';
 import { TransformersConfig, TransformersMetadata, TransformersTokeniser } from './types';
 

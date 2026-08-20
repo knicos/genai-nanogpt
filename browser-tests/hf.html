@@ -43,9 +43,10 @@
                         attentionScores: true,
                         topP: 0.8,
                     };
-                    const generator = model.generator();
-                    const generated = await generator.generate(prompt, options);
-                    output.innerText += '\n\nGenerated Text:\n' + generated;
+                    const resp = await model.responses.create({ input: prompt, ...options }, (chunk) => {
+                        output.innerText += '\n' + (chunk.output || '');
+                    });
+                    output.innerText += '\n\nGenerated Text:\n' + (resp.output || '');
                     console.log('Attention', options.attentionScores);
                     model.getProfiler().printSummary();
                 }

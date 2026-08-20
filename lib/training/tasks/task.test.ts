@@ -1,6 +1,7 @@
 import { describe, it, vi, afterEach } from 'vitest';
 import { tokensFromStreams } from './tokenStream';
-import { CharTokeniser, Conversation } from '@base/main';
+import CharTokeniser from '@base/tokeniser/CharTokeniser';
+import { Conversation } from '@base/tokeniser/type';
 import { MemoryConversationStream } from '@base/data/stream';
 
 async function collectAllTokens(tokens: { getShardCount(): number; getShard(index: number): Promise<Uint16Array> }) {

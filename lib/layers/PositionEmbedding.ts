@@ -1,6 +1,7 @@
 import { mod, range, scalar, Tensor, tidy } from '@tensorflow/tfjs-core';
 import BaseLayer from './BaseLayer';
-import { GPTConfig, ModelForwardAttributes } from '@base/main';
+import { GPTConfig } from '@base/models/config';
+import { ModelForwardAttributes } from '@base/models/model';
 import { layers, initializers } from '@tensorflow/tfjs-layers';
 import { add } from '@tensorflow/tfjs-core/dist/engine';
 
