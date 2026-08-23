@@ -21,9 +21,9 @@ export async function createTrainValidationDatasets(
     batchSize: number
 ): Promise<{
     trainDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
-    validationDataset: Dataset<{ xs: Tensor; ys: Tensor }>;
+    validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>;
     size: number;
-    validationState: DatasetState;
+    validationState?: DatasetState;
     trainState: DatasetState;
 }> {
     const trainingStore =
@@ -42,6 +42,15 @@ export async function createTrainValidationDatasets(
         batchSize,
     });
 
+    if (validationStore.getTokenCount() === 0) {
+        return {
+            trainDataset,
+            validationDataset: undefined,
+            size: totalTokens,
+            validationState: undefined,
+            trainState,
+        };
+    }
     const { dataset: validationDataset, state: validationState } = await datasetBuilder.createTextDataset(
         validationStore,
         {
