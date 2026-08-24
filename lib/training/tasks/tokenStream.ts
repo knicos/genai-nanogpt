@@ -73,15 +73,16 @@ interface TokensFromTasksOptions {
 export async function tokensFromStreams(
     tasks: ConversationStream[],
     tokenizer: ITokeniser,
+    datasetId: string,
     options?: TokensFromTasksOptions
 ): Promise<{ trainingTokens: TokenStore; validationTokens?: TokenStore }> {
     await deleteTokenStore('training-tokens');
-    const trainingStore = await createTokenStore('training-tokens', tokenizer.id, tokenizer.datasetID ?? '', options);
+    const trainingStore = await createTokenStore('training-tokens', tokenizer.id, datasetId, options);
 
     await deleteTokenStore('validation-tokens');
     const validationStore =
         options?.validationSplit && options.validationSplit > 0
-            ? await createTokenStore('validation-tokens', tokenizer.id, tokenizer.datasetID ?? '', options)
+            ? await createTokenStore('validation-tokens', tokenizer.id, datasetId, options)
             : undefined;
 
     const trainingTokens = [new Uint16Array(trainingStore.shardSize)];

@@ -37,9 +37,14 @@ describe('tokensFromStreams', () => {
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream1, stream2]);
         tokeniser.datasetID = 'test-dataset1';
-        const { trainingTokens: tokens, validationTokens } = await tokensFromStreams(tasks, tokeniser, {
-            noOPFS: true,
-        });
+        const { trainingTokens: tokens, validationTokens } = await tokensFromStreams(
+            tasks,
+            tokeniser,
+            'test-dataset1',
+            {
+                noOPFS: true,
+            }
+        );
 
         expect(validationTokens).toBeUndefined();
         expect(tokens.getTokenCount()).toBeGreaterThan(data1.length + data2.length);
@@ -74,10 +79,15 @@ describe('tokensFromStreams', () => {
 
         vi.spyOn(Math, 'random').mockReturnValue(0);
 
-        const { trainingTokens: tokens, validationTokens } = await tokensFromStreams(tasks, tokeniser, {
-            validationSplit: 1,
-            noOPFS: true,
-        });
+        const { trainingTokens: tokens, validationTokens } = await tokensFromStreams(
+            tasks,
+            tokeniser,
+            'test-dataset-val-100',
+            {
+                validationSplit: 1,
+                noOPFS: true,
+            }
+        );
 
         expect(validationTokens).toBeDefined();
         expect(validationTokens!.getTokenCount()).toBeGreaterThan(0);
@@ -98,10 +108,15 @@ describe('tokensFromStreams', () => {
         await tokeniser.train([stream]);
         tokeniser.datasetID = 'test-dataset-val-0';
 
-        const { trainingTokens, validationTokens } = await tokensFromStreams([stream], tokeniser, {
-            validationSplit: 0,
-            noOPFS: true,
-        });
+        const { trainingTokens, validationTokens } = await tokensFromStreams(
+            [stream],
+            tokeniser,
+            'test-dataset-val-0',
+            {
+                validationSplit: 0,
+                noOPFS: true,
+            }
+        );
 
         expect(validationTokens).toBeUndefined();
         expect(trainingTokens.getTokenCount()).toBeGreaterThan(0);
@@ -124,10 +139,15 @@ describe('tokensFromStreams', () => {
         let idx = 0;
         vi.spyOn(Math, 'random').mockImplementation(() => randomValues[idx++] ?? 0.9);
 
-        const { trainingTokens, validationTokens } = await tokensFromStreams([stream], tokeniser, {
-            validationSplit: 0.5,
-            noOPFS: true,
-        });
+        const { trainingTokens, validationTokens } = await tokensFromStreams(
+            [stream],
+            tokeniser,
+            'test-dataset-val-mixed',
+            {
+                validationSplit: 0.5,
+                noOPFS: true,
+            }
+        );
 
         expect(validationTokens).toBeDefined();
         const trainingDecoded = tokeniser.decode(await collectAllTokens(trainingTokens));
@@ -159,7 +179,7 @@ describe('tokensFromStreams', () => {
         const tokeniser = new CharTokeniser(200);
         await tokeniser.train([stream1, stream2]);
         tokeniser.datasetID = 'test-dataset2';
-        const { trainingTokens: tokens } = await tokensFromStreams([stream1, stream2], tokeniser, {
+        const { trainingTokens: tokens } = await tokensFromStreams([stream1, stream2], tokeniser, 'test-dataset2', {
             masking: true,
             noOPFS: true,
         });
@@ -194,7 +214,7 @@ describe('tokensFromStreams', () => {
 
         vi.spyOn(Math, 'random').mockReturnValue(0);
 
-        const { validationTokens } = await tokensFromStreams([stream], tokeniser, {
+        const { validationTokens } = await tokensFromStreams([stream], tokeniser, 'test-dataset-mask-val', {
             masking: true,
             validationSplit: 1,
             noOPFS: true,
@@ -219,7 +239,7 @@ describe('tokensFromStreams', () => {
         await tokeniser.train([stream1]);
         tokeniser.datasetID = 'test-dataset3';
 
-        const { trainingTokens: tokens } = await tokensFromStreams([stream1], tokeniser, {
+        const { trainingTokens: tokens } = await tokensFromStreams([stream1], tokeniser, 'test-dataset3', {
             noOPFS: true,
             shardSize: 128,
             maxCachedShards: 10_000,
@@ -246,7 +266,12 @@ describe('tokensFromStreams', () => {
         await tokeniser.train([stream1, stream2]);
         tokeniser.datasetID = 'test-dataset-multi-stream';
 
-        const { trainingTokens: tokens } = await tokensFromStreams([stream1, stream2], tokeniser, { noOPFS: true });
+        const { trainingTokens: tokens } = await tokensFromStreams(
+            [stream1, stream2],
+            tokeniser,
+            'test-dataset-multi-stream',
+            { noOPFS: true }
+        );
         const decoded = tokeniser.decode(await collectAllTokens(tokens));
 
         expect(decoded).toContain('stream-1 message');
@@ -273,7 +298,9 @@ describe('tokensFromStreams', () => {
         await tokeniser.train([stream1, stream2]);
         tokeniser.datasetID = 'test-dataset4';
 
-        const { trainingTokens: tokens } = await tokensFromStreams([stream1, stream2], tokeniser, { noOPFS: true });
+        const { trainingTokens: tokens } = await tokensFromStreams([stream1, stream2], tokeniser, 'test-dataset4', {
+            noOPFS: true,
+        });
 
         expect(tokens.getTokenCount()).toBeGreaterThan(data1.length + data2.length);
         const decodedText = await tokeniser.decode(await tokens.getShard(0));
@@ -292,7 +319,7 @@ describe('tokensFromStreams', () => {
         tokeniser.datasetID = 'test-dataset-too-large';
 
         await expect(
-            tokensFromStreams([stream], tokeniser, {
+            tokensFromStreams([stream], tokeniser, 'test-dataset-too-large', {
                 noOPFS: true,
                 shardSize: 32,
             })

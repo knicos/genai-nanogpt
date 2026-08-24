@@ -22,6 +22,7 @@ export default async function prepareData(
     model: Model<ModelForwardAttributes>,
     tokeniser: ITokeniser,
     tasks: ConversationStream[] | Uint16Array[] | TokenStore,
+    datasetId: string,
     validation?: Uint16Array[] | TokenStore,
     datasets?: DatasetMetadata[]
 ): Promise<PrepareDataResult> {
@@ -72,7 +73,7 @@ export default async function prepareData(
         if (tasks[0] instanceof Uint16Array) {
             trainingTokens = tasks as Uint16Array[];
         } else {
-            const result = await tokensFromStreams(tasks as ConversationStream[], tokeniser, {
+            const result = await tokensFromStreams(tasks as ConversationStream[], tokeniser, datasetId, {
                 masking: maskedLoss,
                 validationSplit: options.validationSplit,
             });

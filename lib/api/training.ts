@@ -357,9 +357,11 @@ export default class Training {
 
         if (data instanceof TokenStore) {
             if (job.datasetId && data.datasetId !== job.datasetId) {
-                const err = new Error('dataset_mismatch');
-                this.setState(job, 'error', err);
-                throw err;
+                //const err = new Error('dataset_mismatch');
+                //this.setState(job, 'error', err);
+                //throw err;
+                // Allow this situation for now.
+                console.warn('TokenStore dataset ID does not match job dataset ID, proceeding anyway');
             }
             if (data.tokeniserId !== this._tokeniser.id) {
                 const err = new Error('tokeniser_mismatch');
@@ -376,6 +378,7 @@ export default class Training {
                     this._model,
                     this._tokeniser,
                     data,
+                    job.datasetId ?? generateDatasetID(datasets),
                     validation,
                     datasets
                 );
