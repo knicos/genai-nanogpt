@@ -43,6 +43,7 @@ export interface DatasetMetadata {
     id: string;
     name: string;
     conversational: boolean;
+    url?: string;
 }
 
 export interface ActionLogEntry {

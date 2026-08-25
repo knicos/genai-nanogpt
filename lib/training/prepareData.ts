@@ -34,18 +34,18 @@ export default async function prepareData(
     }
 
     if (datasets) {
-        const existingData = model.metaData.pretrainingData || [];
-        const mergedData = [...existingData];
         let isConversational = false;
         for (const dataset of datasets) {
-            if (!existingData.some((d) => d.id === dataset.id)) {
-                mergedData.push({ id: dataset.id, name: dataset.name, conversational: dataset.conversational });
-            }
             if (dataset.conversational) {
                 isConversational = true;
             }
         }
-        model.metaData.pretrainingData = mergedData;
+        model.metaData.pretrainingData = datasets.map((d) => ({
+            id: d.id,
+            name: d.name,
+            conversational: d.conversational,
+            url: d.url,
+        }));
 
         if (isConversational) {
             model.metaData.mode = 'conversational';

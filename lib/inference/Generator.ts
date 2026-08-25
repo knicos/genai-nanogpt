@@ -92,6 +92,15 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         this.actualTokeniser = tokeniser;
     }
 
+    private shouldTerminate(allowSpecial: boolean, token: number): boolean {
+        if (allowSpecial) return false;
+        const assistantEndToken = this.tokeniser.getSpecialTokenIndex('<|assistant_end|>');
+        if (token === this.actualTokeniser.eosToken || token === assistantEndToken) {
+            return true;
+        }
+        return false;
+    }
+
     /** Generate logits and select a token. */
     private async _generateToken(
         idx: Tensor,
@@ -259,7 +268,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         const tokenNumber = ((await nextToken.array()) as number[][])[0][0];
         const tokenText = this.actualTokeniser.decode([tokenNumber]);
         this.lastToken = tokenNumber;
-        const terminated = !options?.allowSpecial && this.tokeniser.isSpecialToken(tokenNumber);
+        const terminated = this.shouldTerminate(options?.allowSpecial ?? false, tokenNumber);
 
         const output: IGeneratorOutput = {
             outputTensor: nextToken,
