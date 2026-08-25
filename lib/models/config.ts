@@ -99,5 +99,5 @@ export function validateConfig(config: unknown): asserts config is GPTConfig {
         return;
     }
 
-    throw new Error('Invalid config: "modelType" must be "GenAI_NanoGPT_v1" or "GenAI_NanoGPT_v2".');
+    throw new Error('invalid_model_type');
 }

@@ -9,7 +9,7 @@ export async function loadZipMeta(zipFile: zip): Promise<TransformersMetadata> {
             metaData = JSON.parse(metaFile) as TransformersMetadata;
         } catch (error) {
             console.error(error);
-            throw new Error('Failed to parse meta.json in the zip archive', { cause: error });
+            throw new Error('bad_format', { cause: error });
         }
     } else {
         console.warn('meta.json not found in the zip archive, using default metadata');

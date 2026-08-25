@@ -57,9 +57,9 @@
         "jszip": "^3.10.1",
         "papaparse": "^5.5.3",
         "patch-package": "^8.0.1",
-        "pdfjs-dist": "^5.4.149",
         "picomatch": "^4.0.3",
-        "uuid": "^14.0.0"
+        "uuid": "^14.0.0",
+        "pdfjs-dist": "^6.2.108"
     },
     "allowScripts": {
         "webgpu@0.4.0": true,

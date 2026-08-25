@@ -1,15 +1,13 @@
 import type { Conversation } from '../tokeniser/type';
 
 const MAX_SIZE = 100 * 1024 * 1024; // 60 MB
+const PDFJS_BASE_URL = 'https://store.gen-ai.fi/llm/deps';
 
 export async function loadPDF(file: Blob | Uint8Array, maxSize = MAX_SIZE): Promise<Conversation[][]> {
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
     if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-            'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
-            import.meta.url
-        ).toString();
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(`${PDFJS_BASE_URL}/pdf.worker.min.mjs`).toString();
     }
 
     const loadingTask = pdfjsLib.getDocument({ data: file instanceof Blob ? await file.arrayBuffer() : file });

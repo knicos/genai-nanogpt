@@ -68,9 +68,7 @@ function getFileType(file: string): string {
 export default async function loadTextData(file: Blob | File, options?: DataOptions): Promise<ConversationStream> {
     const type = file.type !== '' ? file.type : file instanceof File ? getFileType(file.name) : 'application/zip';
     if (type === 'application/parquet') {
-        throw new Error(
-            'Parquet loading is not currently supported in the browser. Please convert your data to JSONL format.'
-        );
+        throw new Error('unsupported_file_type');
     }
     if (type === 'application/pdf') {
         return new MemoryConversationStream(await loadPDF(file, options?.maxSize));
@@ -92,7 +90,7 @@ export default async function loadTextData(file: Blob | File, options?: DataOpti
                 ])
             );
         } else {
-            throw new Error('Expected JSON array');
+            throw new Error('bad_format');
         }
     }
     if (type === 'application/jsonl') {
@@ -111,7 +109,7 @@ export default async function loadTextData(file: Blob | File, options?: DataOpti
                 complete: (results) => {
                     if (results.errors.length > 0) {
                         console.error(results.errors);
-                        reject(new Error('Error parsing file'));
+                        reject(new Error('bad_format'));
                     } else {
                         const column = checkForTextColumn(results.data[0], options?.column || 'text');
                         const hasHeader = options?.hasHeader ?? checkFirstRowIsHeader(results.data[0]);
@@ -131,5 +129,5 @@ export default async function loadTextData(file: Blob | File, options?: DataOpti
     } else if (type === 'text/plain') {
         return new MemoryConversationStream([[{ role: 'text', content: await file.text() }]]);
     }
-    throw new Error(`Unsupported file type: ${type}`);
+    throw new Error('unsupported_file_type');
 }

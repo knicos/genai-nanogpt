@@ -259,7 +259,7 @@ export default class Responses {
         // If we're currently busy with another generation, enqueue this job
         if (this._busyCount > 0 && !options.background) {
             if (this._jobQueue.length > 10) {
-                throw new Error('Job queue is too long, rejecting new job');
+                throw new Error('queue_too_long');
             }
             return new Promise<IGeneratorResponse>((resolve, reject) => {
                 this._jobQueue.push({ id, options, callback, resolve, reject });
@@ -288,7 +288,7 @@ export default class Responses {
             // If we're currently busy with another generation, enqueue this job
             if (this._busyCount > 0 && !record.options.background) {
                 if (this._jobQueue.length > 10) {
-                    throw new Error('Job queue is too long, rejecting new job');
+                    throw new Error('queue_too_long');
                 }
                 return new Promise<IGeneratorResponse>((resolve, reject) => {
                     this._jobQueue.push({ id, options: record.options, callback: record.callback, resolve, reject });
@@ -298,7 +298,7 @@ export default class Responses {
             // Run generation now (or enqueue earlier). Delegate to runner to avoid duplication.
             return this._runForRecord(id, record.options, record.callback);
         }
-        throw new Error(`No response found for id: ${id}`);
+        throw new Error('response_not_found');
     }
 
     /**
