@@ -38,7 +38,8 @@ export interface ITrainingJob {
     totalTokens: number;
     datasets: DatasetMetadata[];
     datasetId?: string;
-    breakOnLog: boolean;
+    breakOnLog: Set<number>;
+    resumeCounter: number;
 }
 
 interface TrainingEvents {
@@ -58,6 +59,7 @@ export default class Training {
     private _model: Model<ModelForwardAttributes, GPTConfig>;
     private _tokeniser: ITokeniser;
     private _jobs = new Map<string, ITrainingJob>();
+    private _breakCounter = 1;
 
     constructor(model: Model<ModelForwardAttributes, GPTConfig>, tokeniser: ITokeniser) {
         this.ee = new EE();
@@ -267,7 +269,8 @@ export default class Training {
             totalTokens: log[log.length - 1]?.totalTokens || 0,
             datasets,
             datasetId: generateDatasetID(datasets),
-            breakOnLog: false,
+            breakOnLog: new Set<number>(),
+            resumeCounter: 0,
         };
 
         job.trainer.log = log;
@@ -287,7 +290,7 @@ export default class Training {
                 job.history = job.trainer.log;
                 job.progress = log.totalTokens / job.totalTokens;
                 job.remaining = Math.max(0, ((job.totalTokens - log.totalTokens) / log.totalTokens) * log.duration);
-                if (job.breakOnLog) {
+                if (job.breakOnLog.size > 0) {
                     if (job.state === 'running') {
                         this.setState(job, 'pausing');
                         job.trainer.stop();
@@ -351,7 +354,8 @@ export default class Training {
                   options,
                   totalTokens: 0,
                   datasets,
-                  breakOnLog: false,
+                  breakOnLog: new Set<number>(),
+                  resumeCounter: 0,
               };
 
         if (!job) {
@@ -441,6 +445,14 @@ export default class Training {
             return;
         }
 
+        // Resume for each break.
+        // TODO: This is brittle.
+        job.resumeCounter++;
+        if (job.resumeCounter < job.breakOnLog.size) {
+            return;
+        }
+        job.resumeCounter = 0;
+
         this.setState(job, 'pending');
         this.launchJob(job);
     }
@@ -459,10 +471,19 @@ export default class Training {
         }
     }
 
-    public breakpoints(id: string, enabled: boolean) {
-        const job = this.getJob(id);
+    public addBreak(jobid: string) {
+        const job = this.getJob(jobid);
         if (job) {
-            job.breakOnLog = enabled;
+            const id = this._breakCounter++;
+            job.breakOnLog.add(id);
+            return id;
+        }
+    }
+
+    public deleteBreak(jobid: string, breakId: number) {
+        const job = this.getJob(jobid);
+        if (job) {
+            job.breakOnLog.delete(breakId);
         }
     }
 

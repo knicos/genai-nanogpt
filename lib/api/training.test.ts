@@ -277,7 +277,7 @@ describe('Training API', () => {
             [{ id: 'ds-pause-log', name: 'Dataset Pause On Log', conversational: false }],
             undefined
         );
-        job.breakOnLog = true;
+        job.breakOnLog.add(1);
 
         await vi.waitFor(() => {
             expect(job.history).toHaveLength(1);
