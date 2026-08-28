@@ -349,6 +349,13 @@ export default class Responses {
         return true;
     }
 
+    public unhook(id: string) {
+        this._hookedResponses.delete(id);
+        const waiters = this._resumeWaiters.get(id) || [];
+        waiters.forEach((resolve) => resolve());
+        this._resumeWaiters.delete(id);
+    }
+
     /**
      * Resume a previously hooked response, releasing a single paused chunk.
      * @param id Response ID to resume
