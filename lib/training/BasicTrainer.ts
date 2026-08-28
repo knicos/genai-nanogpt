@@ -436,7 +436,9 @@ export default class BasicTrainer {
                 state.step++;
                 state.totalSteps++;
 
-                if (isLogStep) {
+                const willEnd = state.step >= maxSteps;
+
+                if (isLogStep || willEnd) {
                     await this.performLogging(lossScalar, batch.xs.shape[0], evaluator, onStep);
                 } else {
                     if (state.gradientNorm) {
@@ -450,7 +452,7 @@ export default class BasicTrainer {
                 }
                 lossScalar.dispose();
 
-                if (state.step >= maxSteps) {
+                if (willEnd) {
                     this.stop();
                 }
             }

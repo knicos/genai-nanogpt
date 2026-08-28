@@ -80,44 +80,52 @@ export default class Training {
                 ) {
                     bad();
                 }
+                job.state = state;
                 break;
             case 'running':
                 if (job.state !== 'pending' && job.state !== 'paused') {
                     bad();
                 }
+                job.state = state;
                 this.ee.emit('running', job.id);
                 break;
             case 'paused':
                 if (job.state !== 'pausing') {
                     bad();
                 }
+                job.state = state;
                 this.ee.emit('paused', job.id);
                 break;
             case 'completed':
                 if (job.state !== 'running') {
                     bad();
                 }
+                job.state = state;
                 this.ee.emit('completed', job.id);
                 break;
             case 'pausing':
                 if (job.state !== 'running') {
                     bad();
                 }
+                job.state = state;
                 this.ee.emit('pausing', job.id);
                 break;
             case 'cancelling':
                 if (job.state !== 'running' && job.state !== 'paused' && job.state !== 'pausing') {
                     bad();
                 }
+                job.state = state;
                 this.ee.emit('cancelling', job.id);
                 break;
             case 'cancelled':
                 if (job.state !== 'paused' && job.state !== 'cancelling') {
                     bad();
                 }
+                job.state = state;
                 this.ee.emit('cancelled', job.id);
                 break;
             case 'error':
+                job.state = state;
                 if (error) {
                     this.ee.emit('error', job.id, error);
                 }
@@ -125,7 +133,6 @@ export default class Training {
             default:
                 throw new Error('invalid_state');
         }
-        job.state = state;
     }
 
     get activeJobs() {

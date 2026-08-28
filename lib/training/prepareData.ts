@@ -91,7 +91,7 @@ export default async function prepareData(
             ? trainingTokens.getTokenCount()
             : trainingTokens.reduce((sum, shard) => sum + shard.length, 0);
 
-    options.epochSteps = Math.ceil(totalTokens / ((options?.batchSize || 32) * model.config.blockSize));
+    options.epochSteps = Math.max(1, Math.floor(totalTokens / ((options?.batchSize || 32) * model.config.blockSize)));
 
     const datasetBuilder = new DatasetBuilder(tokeniser, model.config.blockSize);
 
