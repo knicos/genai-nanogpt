@@ -14,12 +14,13 @@ import { ModelMode, TransformersMetadata } from './loader/types';
 import Responses from './api/responses';
 import Training from './api/training';
 import { selectBackend } from './backend';
-import { GPUOptions } from './patches/webgpu_base';
+import { type GPUOptions, getBackendDevice } from './patches/webgpu_base';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
-type TeachableLLMEvents = 'status' | 'error' | 'loaded' | 'mode' | 'changeLoRA';
+type TeachableLLMEvents = 'status' | 'error' | 'loaded' | 'mode' | 'changeLoRA' | 'lost';
 
 export default class TeachableLLM {
+    static instances = new Set<TeachableLLM>();
     private ee = new EE<TeachableLLMEvents>();
     private _config?: GPTConfig;
     private _model?: Model<ModelForwardAttributes, GPTConfig>;
@@ -33,8 +34,20 @@ export default class TeachableLLM {
         application: '@genai-fi/nanogpt',
     };
 
-    static selectBackend(backend: 'cpu' | 'webgl' | 'webgpu', options?: GPUOptions) {
-        return selectBackend(backend, options);
+    static async selectBackend(backend: 'cpu' | 'webgl' | 'webgpu', options?: GPUOptions) {
+        await selectBackend(backend, options);
+        if (backend === 'webgpu') {
+            const device = getBackendDevice();
+            if (device) {
+                device.lost.then(() => {
+                    console.warn('WebGPU device lost');
+                    TeachableLLM.instances.forEach((instance) => {
+                        instance.setStatus('error');
+                        instance.ee.emit('lost');
+                    });
+                });
+            }
+        }
     }
 
     constructor(tokeniser?: ITokeniser, model?: Model<ModelForwardAttributes, GPTConfig>) {
@@ -44,6 +57,7 @@ export default class TeachableLLM {
         if (model?.metaData) {
             this.meta = model.metaData;
         }
+        TeachableLLM.instances.add(this);
     }
 
     get vocab(): string[] {
@@ -383,6 +397,7 @@ export default class TeachableLLM {
         }
         this._model?.dispose();
         this.ee.removeAllListeners();
+        TeachableLLM.instances.delete(this);
     }
 
     on(event: 'status', listener: (status: TeachableLLMStatus) => void): void;

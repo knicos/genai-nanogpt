@@ -25,6 +25,12 @@ export interface GPUOptions {
     disableSubgroups?: boolean;
 }
 
+let backendDevice: GPUDevice | undefined;
+
+export function getBackendDevice(): GPUDevice | undefined {
+    return backendDevice;
+}
+
 export function registerWebGPUBackend(options?: GPUOptions): void {
     registerBackend(
         'webgpu',
@@ -68,6 +74,7 @@ export function registerWebGPUBackend(options?: GPUOptions): void {
                       ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         await (adapter as any).requestAdapterInfo()
                       : undefined;
+            backendDevice = device;
             return new WebGPUBackend(device, adapterInfo);
         },
         3 /*priority*/

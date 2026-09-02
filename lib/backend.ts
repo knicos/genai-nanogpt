@@ -1,5 +1,5 @@
 import { getBackend, ready, setBackend } from '@tensorflow/tfjs-core';
-import { GPUOptions } from './patches/webgpu_base';
+import { type GPUOptions } from './patches/webgpu_base';
 
 export async function selectBackend(backendName: 'cpu' | 'webgl' | 'webgpu', options?: GPUOptions): Promise<void> {
     if (getBackend() !== backendName) {

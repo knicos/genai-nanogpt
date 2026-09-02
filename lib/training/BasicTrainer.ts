@@ -386,6 +386,10 @@ export default class BasicTrainer {
         const state = this.createEmptyState();
         this.lastState = state;
 
+        if (state.step >= maxSteps) {
+            return { losses: state.losses, validationLosses: state.validationLosses };
+        }
+
         await this.dummyPass();
         // this.model.trainable = true;
 
