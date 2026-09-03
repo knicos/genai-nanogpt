@@ -12,7 +12,7 @@ import { AdamWOptimizer } from './AdamW';
 import configureModel from './configure';
 
 const DEFAULT_OPTIONS: TrainingOptions = {
-    logInterval: 1,
+    logInterval: 200,
     maxEpochs: 100,
     method: { type: 'pretraining' },
     batchSize: 32,
@@ -367,7 +367,7 @@ export default class BasicTrainer {
         validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>,
         onStep?: (log: TrainingLogEntry) => void
     ): Promise<{ losses: number[]; validationLosses: number[] }> {
-        const { logInterval = 10, maxEpochs = Infinity } = {
+        const { logInterval = 40, maxEpochs = Infinity } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
@@ -402,6 +402,7 @@ export default class BasicTrainer {
         const startTime = Date.now();
         this.running = true;
         state.logStartTime = startTime;
+        let lastLog = startTime;
 
         const evaluator = validationDataset ? new Evaluator(this.model, validationDataset, this.maskedLoss) : undefined;
         const iterator = await dataset.iterator();
@@ -415,7 +416,11 @@ export default class BasicTrainer {
                 if (result.done) break;
                 const batch = result.value;
 
-                const isLogStep = state.step % logInterval === 0;
+                const now = Date.now();
+                const isLogStep = now - lastLog >= logInterval;
+                if (isLogStep) {
+                    lastLog = now;
+                }
                 const keepGrads = (options?.metrics?.includes('gradientStatistics') || false) && isLogStep;
 
                 // Do the actual training step
