@@ -27,9 +27,7 @@ export default async function prepareData(
     datasets?: DatasetMetadata[]
 ): Promise<PrepareDataResult> {
     const isLoRA = options.loraName || options.loraConfig;
-    if (datasets && isLoRA) {
-        throw new Error('Cannot specify datasets when using LoRA fine-tuning');
-    } else if (!datasets && !isLoRA) {
+    if (!datasets && !isLoRA) {
         throw new Error('Must specify datasets for non-LoRA training');
     }
 
@@ -40,12 +38,15 @@ export default async function prepareData(
                 isConversational = true;
             }
         }
-        model.metaData.pretrainingData = datasets.map((d) => ({
-            id: d.id,
-            name: d.name,
-            conversational: d.conversational,
-            url: d.url,
-        }));
+
+        if (!isLoRA) {
+            model.metaData.pretrainingData = datasets.map((d) => ({
+                id: d.id,
+                name: d.name,
+                conversational: d.conversational,
+                url: d.url,
+            }));
+        }
 
         if (isConversational) {
             model.metaData.mode = 'conversational';
@@ -85,6 +86,8 @@ export default async function prepareData(
     } else {
         trainingTokens = tasks as TokenStore;
     }
+
+    console.log('Training tokens', trainingTokens);
 
     const totalTokens =
         trainingTokens instanceof TokenStore

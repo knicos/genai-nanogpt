@@ -139,8 +139,15 @@ export default class Responses {
             : generator.generate(hookedOptions);
 
         if (options.background) {
-            outputPromise.then(() => {
+            const outputObject: IGeneratorResponse = {
+                output: null,
+                id,
+                done: false,
+            };
+            outputPromise.then((output) => {
                 record.done = true;
+                outputObject.done = true;
+                outputObject.output = output;
                 this._hookedResponses.delete(id);
                 this._resumeWaiters.delete(id);
 
@@ -152,11 +159,7 @@ export default class Responses {
                 // After finishing a background job, process next queued job
                 this._processNextJob();
             });
-            return {
-                output: null,
-                id,
-                done: false,
-            };
+            return outputObject;
         }
 
         const output = await outputPromise;
