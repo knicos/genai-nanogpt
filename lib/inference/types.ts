@@ -55,3 +55,15 @@ export interface IGeneratorResponse {
     id: string;
     done: boolean;
 }
+
+export interface BeamerOptions extends IGenerateOptions {
+    maxBeamLength: number;
+    beams: number;
+    endOnWhiteSpace?: boolean;
+}
+
+export interface IBeam {
+    tokens: number[];
+    score: number;
+    text: string;
+}

@@ -1,5 +1,6 @@
-export default function topP(probs: number[][], tP: number): number[] {
-    const sorted = probs[0].map((p, i) => ({ prob: p, index: i })).sort((a, b) => b.prob - a.prob);
+export default function topP(probs: number[][] | number[], tP: number): number[] {
+    const actualProbs = Array.isArray(probs[0]) ? probs[0] : (probs as number[]);
+    const sorted = actualProbs.map((p, i) => ({ prob: p, index: i })).sort((a, b) => b.prob - a.prob);
 
     let cumulativeProb = 0;
     const masked = new Array<number>(sorted.length).fill(0);
@@ -15,7 +16,7 @@ export default function topP(probs: number[][], tP: number): number[] {
     const sumMasked = masked.reduce((a, b) => a + b, 0);
 
     if (sumMasked === 0) {
-        const original = probs[0];
+        const original = actualProbs;
         const origSum = original.reduce((a, b) => a + b, 0);
         if (origSum > 0) {
             return original.map((p) => p / origSum);

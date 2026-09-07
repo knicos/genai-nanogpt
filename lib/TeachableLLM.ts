@@ -15,6 +15,7 @@ import Responses from './api/responses';
 import Training from './api/training';
 import { selectBackend } from './backend';
 import { type GPUOptions, getBackendDevice } from './patches/webgpu_base';
+import BeamAPI from './api/beamer';
 
 type TeachableLLMStatus = 'warmup' | 'awaitingTokens' | 'ready' | 'training' | 'loading' | 'busy' | 'error';
 type TeachableLLMEvents = 'status' | 'error' | 'loaded' | 'mode' | 'changeLoRA' | 'lost';
@@ -29,6 +30,7 @@ export default class TeachableLLM {
     private _memoryRequirements?: MemoryRequirements;
     private _responses: Responses | null = null;
     private _training: Training | null = null;
+    private _beaming: BeamAPI | null = null;
     public meta: TransformersMetadata = {
         version: 2,
         application: '@genai-fi/nanogpt',
@@ -357,6 +359,27 @@ export default class TeachableLLM {
             });
         }
         return this._responses;
+    }
+
+    get beaming() {
+        if (!this._beaming) {
+            if (!this._model || !this._tokeniser) {
+                throw new Error('model_or_tokeniser_not_initialized.');
+            }
+            this._beaming = new BeamAPI(this._model, this._tokeniser);
+            this._beaming.on('error', (error) => {
+                this.setStatus('error');
+                this.ee.emit('error', error);
+            });
+            this._beaming.on('status', (status) => {
+                if (status === 'busy') {
+                    this.setStatus('busy');
+                } else if (status === 'ready') {
+                    this.setStatus('ready');
+                }
+            });
+        }
+        return this._beaming;
     }
 
     get training() {

@@ -1,3 +1,4 @@
+import { SPECIALS } from '@base/tokeniser/BaseTokeniser';
 import type { IGeneratorOutput } from './types';
 
 /**
@@ -39,4 +40,23 @@ export function getHiddenState(output: IGeneratorOutput, layer: number): number[
         return null;
     }
     return output.hiddenStates[layer];
+}
+
+export const CHARS = [
+    ...SPECIALS,
+    ...Array.from({ length: 95 }, (_, i) => String.fromCharCode(i + 32)), // ASCII
+    // Spanish accented letters and punctuation
+    ...'áéíóúüñ¿¡',
+    // Finnish accented letters
+    ...'äöÄÖÅå',
+    // Greek letters
+    ...'αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ',
+    // Cyrillic letters
+    ...'абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ',
+];
+
+export function padArray(arr: string[], length: number): string[] {
+    if (arr.length === length) return arr;
+    if (arr.length > length) return arr.slice(0, length);
+    return arr.concat(Array(length - arr.length).fill(''));
 }

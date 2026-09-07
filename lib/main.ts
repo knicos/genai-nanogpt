@@ -16,7 +16,14 @@ export type { DatasetMetadata, ModelMode } from './loader/types';
 export * as models from './models';
 export type { GPTConfig } from './models/config';
 export type { ModelForwardAttributes } from './models/model';
-export type { IGenerateOptions, IGeneratorResponse, IGeneratorOutput, GeneratorConversation } from './inference/types';
+export type {
+    IGenerateOptions,
+    IGeneratorResponse,
+    IGeneratorOutput,
+    GeneratorConversation,
+    IBeam,
+    BeamerOptions,
+} from './inference/types';
 export type { TrainingOptions, TrainingLogEntry } from './training/types';
 export type { ITrainingJob } from './api/training';
 

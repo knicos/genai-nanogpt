@@ -19,10 +19,9 @@ import multinomialCPU from '../utilities/multinomialCPU';
 import Model, { ModelForwardAttributes } from '../models/model';
 import topP from '../utilities/topP';
 import { sparseSoftmaxCrossEntropy } from '../training/sparseCrossEntropy';
-import { SPECIALS } from '../tokeniser/BaseTokeniser';
 import { IGenerateOptions, GeneratorConversation, IGeneratorOutput } from './types';
 import tokenisePrompt from './tokenisePrompt';
-import { getTokenConfidence } from './utilities';
+import { CHARS, getTokenConfidence, padArray } from './utilities';
 
 interface JobItem {
     prompt?: Conversation[];
@@ -33,25 +32,6 @@ interface JobItem {
 
 export function isConversation(data: unknown): data is Conversation[] {
     return Array.isArray(data);
-}
-
-const CHARS = [
-    ...SPECIALS,
-    ...Array.from({ length: 95 }, (_, i) => String.fromCharCode(i + 32)), // ASCII
-    // Spanish accented letters and punctuation
-    ...'áéíóúüñ¿¡',
-    // Finnish accented letters
-    ...'äöÄÖÅå',
-    // Greek letters
-    ...'αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ',
-    // Cyrillic letters
-    ...'абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ',
-];
-
-function padArray(arr: string[], length: number): string[] {
-    if (arr.length === length) return arr;
-    if (arr.length > length) return arr.slice(0, length);
-    return arr.concat(Array(length - arr.length).fill(''));
 }
 
 export interface IGenerator extends EE<'start' | 'stop' | 'tokens' | 'reset'> {
