@@ -513,17 +513,17 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         this.active = false;
 
         if (this.startTime !== null) {
-            const endTime = Date.now();
-            const duration = endTime - this.startTime;
+            //const endTime = Date.now();
+            //const duration = endTime - this.startTime;
             this.startTime = null;
-            this.model.metaData.actionLog = this.model.metaData.actionLog || [];
+            /*this.model.metaData.actionLog = this.model.metaData.actionLog || [];
             this.model.metaData.actionLog.push({
                 action: 'generate',
                 timestamp: endTime,
                 duration,
                 tokensProcessed: this.rawOutput.length,
                 options: options || {},
-            });
+            });*/
         }
 
         this.emit('stop');

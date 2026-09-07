@@ -40,6 +40,14 @@ async function mergeConfigs(zipFile: zip, model: Model<ModelForwardAttributes>):
     const configData = await file.async('string');
     const config = JSON.parse(configData) as TransformersConfig;
 
+    if (config.loraConfig) {
+        Object.entries(config.loraConfig).forEach(([name, loraConfig]) => {
+            if (!model.hasLoRA(name)) {
+                model.createLoRA(name, loraConfig);
+            }
+        });
+    }
+
     if (config.loraName) {
         if (model.hasLoRA()) {
             throw new Error('Model already has LoRA attached');
