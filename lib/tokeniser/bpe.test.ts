@@ -183,8 +183,6 @@ describe('BPE Tokeniser Tests', () => {
         const encoded = bpeTokeniser.encodeConversation(conversation);
         const decoded = bpeTokeniser.decodeConversation(encoded);
 
-        expect(decoded).toEqual([
-            { role: 'text', content: 'Hello, how are you?I am fine, thank you!This is a system message.' },
-        ]);
+        expect(decoded).toEqual(conversation);
     });
 });

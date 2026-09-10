@@ -143,6 +143,11 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
                     resultTokens.push([startTokens[2]]);
                     maskContent = true;
                     break;
+                case 'text':
+                    if (resultTokens[resultTokens.length - 1][0] !== this.bosToken) {
+                        resultTokens.push([this.bosToken]);
+                    }
+                    break;
             }
             resultTokens.push(encodedContent);
             switch (fragment.role) {
@@ -154,6 +159,9 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
                     break;
                 case 'system':
                     resultTokens.push([endTokens[2]]);
+                    break;
+                case 'text':
+                    resultTokens.push([this.eosToken]);
                     break;
             }
 
@@ -177,7 +185,9 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
                 mask.push([false]);
             }
         } else {
-            tokens.push(this.eosToken);
+            if (tokens[tokens.length - 1] !== this.eosToken) {
+                tokens.push(this.eosToken);
+            }
             if (masking && mask) {
                 mask.push([true]);
             }

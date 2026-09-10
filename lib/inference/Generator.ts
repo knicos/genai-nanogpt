@@ -323,7 +323,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                               ? this.outputConversation.slice(0, -1)
                               : this.outputConversation
                           : undefined,
-                      options
+                      appended ? options : { ...options, continuation: true }
                   );
 
         const maxTokens = options?.maxLength ?? 1000;

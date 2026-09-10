@@ -50,10 +50,10 @@ describe('tokensFromStreams', () => {
         expect(tokens.getTokenCount()).toBeGreaterThan(data1.length + data2.length);
         const decodedText = tokeniser.decodeConversation(await tokens.getShard(0));
 
-        expect(decodedText[0].content).toContain('Hello world.How are you?');
+        expect(decodedText[0].content).toContain('Hello world.');
         expect(decodedText[0].role).toBe('text');
-        expect(decodedText[1].content).toContain('This is a test.Testing 123.');
-        expect(decodedText[1].role).toBe('text');
+        expect(decodedText[2].content).toContain('This is a test.');
+        expect(decodedText[2].role).toBe('text');
     });
 
     it('places all tokens into validation when validationSplit is 1', async ({ expect }) => {
@@ -93,8 +93,8 @@ describe('tokensFromStreams', () => {
         expect(validationTokens!.getTokenCount()).toBeGreaterThan(0);
 
         const decodedValidation = tokeniser.decode(await collectAllTokens(validationTokens!));
-        expect(decodedValidation).toContain('Hello world.How are you?');
-        expect(decodedValidation).toContain('This is a test.Testing 123.');
+        expect(decodedValidation).toContain('Hello world.<eos><bos>How are you?');
+        expect(decodedValidation).toContain('This is a test.<eos><bos>Testing 123.');
 
         // Current implementation may still create an empty training shard; contract intent is no training content.
         expect(tokens.getTokenCount()).toBe(0);
@@ -306,7 +306,7 @@ describe('tokensFromStreams', () => {
         const decodedText = await tokeniser.decode(await tokens.getShard(0));
 
         expect(decodedText).toContain(
-            '<bos>Hello world.How are you?<eos><bos>This is a test. You now must complete the sentence.Testing 123. 123 Testing.<eos>'
+            '<bos>Hello world.<eos><bos>How are you?<eos><bos>This is a test. You now must complete the sentence.<eos><bos>Testing 123. 123 Testing.<eos>'
         );
     });
 

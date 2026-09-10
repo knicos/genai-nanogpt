@@ -212,7 +212,7 @@ export default class Beamer {
                 for (const candidate of candidates) {
                     const tokenText = this.actualTokeniser.decode([candidate.token]);
                     const terminatedByToken = this.shouldTerminate(options.allowSpecial ?? false, candidate.token);
-                    const reachesMinLength = parent.tokens.length + 1 >= Math.max(2, minBeamLength);
+                    const reachesMinLength = parent.tokens.length + 1 > minBeamLength;
                     const terminatedByWhitespace =
                         options.endOnWhiteSpace === true && reachesMinLength && /\s/.test(tokenText);
                     const dropLeadingWhitespaceTerminator =
