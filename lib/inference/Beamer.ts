@@ -1,6 +1,5 @@
 import type { Conversation, ITokeniser } from '../tokeniser/type';
 import Model, { ModelForwardAttributes } from '../models/model';
-import EE from 'eventemitter3';
 import { BeamerOptions, IBeam, IGenerateOptions } from './types';
 import CharTokeniser from '../tokeniser/CharTokeniser';
 import { Tensor, concat, oneHot, scalar, stack, tensor1d, tidy, softmax } from '@tensorflow/tfjs-core';
@@ -31,14 +30,14 @@ function topTokenCandidates(probs: number[], maxCandidates: number): { token: nu
         .slice(0, Math.max(1, maxCandidates));
 }
 
-export default class Beamer extends EE {
+export default class Beamer {
     private actualTokeniser: ITokeniser;
+    private active = false;
 
     constructor(
         private readonly model: Model<ModelForwardAttributes>,
         private readonly tokeniser: ITokeniser
     ) {
-        super();
         this.actualTokeniser = tokeniser;
     }
 
@@ -153,6 +152,10 @@ export default class Beamer extends EE {
         });
     }
 
+    public cancel(): void {
+        this.active = false;
+    }
+
     public async beam(
         conversation: Conversation[],
         options: BeamerOptions,
@@ -165,13 +168,14 @@ export default class Beamer extends EE {
         const beamCount = Math.max(8, options.beams);
 
         this.initialise(options);
+        this.active = true;
 
         const promptTokens = await this.tokeniseConversation(conversation);
         const initialContext = this.createInitialContext(promptTokens);
         let beams: WorkingBeam[] = [
             {
                 tokens: [],
-                score: 0,
+                score: 1,
                 text: '',
                 terminated: false,
                 context: initialContext.context,
@@ -187,6 +191,10 @@ export default class Beamer extends EE {
         let lastStepTime = Date.now();
 
         for (let step = 0; step < loopLimit; step++) {
+            if (!this.active) {
+                break;
+            }
+
             const expandable = beams.filter((b) => !b.terminated);
             if (expandable.length === 0) {
                 break;
@@ -204,7 +212,7 @@ export default class Beamer extends EE {
                 for (const candidate of candidates) {
                     const tokenText = this.actualTokeniser.decode([candidate.token]);
                     const terminatedByToken = this.shouldTerminate(options.allowSpecial ?? false, candidate.token);
-                    const reachesMinLength = parent.tokens.length + 1 >= minBeamLength;
+                    const reachesMinLength = parent.tokens.length + 1 >= Math.max(2, minBeamLength);
                     const terminatedByWhitespace =
                         options.endOnWhiteSpace === true && reachesMinLength && /\s/.test(tokenText);
                     const dropLeadingWhitespaceTerminator =
@@ -214,7 +222,7 @@ export default class Beamer extends EE {
                         parent,
                         token: candidate.token,
                         tokenText,
-                        score: parent.score + Math.log(Math.max(candidate.prob, 1e-12)),
+                        score: parent.score * candidate.prob,
                         terminatedByToken,
                         terminatedByWhitespace,
                         dropLeadingWhitespaceTerminator,
@@ -268,9 +276,11 @@ export default class Beamer extends EE {
             }
         }
 
-        beams.forEach((beam) => {
+        this.active = false;
+
+        /*beams.forEach((beam) => {
             beam.score /= Math.max(1, beam.text.length);
-        });
+        });*/
 
         // Remove duplicates
         const sorted = beams.slice().sort((a, b) => b.score - a.score);
