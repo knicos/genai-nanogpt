@@ -19,7 +19,7 @@ import multinomialCPU from '../utilities/multinomialCPU';
 import Model, { ModelForwardAttributes } from '../models/model';
 import topP from '../utilities/topP';
 import { sparseSoftmaxCrossEntropy } from '../training/sparseCrossEntropy';
-import { IGenerateOptions, GeneratorConversation, IGeneratorOutput } from './types';
+import { IGenerateOptions, GeneratorConversation, IGeneratorOutput, IGeneratorOutputInternal } from './types';
 import tokenisePrompt from './tokenisePrompt';
 import { CHARS, getTokenConfidence, padArray } from './utilities';
 
@@ -86,7 +86,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         idx: Tensor,
         cache?: KVCache[],
         options?: IGenerateOptions
-    ): Promise<IGeneratorOutput> {
+    ): Promise<IGeneratorOutputInternal> {
         const temperature = options?.temperature ?? 1.0;
         const tK = options?.topK;
         const tP = options?.topP;
@@ -250,7 +250,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         this.lastToken = tokenNumber;
         const terminated = this.shouldTerminate(options?.allowSpecial ?? false, tokenNumber);
 
-        const output: IGeneratorOutput = {
+        const output: IGeneratorOutputInternal = {
             outputTensor: nextToken,
             token: tokenNumber,
             text: tokenText,

@@ -2,7 +2,6 @@ import type { Conversation } from '../tokeniser/type';
 import { Tensor } from '@tensorflow/tfjs-core';
 
 export interface IGeneratorOutput {
-    outputTensor: Tensor;
     token: number;
     text: string;
     confidence: number | null;
@@ -14,6 +13,10 @@ export interface IGeneratorOutput {
     loss: number | null;
     multinomialRand: number | null;
     terminated: boolean;
+}
+
+export interface IGeneratorOutputInternal extends IGeneratorOutput {
+    outputTensor: Tensor;
 }
 
 export interface GeneratorConversation extends Conversation {
@@ -66,4 +69,6 @@ export interface IBeam {
     tokens: number[];
     score: number;
     text: string;
+    candidates: number;
+    _output?: IGeneratorOutput[];
 }

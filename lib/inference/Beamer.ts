@@ -180,6 +180,7 @@ export default class Beamer {
                 terminated: false,
                 context: initialContext.context,
                 contextLength: initialContext.contextLength,
+                candidates: 0,
             },
         ];
         const minBeamLength = options.maxBeamLength;
@@ -189,6 +190,7 @@ export default class Beamer {
                 : minBeamLength;
 
         let lastStepTime = Date.now();
+        let totalCandidates = 0;
 
         for (let step = 0; step < loopLimit; step++) {
             if (!this.active) {
@@ -253,6 +255,23 @@ export default class Beamer {
                     ? this.appendTokenToContext(expanded.parent.context, expanded.parent.contextLength, expanded.token)
                     : { context: expanded.parent.context.clone(), contextLength: expanded.parent.contextLength };
 
+                const outputArray = expanded.parent._output?.slice() ?? [];
+                if (keepToken) {
+                    outputArray.push({
+                        token: expanded.token,
+                        score: expanded.score,
+                        text: expanded.tokenText,
+                        terminated,
+                        confidence: null,
+                        logits: null,
+                        scores: null,
+                        hiddenStates: null,
+                        attention: null,
+                        loss: null,
+                        multinomialRand: null,
+                    });
+                }
+
                 next.push({
                     tokens: nextTokens,
                     score: expanded.score,
@@ -260,8 +279,13 @@ export default class Beamer {
                     terminated,
                     context: nextContext.context,
                     contextLength: nextContext.contextLength,
+                    _output: outputArray,
+                    candidates: totalCandidates,
                 });
             }
+
+            // Record discarded candidates
+            totalCandidates += expansions.length - next.length;
 
             beams.forEach((beam) => beam.context.dispose());
 
@@ -277,10 +301,7 @@ export default class Beamer {
         }
 
         this.active = false;
-
-        /*beams.forEach((beam) => {
-            beam.score /= Math.max(1, beam.text.length);
-        });*/
+        totalCandidates += beams.length;
 
         // Remove duplicates
         const sorted = beams.slice().sort((a, b) => b.score - a.score);
@@ -297,7 +318,10 @@ export default class Beamer {
             }
         }
 
-        beams.forEach((beam) => beam.context.dispose());
+        beams.forEach((beam) => {
+            beam.context.dispose();
+            beam.candidates = totalCandidates;
+        });
         return unique;
     }
 }

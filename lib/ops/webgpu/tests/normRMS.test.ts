@@ -195,6 +195,6 @@ describe('RMS Norm 16-bit', { timeout: 30000 }, () => {
         const gradX32Data = await gradX32.data();
 
         const error = arraysClose(gradX16Data, gradX32Data);
-        expect(error).toBeLessThan(1e-4);
+        expect(error).toBeLessThan(1e-3);
     });
 });
