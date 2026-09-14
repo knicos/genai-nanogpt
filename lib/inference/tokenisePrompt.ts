@@ -9,7 +9,9 @@ export default async function tokenisePrompt(
     options?: IGenerateOptions
 ): Promise<Tensor> {
     if (prompt) {
-        const isAssistant = prompt.length > 0 && prompt[prompt.length - 1].role === 'text';
+        const isAssistant =
+            prompt.length > 0 &&
+            (prompt[prompt.length - 1].role === 'text' || prompt[prompt.length - 1].role === 'assistant');
         let tokenisedPrompt: number[];
         if (options?.nonConversational) {
             if (isAssistant && options?.continuation) {
@@ -18,7 +20,20 @@ export default async function tokenisePrompt(
                 tokenisedPrompt = tokeniser.encodeAsSequence(prompt, true);
             }
         } else {
-            tokenisedPrompt = tokeniser.encodeConversation(prompt, true);
+            if (isAssistant && options?.continuation) {
+                tokenisedPrompt = tokeniser.encodeConversation(prompt, true);
+
+                if (
+                    tokenisedPrompt[tokenisedPrompt.length - 1] ===
+                        tokeniser.getSpecialTokenIndex('<|assistant_start|>') &&
+                    tokenisedPrompt[tokenisedPrompt.length - 2] === tokeniser.getSpecialTokenIndex('<|assistant_end|>')
+                ) {
+                    tokenisedPrompt.pop();
+                    tokenisedPrompt.pop();
+                }
+            } else {
+                tokenisedPrompt = tokeniser.encodeConversation(prompt, true);
+            }
         }
         if (tokenisedPrompt.length > blockSize) {
             tokenisedPrompt = tokenisedPrompt.slice(-blockSize);

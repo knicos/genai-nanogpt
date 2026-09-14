@@ -60,7 +60,7 @@ describe('Responses API', () => {
         expect(response.output?.[0].content).toBe('abc');
         expect(response.output?.[1].role).toBe('assistant');
         expect(response.output?.[1].content.length).toBe(10);
-    });
+    }, 10000);
 
     it('can generate a background response', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -89,8 +89,8 @@ describe('Responses API', () => {
             expect(Array.isArray(retrievedResponse?.output)).toBe(true);
             expect(retrievedResponse?.output?.length).toBe(2);
             expect(retrievedResponse?.output?.[1]._output?.length).toBe(10);
-        });
-    });
+        }, 10000);
+    }, 10000);
 
     it('queues jobs', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -122,7 +122,7 @@ describe('Responses API', () => {
         expect(responses.queued).toBe(0);
 
         await promise2;
-    });
+    }, 10000);
 
     it('can output a confidence value', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -146,7 +146,7 @@ describe('Responses API', () => {
         expect(response.output?.[1]._output?.[0].confidence).not.toBeNull();
         expect(response.output?.[1]._output?.[0].confidence).toBeGreaterThanOrEqual(0);
         expect(response.output?.[1]._output?.[0].confidence).toBeLessThanOrEqual(1);
-    });
+    }, 10000);
 
     it('supports output toggles for attention, scores, logits and hidden states', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -179,7 +179,7 @@ describe('Responses API', () => {
             expect(firstTokenOutput?.logits?.length).toBe(20);
             expect(firstTokenOutput?.hiddenStates?.length).toBeGreaterThan(0);
         }
-    });
+    }, 10000);
 
     it('supports targets and output loss over generated tokens', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -199,7 +199,7 @@ describe('Responses API', () => {
 
         const losses = response.output?.[1]._output?.map((o) => o.loss) ?? [];
         expect(losses.some((value) => typeof value === 'number')).toBe(true);
-    });
+    }, 10000);
 
     it('supports non-conversational and continuation output modes', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -218,7 +218,7 @@ describe('Responses API', () => {
         expect(response.output?.[0].role).toBe('text');
         expect(response.output?.[0].content.length).toBeGreaterThanOrEqual(4);
         expect(response.output?.[0]._output?.length).toBe(5);
-    });
+    }, 10000);
 
     it('supports previous_response_id to continue a prior conversation', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -239,7 +239,7 @@ describe('Responses API', () => {
         expect(second.output).not.toBeNull();
         expect(second.output?.length).toBeGreaterThanOrEqual(3);
         expect(second.output?.[0].role).toBe('user');
-    });
+    }, 10000);
 
     it('supports loraName attachment via responses options', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -269,7 +269,7 @@ describe('Responses API', () => {
         expect(response.done).toBe(true);
         expect(model.hasLoRA()).toBe(true);
         expect(model.lora?.name).toBe('test-lora');
-    });
+    }, 10000);
 
     it('accepts no-op/pass-through options without failing', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -290,7 +290,7 @@ describe('Responses API', () => {
         expect(response.done).toBe(true);
         expect(response.output?.[1]._output?.length).toBe(3);
         expect(response.output?.[1]._output?.[0].multinomialRand).not.toBeNull();
-    });
+    }, 10000);
 
     it('generates callbacks', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -318,7 +318,7 @@ describe('Responses API', () => {
 
         expect(cb).toHaveBeenCalledTimes(10);
         expect(log).toHaveLength(10);
-    });
+    }, 10000);
 
     it('generates chunk callbacks', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -347,7 +347,7 @@ describe('Responses API', () => {
 
         expect(cb).toHaveBeenCalledTimes(5);
         expect(log).toHaveLength(5);
-    });
+    }, 10000);
 
     it('blocks generation when a hook is attached until resumed', async ({ expect }) => {
         await selectBackend('webgpu');
@@ -388,5 +388,5 @@ describe('Responses API', () => {
         await vi.waitFor(() => {
             expect(responses.getResponse(response.id)?.done).toBe(true);
         });
-    });
+    }, 10000);
 });

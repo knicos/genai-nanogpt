@@ -285,7 +285,7 @@ export default class Beamer {
             }
 
             // Record discarded candidates
-            totalCandidates += expansions.length - next.length;
+            totalCandidates += expansions.length - next.length + completed.length;
 
             beams.forEach((beam) => beam.context.dispose());
 
