@@ -457,17 +457,28 @@ export default class Training {
         this.launchJob(job);
     }
 
-    public cancel(id: string) {
-        this.assertValidJobId(id);
-        const job = this.getJob(id);
-        if (!job) return;
+    public cancel(id?: string) {
+        if (id) {
+            this.assertValidJobId(id);
+            const job = this.getJob(id);
+            if (!job) return;
 
-        if (job.state === 'paused') {
-            this.setState(job, 'cancelled');
-            return;
-        } else if (job.state === 'running' || job.state === 'pausing') {
-            this.setState(job, 'cancelling');
-            job.trainer.stop();
+            if (job.state === 'paused') {
+                this.setState(job, 'cancelled');
+                return;
+            } else if (job.state === 'running' || job.state === 'pausing') {
+                this.setState(job, 'cancelling');
+                job.trainer.stop();
+            }
+        } else {
+            for (const job of this._jobs.values()) {
+                if (job.state === 'paused') {
+                    this.setState(job, 'cancelled');
+                } else if (job.state === 'running' || job.state === 'pausing') {
+                    this.setState(job, 'cancelling');
+                    job.trainer.stop();
+                }
+            }
         }
     }
 
