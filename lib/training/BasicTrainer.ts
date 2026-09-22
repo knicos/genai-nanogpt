@@ -361,13 +361,11 @@ export default class BasicTrainer {
         state.logStartTime = Date.now();
     }
 
-    async trainOnDataset(
-        dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
-        options: Partial<TrainingOptions>,
-        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>,
-        onStep?: (log: TrainingLogEntry) => void
-    ): Promise<{ losses: number[]; validationLosses: number[] }> {
-        const { logInterval = 40, maxEpochs = Infinity } = {
+    /** A sync function to ensure the trainer is prepared and the state is initialized before training.
+     *  It should be called before invoking trainOnDataset.
+     */
+    public prepareToTrain(options: Partial<TrainingOptions>) {
+        const { maxEpochs = Infinity } = {
             ...DEFAULT_OPTIONS,
             ...options,
         };
@@ -390,6 +388,22 @@ export default class BasicTrainer {
             return { losses: state.losses, validationLosses: state.validationLosses };
         }
 
+        this.running = true;
+    }
+
+    async trainOnDataset(
+        dataset: Dataset<{ xs: Tensor; ys: Tensor }>,
+        options: Partial<TrainingOptions>,
+        validationDataset?: Dataset<{ xs: Tensor; ys: Tensor }>,
+        onStep?: (log: TrainingLogEntry) => void
+    ): Promise<{ losses: number[]; validationLosses: number[] }> {
+        const { logInterval = 40, maxEpochs = Infinity } = {
+            ...DEFAULT_OPTIONS,
+            ...options,
+        };
+
+        const maxSteps = maxEpochs * (options?.epochSteps || 1000);
+
         await this.dummyPass();
         // this.model.trainable = true;
 
@@ -399,8 +413,12 @@ export default class BasicTrainer {
             }
         }
 
+        const state = this.lastState;
+        if (!state) {
+            throw new Error('Trainer state has not been initialized. Call prepareToTrain() first.');
+        }
+
         const startTime = Date.now();
-        this.running = true;
         state.logStartTime = startTime;
         let lastLog = startTime;
 

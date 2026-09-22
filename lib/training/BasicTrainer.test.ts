@@ -65,12 +65,14 @@ describe('Basic Trainer', () => {
         const ys = tensor([[2, 3, 4, 5]], [1, 4], 'int32');
 
         const dataset = array([{ xs, ys }]);
-        await trainer.trainOnDataset(dataset, {
+        const options = {
             batchSize: 1,
             maxEpochs: 1,
             epochSteps: 1,
             logInterval: 1,
-        });
+        };
+        trainer.prepareToTrain(options);
+        await trainer.trainOnDataset(dataset, options);
 
         expect(model.trainingState).toBeTruthy();
         expect(model.weightStore.variables.length).toBe(beforeWeights.size);
@@ -138,12 +140,14 @@ describe('Basic Trainer', () => {
         const ys = tensor([[2, 3, 4, 5]], [1, 4], 'int32');
 
         const dataset = array([{ xs, ys }]);
-        await trainer.trainOnDataset(dataset, {
+        const options = {
             batchSize: 1,
             maxEpochs: 1,
             epochSteps: 1,
             logInterval: 1,
-        });
+        };
+        trainer.prepareToTrain(options);
+        await trainer.trainOnDataset(dataset, options);
 
         expect(model.trainingState).toBeTruthy();
         expect(model.weightStore.variables.length).toBe(beforeWeights.size);

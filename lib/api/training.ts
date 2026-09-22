@@ -285,6 +285,7 @@ export default class Training {
 
         this.setState(job, 'running');
 
+        job.trainer.prepareToTrain(job.options);
         job.trainer
             .trainOnDataset(job.trainDataset, job.options, job.validationDataset, (log: TrainingLogEntry) => {
                 job.history = job.trainer.log;
