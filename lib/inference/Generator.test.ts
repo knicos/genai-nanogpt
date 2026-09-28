@@ -98,10 +98,12 @@ describe('Generator', () => {
         const generator = new Generator(model, tokeniser);
 
         const prompt: Conversation[] = [{ role: 'user', content: 'hello there' }];
-        let output = (await generator.generate(prompt, { maxLength: 50 })) as Conversation[];
-        output.push({ role: 'user', content: 'how are you' });
-        output = (await generator.generate(output, { maxLength: 50 })) as Conversation[];
+        const output1 = (await generator.generate(prompt, { maxLength: 50 })) as Conversation[];
+        const output = (await generator.generate([{ role: 'user', content: 'how are you' }], {
+            maxLength: 50,
+        })) as Conversation[];
 
+        expect(output1 === output).toBe(true);
         expect(output).toBeDefined();
         expect(output).toHaveLength(4);
         expect(output[3].role).toBe('assistant');
@@ -121,11 +123,12 @@ describe('Generator', () => {
         const generator = new Generator(model, tokeniser);
 
         const prompt: Conversation[] = [{ role: 'user', content: 'hello there' }];
-        let output = (await generator.generate(prompt, { maxLength: 50 })) as Conversation[];
+        const output1 = (await generator.generate(prompt, { maxLength: 50 })) as Conversation[];
         //output.push({ role: 'user', content: 'how are you' });
-        (output as GeneratorConversation[])[output.length - 1]._completed = false;
-        output = (await generator.generate(output, { maxLength: 50 })) as Conversation[];
+        (output1 as GeneratorConversation[])[output1.length - 1]._completed = false;
+        const output = (await generator.generate({ maxLength: 50 })) as Conversation[];
 
+        expect(output1 === output).toBe(true);
         expect(output).toBeDefined();
         expect(output).toHaveLength(2);
         expect(output[1].role).toBe('assistant');
@@ -145,14 +148,15 @@ describe('Generator', () => {
         const generator = new Generator(model, tokeniser);
 
         const prompt: Conversation[] = [{ role: 'user', content: 'hello there' }];
-        let output = (await generator.generate(prompt, { maxLength: 50 })) as Conversation[];
+        const output1 = (await generator.generate(prompt, { maxLength: 50 })) as Conversation[];
         //output.push({ role: 'user', content: 'how are you' });
-        output = (await generator.generate(output, { maxLength: 50 })) as Conversation[];
+        const output2 = (await generator.generate({ maxLength: 50 })) as Conversation[];
 
-        expect(output).toBeDefined();
-        expect(output).toHaveLength(3);
-        expect(output[2].role).toBe('assistant');
-        expect(output[2].content.length).toBe(50);
+        expect(output1 === output2).toBe(true);
+        expect(output2).toBeDefined();
+        expect(output2).toHaveLength(3);
+        expect(output2[2].role).toBe('assistant');
+        expect(output2[2].content.length).toBe(50);
     });
 
     it('supports topP', async ({ expect }) => {
@@ -338,7 +342,7 @@ describe('Generator', () => {
 
         const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
         // Dummy pass
-        await generator.generate(prompt, { maxLength: 50 });
+        await generator.generate([...prompt], { maxLength: 50 });
 
         model.createLoRA('test-lora', {
             rank: 4,
@@ -347,11 +351,12 @@ describe('Generator', () => {
         });
 
         const output = await generator.generate(prompt, { maxLength: 50, loraName: 'test-lora' });
+
         expect(output).toBeDefined();
-        expect(output).toHaveLength(3);
-        expect(output[0].content).toContain(prompt[0].content);
-        expect(output[2].role).toBe('assistant');
-        expect(output[2].content.length).toBeGreaterThan(0);
+        expect(output).toHaveLength(4);
+        expect(output[2].content).toContain(prompt[0].content);
+        expect(output[3].role).toBe('assistant');
+        expect(output[3].content.length).toBeGreaterThan(0);
         expect(model.hasLoRA()).toBe(true);
         expect(model.lora?.name).toBe('test-lora');
     });

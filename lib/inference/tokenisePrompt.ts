@@ -39,6 +39,10 @@ export default async function tokenisePrompt(
             tokenisedPrompt = tokenisedPrompt.slice(-blockSize);
         }
 
+        if (options?.debug) {
+            console.log('Tokenised prompt:', tokeniser.decode(tokenisedPrompt));
+        }
+
         const inputTensor: Tensor = tensor2d([tokenisedPrompt], [1, tokenisedPrompt.length], 'int32');
         return inputTensor;
     } else {

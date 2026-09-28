@@ -20,6 +20,7 @@ export interface IGeneratorOutputInternal extends IGeneratorOutput {
 }
 
 export interface GeneratorConversation extends Conversation {
+    _id?: string;
     _completed?: boolean;
     _timestamp?: number;
     _output?: IGeneratorOutput[];
@@ -50,6 +51,7 @@ export interface IGenerateOptions {
     continuation?: boolean; /** Continue the previous response without adding a new turn. */
     chunkSize?: number; /** Number of tokens to generate before returning a partial response. */
     background?: boolean; /** Run the generation in the background and return immediately. */
+    debug?: boolean;
     _onChunk?: (output: IGeneratorOutput) => void | Promise<void>;
 }
 

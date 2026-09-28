@@ -411,11 +411,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         }
 
         this.initialPrompt = prompt || null;
-        if (this.lastToken === -1) {
-            this.outputConversation = (this.initialPrompt || []).slice();
-        } else if (prompt && prompt.length > this.outputConversation.length) {
+        if (this.lastToken === -1 && this.outputConversation.length === 0) {
+            this.outputConversation = this.initialPrompt || []; //.slice();
+        } else if (prompt && prompt.length > 0) {
             // If the conversation is now longer, update it
-            this.outputConversation = (this.initialPrompt || []).slice();
+            prompt.forEach((p) => {
+                this.outputConversation.push(p);
+            });
             this.resetCache();
         }
 

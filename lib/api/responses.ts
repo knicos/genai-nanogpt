@@ -81,17 +81,17 @@ export default class Responses {
             : undefined;
 
         if (previousResponse) {
-            const oldConversation = previousResponse.generator.getConversation();
+            //const oldConversation = previousResponse.generator.getConversation();
 
             if (options.input && Array.isArray(options.input)) {
-                options.input = [...oldConversation, ...options.input];
+                //options.input =
             } else if (options.input && typeof options.input === 'string') {
                 options.input = [
-                    ...oldConversation,
+                    //...oldConversation,
                     { role: options.nonConversational ? 'text' : 'user', content: options.input },
                 ];
             } else {
-                options.input = oldConversation;
+                //options.input = oldConversation;
             }
         }
 
@@ -151,6 +151,13 @@ export default class Responses {
                 this._hookedResponses.delete(id);
                 this._resumeWaiters.delete(id);
 
+                const coversationId = output[0]?._id || id;
+                output.forEach((conversation) => {
+                    if (conversation._id === undefined) {
+                        conversation._id = coversationId;
+                    }
+                });
+
                 if (f) {
                     generator.off('tokens', f);
                 }
@@ -163,6 +170,13 @@ export default class Responses {
         }
 
         const output = await outputPromise;
+
+        const coversationId = output[0]?._id || id;
+        output.forEach((conversation) => {
+            if (conversation._id === undefined) {
+                conversation._id = coversationId;
+            }
+        });
 
         if (f) {
             generator.off('tokens', f);
