@@ -405,6 +405,9 @@ export default class TeachableLLM {
                 this.setStatus('error');
                 this.ee.emit('error', error);
             });
+            this._training.on('mode', () => {
+                this.ee.emit('mode', this._model?.metaData.mode);
+            });
         }
         return this._training;
     }

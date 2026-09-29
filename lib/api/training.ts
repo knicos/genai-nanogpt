@@ -51,6 +51,7 @@ interface TrainingEvents {
     pausing: (id: string) => void;
     cancelling: (id: string) => void;
     progress: (job: ITrainingJob) => void;
+    mode: () => void; // Inform about model mode change
 }
 
 export default class Training {
@@ -383,6 +384,7 @@ export default class Training {
 
         if (!job.trainDataset) {
             try {
+                const oldMode = this._model.metaData.mode;
                 const preparedData = await prepareData(
                     options,
                     this._model,
@@ -392,6 +394,9 @@ export default class Training {
                     validation,
                     datasets
                 );
+                if (oldMode !== this._model.metaData.mode) {
+                    this.ee.emit('mode');
+                }
                 job.trainDataset = preparedData.trainDataset;
                 job.validationDataset = preparedData.validationDataset;
                 job.totalTokens = preparedData.totalTokens;
