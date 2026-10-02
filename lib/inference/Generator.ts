@@ -20,7 +20,7 @@ import Model, { ModelForwardAttributes } from '../models/model';
 import topP from '../utilities/topP';
 import { sparseSoftmaxCrossEntropy } from '../training/sparseCrossEntropy';
 import { IGenerateOptions, GeneratorConversation, IGeneratorOutput, IGeneratorOutputInternal } from './types';
-import tokenisePrompt from './tokenisePrompt';
+import tokenisePrompt, { tensorFromTokens } from './tokenisePrompt';
 import { CHARS, getTokenConfidence, padArray } from './utilities';
 
 interface JobItem {
@@ -312,18 +312,38 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             this.resetCache(!options?.noCache);
         }
 
+        const lastConv = this.outputConversation[this.outputConversation.length - 1];
+        if (lastConv.content.length > 0 && (!lastConv._output || lastConv._output.length === 0)) {
+            const lastConvTokens = this.actualTokeniser.encode(lastConv.content);
+            lastConv._output = lastConvTokens.map((token) => ({
+                token,
+                text: this.actualTokeniser.decode([token]),
+                confidence: 1,
+                score: 1,
+                logits: null,
+                hiddenStates: null,
+                scores: null,
+                attention: null,
+                loss: null,
+                multinomialRand: null,
+                terminated: false,
+            }));
+        }
+
         let inputTensor =
             this.lastToken >= 0 && this.cache
                 ? tensor2d([this.lastToken], [1, 1], 'int32')
-                : await tokenisePrompt(
-                      this.actualTokeniser,
-                      this.model.config.blockSize,
-                      hasPrompt
-                          ? appended
-                              ? this.outputConversation.slice(0, -1)
-                              : this.outputConversation
-                          : undefined,
-                      appended ? options : { ...options, continuation: true }
+                : tensorFromTokens(
+                      await tokenisePrompt(
+                          this.actualTokeniser,
+                          this.model.config.blockSize,
+                          hasPrompt
+                              ? appended
+                                  ? this.outputConversation.slice(0, -1)
+                                  : this.outputConversation
+                              : undefined,
+                          appended ? options : { ...options, continuation: true }
+                      )
                   );
 
         const maxTokens = options?.maxLength ?? 1000;

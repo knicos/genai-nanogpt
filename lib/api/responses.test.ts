@@ -217,7 +217,7 @@ describe('Responses API', () => {
         expect(response.output?.length).toBe(1);
         expect(response.output?.[0].role).toBe('text');
         expect(response.output?.[0].content.length).toBeGreaterThanOrEqual(4);
-        expect(response.output?.[0]._output?.length).toBe(5);
+        expect(response.output?.[0]._output?.length).toBe(9);
     }, 10000);
 
     it('supports previous_response_id to continue a prior conversation', async ({ expect }) => {

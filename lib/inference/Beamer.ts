@@ -17,6 +17,7 @@ interface BeamExpansion {
     token: number;
     tokenText: string;
     score: number;
+    tokenProb: number;
     terminatedByToken: boolean;
     terminatedByWhitespace: boolean;
     dropLeadingWhitespaceTerminator: boolean;
@@ -225,6 +226,7 @@ export default class Beamer {
                         token: candidate.token,
                         tokenText,
                         score: parent.score * candidate.prob,
+                        tokenProb: candidate.prob,
                         terminatedByToken,
                         terminatedByWhitespace,
                         dropLeadingWhitespaceTerminator,
@@ -259,7 +261,7 @@ export default class Beamer {
                 if (keepToken) {
                     outputArray.push({
                         token: expanded.token,
-                        score: expanded.score,
+                        score: expanded.tokenProb,
                         text: expanded.tokenText,
                         terminated,
                         confidence: null,

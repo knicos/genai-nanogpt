@@ -2,12 +2,16 @@ import type { Conversation, ITokeniser } from '../tokeniser/type';
 import { IGenerateOptions } from './types';
 import { tensor2d, Tensor } from '@tensorflow/tfjs-core';
 
+export function tensorFromTokens(tokens: number[]): Tensor {
+    return tensor2d([tokens], [1, tokens.length], 'int32');
+}
+
 export default async function tokenisePrompt(
     tokeniser: ITokeniser,
     blockSize: number,
     prompt?: Conversation[],
     options?: IGenerateOptions
-): Promise<Tensor> {
+): Promise<number[]> {
     if (prompt) {
         const isAssistant =
             prompt.length > 0 &&
@@ -43,14 +47,12 @@ export default async function tokenisePrompt(
             console.log('Tokenised prompt:', tokeniser.decode(tokenisedPrompt));
         }
 
-        const inputTensor: Tensor = tensor2d([tokenisedPrompt], [1, tokenisedPrompt.length], 'int32');
-        return inputTensor;
+        return tokenisedPrompt;
     } else {
         const startToken = options?.nonConversational
             ? undefined
             : tokeniser.getSpecialTokenIndex('<|assistant_start|>');
         const tokenisedPrompt = startToken !== undefined ? [tokeniser.bosToken, startToken] : [tokeniser.bosToken];
-        const inputTensor: Tensor = tensor2d([tokenisedPrompt], [1, tokenisedPrompt.length], 'int32');
-        return inputTensor;
+        return tokenisedPrompt;
     }
 }
