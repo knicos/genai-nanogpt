@@ -21,7 +21,7 @@ export function mapTransformersConfigToGPTConfig(config: TransformersConfig): GP
             mlpFactor: config.mlpFactor,
             useRope: config.useRope,
         };
-    } else {
+    } else if (config.model_type === 'GenAI_NanoGPT_v2') {
         modelConfig = {
             modelType: 'GenAI_NanoGPT_v2',
             vocabSize: config.vocab_size,
@@ -33,6 +33,26 @@ export function mapTransformersConfigToGPTConfig(config: TransformersConfig): GP
             loraConfig: config.loraConfig ? new Map<string, LoRAConfig>(Object.entries(config.loraConfig)) : undefined,
             loraName: config.loraName,
             windowSize: config.windowSize,
+        };
+    } else if (config.model_type === 'qwen3') {
+        modelConfig = {
+            modelType: 'qwen3',
+            vocabSize: config.vocab_size,
+            blockSize: config.block_size,
+            nLayer: config.num_hidden_layers,
+            nHead: config.num_attention_heads,
+            nEmbed: config.hidden_size,
+            mlpFactor: config.mlpFactor,
+        };
+    } else {
+        modelConfig = {
+            modelType: 'llama',
+            vocabSize: config.vocab_size,
+            blockSize: config.block_size,
+            nLayer: config.num_hidden_layers,
+            nHead: config.num_attention_heads,
+            nEmbed: config.hidden_size,
+            mlpFactor: config.mlpFactor,
         };
     }
 

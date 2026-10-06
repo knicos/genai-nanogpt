@@ -1,23 +1,39 @@
 import { GPTConfig } from '@base/models/config';
+import { swigluHidden } from '@base/layers/MLP';
 
 const BYTES_PER_PARAMETER = 4; // Assuming float32
 
+function estimateMLPParameters(config: GPTConfig): number {
+    let mlpParams: number;
+    switch (config.modelType) {
+        case 'GenAI_NanoGPT_v1':
+        case 'GenAI_NanoGPT_v2':
+            mlpParams = swigluHidden(config.nEmbed, config.mlpFactor) * config.nEmbed * 2;
+            break;
+        case 'llama':
+        case 'qwen3':
+            // SwiGLU gated MLP
+            mlpParams = Math.max(256, Math.ceil((config.nEmbed * (8 / 3)) / 256) * 256) * config.nEmbed * 3;
+            break;
+        default:
+            mlpParams = 0;
+    }
+    return mlpParams;
+}
+
 export function estimateLayerParameters(config: GPTConfig): number {
     const attentionParams = 4 * config.nEmbed * config.nEmbed; // qkv + proj
-    const mlpParams =
-        config.mlpFactor * config.nEmbed * config.nEmbed + // fc
-        config.nEmbed * config.mlpFactor * config.nEmbed; // proj
+    const mlpParams = estimateMLPParameters(config);
 
     return attentionParams + mlpParams;
 }
 
 export function estimateParameterCount(config: GPTConfig): number {
-    const embeddingParams = config.vocabSize * config.nEmbed;
+    const embeddingParams =
+        config.modelType === 'llama' ? config.vocabSize * config.nEmbed * 2 : config.vocabSize * config.nEmbed;
     const attentionParams = config.nLayer * (4 * config.nEmbed * config.nEmbed); // qkv + proj
-    const mlpParams =
-        config.nLayer *
-        (config.mlpFactor * config.nEmbed * config.nEmbed + // fc
-            config.nEmbed * config.mlpFactor * config.nEmbed); // proj
+
+    const mlpParams = estimateMLPParameters(config) * config.nLayer;
 
     return embeddingParams + attentionParams + mlpParams;
 }

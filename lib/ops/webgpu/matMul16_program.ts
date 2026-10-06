@@ -19,7 +19,7 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
     scale = false;
     scaleA = false;
     scaleB = false;
-    activation?: 'gelu' | 'relu2' | 'relu';
+    activation?: 'gelu' | 'relu2' | 'relu' | 'silu';
     causalMask = false;
     outputComponent?: number | undefined;
     variableComponents?: number[];
@@ -188,7 +188,7 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
         this.shaderKey += '_scaledB';
     }
 
-    useActivation(activation: 'gelu' | 'relu2' | 'relu') {
+    useActivation(activation: 'gelu' | 'relu2' | 'relu' | 'silu') {
         this.activation = activation;
         this.shaderKey += `_${activation}`;
     }
@@ -234,6 +234,12 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
             return `
                 fn activation(x : vec4<f32>) -> vec4<f32> {
                     return max(x, vec4<f32>(0.0));
+                }
+                `;
+        } else if (this.activation === 'silu') {
+            return `
+                fn activation(x : vec4<f32>) -> vec4<f32> {
+                    return x * (1.0 / (1.0 + exp(-x)));
                 }
                 `;
         }

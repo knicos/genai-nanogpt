@@ -18,6 +18,7 @@ import createDeviceInformation from './utils/deviceInfo';
 function rmsNormGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { x, gamma } = args.inputs as { x: Tensor; gamma?: Tensor };
     const backend = args.backend as WebGPUBackendPatch;
+    const epsilon = (args.attrs?.epsilon as number) ?? 1e-8;
 
     const deviceInfo = createDeviceInformation(backend);
 
@@ -31,8 +32,8 @@ function rmsNormGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?
     const inputs = pGamma ? [pX, pGamma] : [pX];
     const reduceInfo = createReduceInfo(inputs, -1);
     const program = packed
-        ? new RMSProgram16(deviceInfo, reduceInfo, !!gamma)
-        : new RMSProgram32(deviceInfo, reduceInfo, !!gamma);
+        ? new RMSProgram16(deviceInfo, reduceInfo, !!gamma, epsilon)
+        : new RMSProgram32(deviceInfo, reduceInfo, !!gamma, epsilon);
 
     if (pGamma) {
         assertShapesMatch(pGamma.shape, [pX.shape[pX.shape.length - 1]], 'Error in RMSNorm: ');

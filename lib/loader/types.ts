@@ -6,7 +6,7 @@ import { AdamWOptimizer } from '@base/training/AdamW';
 import { TrainingLogEntry, TrainingOptions } from '@base/training/types';
 
 export interface TransformersConfigBase {
-    model_type: 'GenAI_NanoGPT_v1' | 'GenAI_NanoGPT_v2';
+    model_type: 'GenAI_NanoGPT_v1' | 'GenAI_NanoGPT_v2' | 'qwen3' | 'llama';
     vocab_size: number;
     hidden_size: number;
     num_hidden_layers: number;
@@ -27,7 +27,19 @@ export interface TransformersConfigV2 extends TransformersConfigBase {
     windowSize?: string; // S or L for each layer, e.g. 'SSLLS' for 5 layers
 }
 
-export type TransformersConfig = TransformersConfigV1 | TransformersConfigV2;
+export interface TransformersConfigQwen3 extends TransformersConfigBase {
+    model_type: 'qwen3';
+}
+
+export interface TransformersConfigLlama extends TransformersConfigBase {
+    model_type: 'llama';
+}
+
+export type TransformersConfig =
+    | TransformersConfigV1
+    | TransformersConfigV2
+    | TransformersConfigQwen3
+    | TransformersConfigLlama;
 
 export interface TransformersTokeniser {
     type: 'char' | 'bpe';

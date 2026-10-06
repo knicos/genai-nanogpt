@@ -15,7 +15,7 @@ export function matMul16(
         scale?: number;
         scaleA?: number;
         scaleB?: number;
-        activation?: 'gelu' | 'relu2' | 'relu';
+        activation?: 'gelu' | 'relu2' | 'relu' | 'silu';
         forceOutputShape?: number[];
         perm?: number[];
         causalMask?: boolean;

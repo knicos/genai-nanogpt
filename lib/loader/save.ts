@@ -81,7 +81,7 @@ export async function saveModel(
             mlpFactor: model.config.mlpFactor,
             useRope: model.config.useRope,
         };
-    } else {
+    } else if (modelType === 'GenAI_NanoGPT_v2') {
         transformersConfig = {
             model_type: 'GenAI_NanoGPT_v2',
             vocab_size: tokeniser.getVocab().length,
@@ -92,7 +92,27 @@ export async function saveModel(
             mlpFactor: model.config.mlpFactor,
             loraConfig: model.config.loraConfig ? Object.fromEntries(model.config.loraConfig) : undefined,
             loraName: model.config.loraName,
-            windowSize: model.config.windowSize,
+            //windowSize: model.config.windowSize,
+        };
+    } else if (modelType === 'qwen3') {
+        transformersConfig = {
+            model_type: 'qwen3',
+            vocab_size: tokeniser.getVocab().length,
+            hidden_size: model.config.nEmbed,
+            num_hidden_layers: model.config.nLayer,
+            num_attention_heads: model.config.nHead,
+            block_size: model.config.blockSize,
+            mlpFactor: model.config.mlpFactor,
+        };
+    } else {
+        transformersConfig = {
+            model_type: 'llama',
+            vocab_size: tokeniser.getVocab().length,
+            hidden_size: model.config.nEmbed,
+            num_hidden_layers: model.config.nLayer,
+            num_attention_heads: model.config.nHead,
+            block_size: model.config.blockSize,
+            mlpFactor: model.config.mlpFactor,
         };
     }
 

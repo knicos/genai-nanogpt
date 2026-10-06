@@ -21,6 +21,7 @@ import { reshape16 } from '../reshape16';
 import { matMulMul } from '../matMulMul';
 import { matMulGelu } from '../matMulGelu';
 import MatMul16ProgramGeneric from './matMul16_program';
+import { silu } from '../silu';
 
 type ProgramUniform = {
     type: string;
@@ -36,7 +37,7 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
             scale?: number;
             scaleA?: number;
             scaleB?: number;
-            activation?: 'gelu' | 'relu2' | 'relu';
+            activation?: 'gelu' | 'relu2' | 'relu' | 'silu';
             forceOutputShape?: number[];
             perm?: number[];
             originalShape?: number[];
@@ -72,6 +73,13 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
             reluResult.dispose();
         } else if (activation === 'relu') {
             result = relu(matMul(sA, sB, transposeA, transposeB));
+            if (scale !== undefined) {
+                const scaledResult = mul(result, scalar(scale));
+                result.dispose();
+                result = scaledResult;
+            }
+        } else if (activation === 'silu') {
+            result = silu(matMul(sA, sB, transposeA, transposeB));
             if (scale !== undefined) {
                 const scaledResult = mul(result, scalar(scale));
                 result.dispose();

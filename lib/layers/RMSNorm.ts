@@ -5,6 +5,7 @@ import { GPTConfig } from '@base/models/config';
 
 export interface RMSNormConfig {
     useGamma?: boolean;
+    epsilon?: number;
 }
 
 export default class RMSNorm extends BaseLayer {
@@ -24,7 +25,11 @@ export default class RMSNorm extends BaseLayer {
     forward(_: ForwardAttributes, x: Tensor): Tensor {
         return tidy(() => {
             this.startMemory();
-            const result = normRMS(x, (this.rmsConfig.useGamma ?? true) ? this.getVariable(this.GAMMA) : undefined);
+            const result = normRMS(
+                x,
+                (this.rmsConfig.useGamma ?? true) ? this.getVariable(this.GAMMA) : undefined,
+                this.rmsConfig.epsilon
+            );
             this.endMemory('RMSNorm');
             return result;
         });

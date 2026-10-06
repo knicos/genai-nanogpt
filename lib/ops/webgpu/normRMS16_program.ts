@@ -5,9 +5,14 @@ import { DeviceInformation } from './utils/deviceInfo';
 export default class RMSProgram16 extends ReduceProgram {
     private hasGamma: boolean;
 
-    constructor(deviceInfo: DeviceInformation, reduceInfo: backend_util.ReduceInfo, hasGamma = false) {
+    constructor(
+        deviceInfo: DeviceInformation,
+        reduceInfo: backend_util.ReduceInfo,
+        hasGamma = false,
+        private epsilon = 1e-8
+    ) {
         super(deviceInfo, reduceInfo, { reductionOp: 'mean', elementwise: true }, true);
-        this.shaderKey = 'RMSNorm16';
+        this.shaderKey = `RMSNorm16_${hasGamma ? 'Gamma' : 'NoGamma'}_${this.epsilon}`;
         if (hasGamma) {
             this.variableNames.push('gamma');
         }
@@ -20,7 +25,7 @@ export default class RMSProgram16 extends ReduceProgram {
     }
 
     override getPostprocessSnippet(): string {
-        return 'bestValue = inverseSqrt(bestValue + 1e-8);';
+        return `bestValue = inverseSqrt(bestValue + ${this.epsilon});`;
     }
 
     override getWriteSnippet(): string {

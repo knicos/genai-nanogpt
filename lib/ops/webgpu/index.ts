@@ -24,3 +24,4 @@ import './softmax16grad';
 import './norm2';
 import './clipScale';
 import './dropout16';
+import './silu';

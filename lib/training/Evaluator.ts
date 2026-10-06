@@ -36,7 +36,7 @@ export default class Evaluator {
         masked: boolean
     ): Promise<Result | Result[]> {
         const [loss, accuracy] = tidy(() => {
-            const logits = this.model.forward({ training: false }, xs);
+            const logits = this.model.forward({ training: false, mixedPrecision: true }, xs);
             const loss = calculateLoss(logits, ys, masked, keepBatch);
             const accuracy = calculateAccuracy(logits, ys);
             logits.dispose();

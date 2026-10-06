@@ -27,7 +27,15 @@ export interface GPTConfigV2 extends GPTConfigBase {
     windowSize?: string; // S or L for each layer, e.g. 'SSLLS' for 5 layers
 }
 
-export type GPTConfig = GPTConfigV1 | GPTConfigV2;
+export interface GPTConfigQwen3 extends GPTConfigBase {
+    modelType: 'qwen3';
+}
+
+export interface GPTConfigLlama extends GPTConfigBase {
+    modelType: 'llama';
+}
+
+export type GPTConfig = GPTConfigV1 | GPTConfigV2 | GPTConfigQwen3 | GPTConfigLlama;
 
 // Default configuration
 export const defaultConfig: GPTConfig = {
@@ -96,6 +104,14 @@ export function validateConfig(config: unknown): asserts config is GPTConfig {
         if (config.windowSize !== undefined && typeof config.windowSize !== 'string') {
             throw new Error('Invalid config: "windowSize" must be a string for GenAI_NanoGPT_v2.');
         }
+        return;
+    }
+
+    if (config.modelType === 'qwen3') {
+        return;
+    }
+
+    if (config.modelType === 'llama') {
         return;
     }
 
