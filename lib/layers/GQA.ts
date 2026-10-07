@@ -1,0 +1,231 @@
+import { attentionMask } from '../ops/attentionMask';
+import BaseLayer, { ForwardAttributes } from './BaseLayer';
+import { rope } from '../ops/rope';
+import { appendCache } from '@base/ops/appendCache';
+import { keep, randomNormal, Tensor, tidy, variable } from '@tensorflow/tfjs-core';
+import { GPTConfig } from '@base/models/config';
+import { softmax16 } from '@base/ops/softmax16';
+import { matMul16 } from '@base/ops/matMul16';
+import { pack16 } from '@base/ops/pack16';
+import { transpose16 } from '@base/ops/transpose16';
+import { dot16 } from '@base/ops/dot16';
+import { reshape16 } from '@base/ops/reshape16';
+import { isPackedTensor } from '@base/utilities/packed';
+import { qkv } from '@base/ops/qkv';
+import { dropout16 } from '@base/ops/dropout16';
+import RMSNorm, { RMSNormConfig } from './RMSNorm';
+
+export interface KVCache {
+    k?: Tensor; // [B, nHead, T_cache, headDim]
+    v?: Tensor; // [B, nHead, T_cache, headDim]
+    length: number;
+    cumulativeLength: number;
+}
+
+export interface AttentionScores {
+    meanOfHeads?: boolean; // If true, average attention weights over heads
+    attentionOut?: Tensor[]; // [H, T, T] attention weights if requested
+}
+
+interface AttentionForwardAttributes extends ForwardAttributes {
+    attentionScores?: AttentionScores;
+    pastKV?: KVCache; // Optional past key/value cache for incremental decoding
+    seed?: number; // Optional seed for dropout randomness
+    ropePositionOffset?: number; // Optional offset for RoPE position encoding
+}
+
+export interface GQAConfig extends RMSNormConfig {
+    useQKNorm?: boolean;
+    ropeInterleaved?: boolean;
+    kvHeads?: number;
+}
+
+// Grouped Query Attention (GQA) implementation
+export default class GQA extends BaseLayer<AttentionForwardAttributes> {
+    private divisor: number;
+    private index: number;
+    private units: number;
+    private projUnits: number;
+    private ATTN: string;
+    private PROJ: string;
+    private qNorm: RMSNorm | null = null;
+    private kNorm: RMSNorm | null = null;
+
+    constructor(
+        index: number,
+        config: GPTConfig,
+        private readonly attentionConfig: GQAConfig,
+        parent?: BaseLayer
+    ) {
+        super(config, parent);
+        this.index = index;
+        this.units = config.nEmbed * 3;
+        this.projUnits = config.nEmbed;
+
+        this.ATTN = `block_${this.index}_cAttn`;
+        this.PROJ = `block_${this.index}_cProj`;
+        this.addVariable(this.ATTN);
+        this.addVariable(this.PROJ);
+
+        this.divisor = 1 / Math.sqrt(config.nEmbed / config.nHead); // Scaling factor for attention scores
+
+        if (this.attentionConfig.useQKNorm ?? false) {
+            this.qNorm = new RMSNorm(config, attentionConfig, `block_${this.index}_qNorm`, this);
+            this.kNorm = new RMSNorm(config, attentionConfig, `block_${this.index}_kNorm`, this);
+        }
+    }
+
+    protected override build() {
+        if (this.hasVariable(this.ATTN) === false) {
+            this.setVariable(
+                this.ATTN,
+                variable(randomNormal([this.config.nEmbed, this.units], 0, 0.02), true, this.ATTN)
+            );
+        }
+        if (this.hasVariable(this.PROJ) === false) {
+            this.setVariable(
+                this.PROJ,
+                variable(randomNormal([this.projUnits, this.config.nEmbed], 0, 0.02), true, this.PROJ)
+            );
+        }
+    }
+
+    private getAttentionScores(q: Tensor, k: Tensor, pastLen?: number): Tensor {
+        const maskedAtt = attentionMask(q, k, this.divisor, pastLen);
+        const s = softmax16(maskedAtt);
+        maskedAtt.dispose();
+        return s;
+    }
+
+    private getQKV(x: Tensor): [Tensor, Tensor, Tensor] {
+        const kernel = isPackedTensor(x) ? pack16(this.getVariable(this.ATTN)) : this.getVariable(this.ATTN);
+        const result = qkv(x, kernel, this.config.nHead) as [Tensor, Tensor, Tensor];
+        if (isPackedTensor(x)) {
+            kernel.dispose();
+        }
+        return result;
+    }
+
+    private getOutputProjection(x: Tensor): Tensor {
+        const B = x.shape[0]!; // batch size
+        const T = x.shape[2]!; // sequence length
+        const C = this.config.nEmbed; // embedding dimensionality
+
+        const packed = isPackedTensor(x);
+
+        // Re-assemble all head outputs side by side
+        const yTransposed = transpose16(x, [0, 2, 1, 3]); // (B, T, nh, hs)
+
+        const yReshaped = reshape16(yTransposed, [B, T, packed ? C / 2 : C]); // (B, T, C)
+
+        yTransposed.dispose();
+
+        // Output projection
+        const packedPROJ = packed ? pack16(this.getVariable(this.PROJ)) : this.getVariable(this.PROJ); // (C, C) float16
+        const output = dot16(yReshaped, packedPROJ); // (B, T, C / 2) float16
+        if (packed) packedPROJ.dispose();
+        yReshaped.dispose();
+        return output;
+    }
+
+    private updateCache(kNew: Tensor, vNew: Tensor, cache: KVCache) {
+        const maxCtx = this.config.blockSize;
+        const Tcur = kNew.shape[2]!;
+        const pastLen = cache.length || 0;
+
+        // Append and trim cache to max context size
+        const kTotal = appendCache(kNew, maxCtx, pastLen, cache.k);
+        kNew.dispose();
+        if (cache.k) {
+            cache.k.dispose();
+        }
+
+        const vTotal = appendCache(vNew, maxCtx, pastLen, cache.v);
+        vNew.dispose();
+        if (cache.v) {
+            cache.v.dispose();
+        }
+
+        const length = Math.min(pastLen + Tcur, maxCtx);
+        const cumulativeLength = cache.cumulativeLength + Tcur;
+        cache.length = length;
+        cache.cumulativeLength = cumulativeLength;
+        cache.k = keep(kTotal);
+        cache.v = keep(vTotal);
+    }
+
+    forward(attr: AttentionForwardAttributes, x: Tensor): Tensor {
+        return tidy(() => {
+            this.startMemory();
+            const [qI, kNewI, vNew] = this.getQKV(x); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
+
+            // Apply RoPE to current chunk before concatenating with past
+            // The rope operator ensures the cache is large enough
+            const pastLenInitial = attr.pastKV ? attr.pastKV.cumulativeLength : attr.ropePositionOffset || 0;
+            const ropeCache = attr.ropeCache;
+            const ropeInterleaved = this.attentionConfig.ropeInterleaved ?? true;
+            const ropedQ = ropeCache ? rope(qI, ropeCache, pastLenInitial, false, ropeInterleaved) : qI;
+            const ropedKNew = ropeCache ? rope(kNewI, ropeCache, pastLenInitial, false, ropeInterleaved) : kNewI;
+            const q = this.qNorm ? (this.qNorm.call(attr, ropedQ) as Tensor) : ropedQ;
+            if (this.qNorm) ropedQ.dispose();
+            const kNew = this.kNorm ? (this.kNorm.call(attr, ropedKNew) as Tensor) : ropedKNew;
+            if (this.kNorm) ropedKNew.dispose();
+            if (ropeCache) {
+                qI.dispose();
+                kNewI.dispose();
+            }
+
+            const pastLen = attr.pastKV ? attr.pastKV.length : 0;
+            if (attr.pastKV && !attr.training) {
+                this.updateCache(kNew, vNew, attr.pastKV);
+            }
+            const kTotal = attr.pastKV?.k ? attr.pastKV.k : kNew;
+            const vTotal = attr.pastKV?.v ? attr.pastKV.v : vNew;
+
+            // Attention scores: mask for full forward or multi-token chunk; skip for single-token incremental
+            let attScores: Tensor;
+            if (pastLen > 0) {
+                attScores = this.getAttentionScores(q, kTotal, pastLen);
+            } else {
+                // No past: regular causal mask over a square (training/full forward)
+                attScores = this.getAttentionScores(q, kTotal);
+            }
+            q.dispose();
+            if (!attr.pastKV) {
+                kTotal.dispose();
+            }
+
+            // Attention applied to values
+            const y = matMul16(attScores, vTotal); // (B, nh, T_cur, hs)
+
+            const shouldOutputAttention =
+                attr.attentionScores !== undefined && attr.attentionScores.attentionOut !== undefined;
+
+            if (!shouldOutputAttention) {
+                attScores.dispose();
+            }
+            if (!attr.pastKV) {
+                vTotal.dispose();
+            }
+
+            const output = this.getOutputProjection(y); // (B, T_cur, C)
+            y.dispose();
+
+            // Optionally return attention scores for a head
+            if (shouldOutputAttention && attr.attentionScores && attr.attentionScores.attentionOut !== undefined) {
+                const H = attScores.shape[1]!;
+                const T_cur = attScores.shape[2]!;
+
+                attr.attentionScores.attentionOut?.push(
+                    keep(attScores.slice([0, 0, 0, 0], [1, -1, -1, -1]).reshape([H, T_cur, -1]))
+                );
+            }
+
+            this.endMemory(`CausalSelfAttention`);
+            if (attr.dropout && attr.dropout > 0) {
+                return dropout16(output, attr.dropout);
+            }
+            return output;
+        });
+    }
+}

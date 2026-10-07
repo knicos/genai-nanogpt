@@ -7,14 +7,17 @@ export const ropeGradConfig: GradConfig = {
     inputsToSave: [],
     outputsToSave: [],
     gradFunc: (dy: Tensor | Tensor[], _: Tensor[], attrs: NamedAttrMap) => {
-        const { ropeCache } = attrs as unknown as { ropeCache: RoPECache };
+        const { ropeCache, interleaved } = attrs as unknown as {
+            ropeCache: RoPECache;
+            interleaved?: boolean;
+        };
 
         // To invert RoPE, apply RoPE with -sin (i.e., swap sin sign)
         // This is mathematically equivalent to applying the inverse rotation
 
         // Use the same rope logic, but with negated sin
         const pastLen = 0; // Not used during backprop, can be set to 0
-        const gradInput = rope(dy as Tensor, ropeCache, pastLen, true);
+        const gradInput = rope(dy as Tensor, ropeCache, pastLen, true, interleaved ?? true);
 
         return { x: () => gradInput };
     },

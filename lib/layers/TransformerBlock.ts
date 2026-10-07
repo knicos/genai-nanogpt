@@ -1,4 +1,4 @@
-import CausalSelfAttention, { AttentionScores, CausalSelfAttentionConfig, KVCache } from './CausalSelfAttention';
+import CausalSelfAttention, { AttentionScores, MHAConfig, KVCache } from './MHA';
 import MLP, { MLPConfig } from './MLP';
 import RMSNorm, { RMSNormConfig } from './RMSNorm';
 import BaseLayer, { ForwardAttributes } from './BaseLayer';
@@ -13,7 +13,7 @@ interface BlockAttributes extends ForwardAttributes {
     ropePositionOffset?: number;
 }
 
-export type TransformerBlockConfig = MLPConfig & RMSNormConfig & CausalSelfAttentionConfig;
+export type TransformerBlockConfig = MLPConfig & RMSNormConfig & MHAConfig;
 
 // Transformer block
 export default class Block extends BaseLayer<BlockAttributes> {

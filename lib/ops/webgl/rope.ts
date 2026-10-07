@@ -61,14 +61,19 @@ class RopeProgram implements GPGPUProgram {
 
 function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { x } = args.inputs as { x: Tensor };
-    const { pastLen, ropeCache, negSin } = args.attrs as unknown as {
+    const { pastLen, ropeCache, negSin, interleaved } = args.attrs as unknown as {
         pastLen: number;
         ropeCache: RoPECache;
         negSin: boolean;
+        interleaved: boolean;
     };
     const sin = negSin ? ropeCache.getNegSin()! : ropeCache.getSin()!;
     const cos = ropeCache.getCos()!;
     const backend = args.backend as MathBackendWebGL;
+
+    if (!interleaved) {
+        throw new Error('Non-interleaved mode is not supported in this WebGL implementation.');
+    }
 
     const batchSize = x.shape[0];
     const heads = x.shape[1]!;

@@ -37,11 +37,12 @@ export default class Llama extends Model<ModelForwardAttributes, GPTConfigLlama>
             hiddenSize: Math.max(256, Math.ceil((this.config.nEmbed * (8 / 3)) / 256) * 256),
             useGamma: true,
             useQKNorm: false,
+            ropeInterleaved: false,
         };
 
         // Token embeddings
         this.wte = new TiedEmbeddingOutputLayer(this.config, 'token_embedding', this);
-        this.ropeCache = new RoPECache(this.config, 10000);
+        this.ropeCache = new RoPECache(this.config);
 
         // Transformer blocks
         this.blocks = [];

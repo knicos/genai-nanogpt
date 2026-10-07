@@ -5,10 +5,10 @@ import RoPECache from '../layers/RoPECache';
 import RMSNorm from '../layers/RMSNorm';
 import { keep, Tensor, tidy } from '@tensorflow/tfjs-core';
 import Model, { ModelForwardAttributes } from './model';
-import PositionEmbedding from '@base/layers/PositionEmbedding';
 import { packingSupported } from '@base/utilities/packed';
 import { pack16 } from '@base/ops/pack16';
 import { unpack16 } from '@base/ops/unpack16';
+import HeadLayer from '@base/layers/HeadLayer';
 
 const defaultConfig: GPTConfigQwen3 = {
     modelType: 'qwen3',
@@ -23,7 +23,8 @@ const defaultConfig: GPTConfigQwen3 = {
 // Main NanoGPT model
 export default class Qwen3 extends Model<ModelForwardAttributes, GPTConfigQwen3> {
     private wte: TiedEmbeddingOutputLayer; // Token embeddings
-    private wpe?: PositionEmbedding; // Position embeddings
+    private head: HeadLayer | null;
+
     // private drop: layers.Layer; // Dropout
     private blocks: Block[];
     private lnF: RMSNorm; // Final layer norm
@@ -34,9 +35,11 @@ export default class Qwen3 extends Model<ModelForwardAttributes, GPTConfigQwen3>
 
         const blockConfig: TransformerBlockConfig = {
             activation: 'swiglu',
-            hiddenFactor: this.config.mlpFactor,
-            useGamma: false,
+            hiddenSize: this.config.mlpSize ?? Math.max(256, Math.ceil((this.config.nEmbed * (8 / 3)) / 256) * 256),
+            useGamma: true,
             useQKNorm: true,
+            ropeInterleaved: false,
+            epsilon: this.config.rmsNormEpsilon ?? 1e-6,
         };
 
         // Token embeddings
@@ -51,6 +54,12 @@ export default class Qwen3 extends Model<ModelForwardAttributes, GPTConfigQwen3>
 
         // Final layer norm
         this.lnF = new RMSNorm(this.config, blockConfig, `final_rms_norm`, this);
+
+        if (this.config.tieEmbeddings ?? true) {
+            this.head = new HeadLayer(this.config, 'lm_head', this);
+        } else {
+            this.head = null;
+        }
     }
 
     getClassName() {
@@ -130,7 +139,7 @@ export default class Qwen3 extends Model<ModelForwardAttributes, GPTConfigQwen3>
             }
 
             // Embedding to logits
-            const packedLogits = this.wte.project(x) as Tensor;
+            const packedLogits = this.head ? (this.head.project(x) as Tensor) : (this.wte.project(x) as Tensor);
 
             if (attrs.outputEmbeddings) {
                 keep(x);
@@ -158,7 +167,9 @@ export default class Qwen3 extends Model<ModelForwardAttributes, GPTConfigQwen3>
     dispose() {
         this.weightStore.dispose();
         this.wte.dispose();
-        if (this.wpe) this.wpe.dispose();
+        if (this.head) {
+            this.head.dispose();
+        }
         this.blocks.forEach((block) => block.dispose());
         this.lnF.dispose();
     }

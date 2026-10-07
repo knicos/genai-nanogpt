@@ -2,7 +2,7 @@ import { describe, it, afterEach, afterAll } from 'vitest';
 import '@tensorflow/tfjs';
 import * as tf from '@tensorflow/tfjs-core';
 import { create, globals } from 'webgpu';
-import CausalSelfAttention, { KVCache } from './CausalSelfAttention';
+import MHA, { KVCache } from './MHA';
 import RoPECache from './RoPECache';
 import { selectBackend } from '@base/backend';
 import { GPTConfig } from '@base/main';
@@ -11,7 +11,7 @@ Object.assign(globalThis, globals);
 const navigator = { gpu: create([]) };
 Object.assign(globalThis.navigator, navigator);
 
-describe('CausalSelfAttention', { timeout: 10000 }, () => {
+describe('Multi-head self-attention', { timeout: 10000 }, () => {
     afterEach(() => {
         tf.disposeVariables();
     });
@@ -22,7 +22,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
 
     it('generates a correctly shaped output', async ({ expect }) => {
         await selectBackend('webgpu');
-        const layer = new CausalSelfAttention(
+        const layer = new MHA(
             0,
             {
                 modelType: 'GenAI_NanoGPT_v2',
@@ -33,10 +33,10 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
                 blockSize: 4,
                 mlpFactor: 4,
             },
-            { useQKNorm: true }
+            { useQKNorm: true, useGamma: false }
         );
 
-        expect(layer).toBeInstanceOf(CausalSelfAttention);
+        expect(layer).toBeInstanceOf(MHA);
 
         const input = tf.randomNormal([1, 4, 16]);
         const output = layer.call({ training: false }, input) as tf.Tensor;
@@ -47,7 +47,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
 
     it('can accept dropout', async ({ expect }) => {
         await selectBackend('webgpu');
-        const layer = new CausalSelfAttention(
+        const layer = new MHA(
             0,
             {
                 modelType: 'GenAI_NanoGPT_v2',
@@ -61,7 +61,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
             {}
         );
 
-        expect(layer).toBeInstanceOf(CausalSelfAttention);
+        expect(layer).toBeInstanceOf(MHA);
 
         const input = tf.randomNormal([1, 4, 16]);
         const output = layer.call({ training: true }, input) as tf.Tensor;
@@ -72,7 +72,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
 
     it('can generate attention scores', async ({ expect }) => {
         await selectBackend('webgpu');
-        const layer = new CausalSelfAttention(
+        const layer = new MHA(
             0,
             {
                 modelType: 'GenAI_NanoGPT_v2',
@@ -100,7 +100,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
 
     it('can use a KV cache', async ({ expect }) => {
         await selectBackend('webgpu');
-        const layer = new CausalSelfAttention(
+        const layer = new MHA(
             0,
             {
                 modelType: 'GenAI_NanoGPT_v2',
@@ -144,7 +144,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
         await selectBackend('webgpu');
         const input = tf.randomNormal([1, 4, 16]);
 
-        const layer = new CausalSelfAttention(
+        const layer = new MHA(
             0,
             {
                 modelType: 'GenAI_NanoGPT_v2',
@@ -168,7 +168,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
         const originalOutput = layer.call({ training: false }, input) as tf.Tensor;
         layer.dispose();
 
-        const newLayer = new CausalSelfAttention(
+        const newLayer = new MHA(
             0,
             {
                 modelType: 'GenAI_NanoGPT_v2',
@@ -204,7 +204,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
             mlpFactor: 4,
         };
         const ropeCache = new RoPECache(config);
-        const layer = new CausalSelfAttention(0, config, {});
+        const layer = new MHA(0, config, {});
 
         const input = tf.randomNormal([1, 4, 16]);
         const target = tf.randomNormal([1, 4, 16]);
@@ -229,7 +229,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
 
     it('supports mixed precision', async ({ expect }) => {
         await selectBackend('webgpu');
-        const layer = new CausalSelfAttention(
+        const layer = new MHA(
             0,
             {
                 modelType: 'GenAI_NanoGPT_v2',
@@ -243,7 +243,7 @@ describe('CausalSelfAttention', { timeout: 10000 }, () => {
             {}
         );
 
-        expect(layer).toBeInstanceOf(CausalSelfAttention);
+        expect(layer).toBeInstanceOf(MHA);
 
         const input = tf.randomNormal([1, 32, 64], 0, 1);
         const output = layer.call({ training: false, mixedPrecision: true }, input) as tf.Tensor;

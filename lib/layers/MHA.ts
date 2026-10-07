@@ -12,8 +12,8 @@ import { dot16 } from '@base/ops/dot16';
 import { reshape16 } from '@base/ops/reshape16';
 import { isPackedTensor } from '@base/utilities/packed';
 import { qkv } from '@base/ops/qkv';
-import { normRMS } from '@base/ops/normRMS';
 import { dropout16 } from '@base/ops/dropout16';
+import RMSNorm, { RMSNormConfig } from './RMSNorm';
 
 export interface KVCache {
     k?: Tensor; // [B, nHead, T_cache, headDim]
@@ -34,23 +34,27 @@ interface AttentionForwardAttributes extends ForwardAttributes {
     ropePositionOffset?: number; // Optional offset for RoPE position encoding
 }
 
-export interface CausalSelfAttentionConfig {
+export interface MHAConfig extends RMSNormConfig {
     useQKNorm?: boolean;
+    ropeInterleaved?: boolean;
+    //kvHeads?: number;
 }
 
 // Multi-head self-attention implementation
-export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttributes> {
+export default class MHA extends BaseLayer<AttentionForwardAttributes> {
     private divisor: number;
     private index: number;
     private units: number;
     private projUnits: number;
     private ATTN: string;
     private PROJ: string;
+    private qNorm: RMSNorm | null = null;
+    private kNorm: RMSNorm | null = null;
 
     constructor(
         index: number,
         config: GPTConfig,
-        private readonly attentionConfig: CausalSelfAttentionConfig,
+        private readonly attentionConfig: MHAConfig,
         parent?: BaseLayer
     ) {
         super(config, parent);
@@ -64,6 +68,11 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
         this.addVariable(this.PROJ);
 
         this.divisor = 1 / Math.sqrt(config.nEmbed / config.nHead); // Scaling factor for attention scores
+
+        if (this.attentionConfig.useQKNorm ?? false) {
+            this.qNorm = new RMSNorm(config, attentionConfig, `block_${this.index}_qNorm`, this);
+            this.kNorm = new RMSNorm(config, attentionConfig, `block_${this.index}_kNorm`, this);
+        }
     }
 
     protected override build() {
@@ -154,13 +163,13 @@ export default class CausalSelfAttention extends BaseLayer<AttentionForwardAttri
             // The rope operator ensures the cache is large enough
             const pastLenInitial = attr.pastKV ? attr.pastKV.cumulativeLength : attr.ropePositionOffset || 0;
             const ropeCache = attr.ropeCache;
-            const ropedQ = ropeCache ? rope(qI, ropeCache, pastLenInitial) : qI;
-            const ropedKNew = ropeCache ? rope(kNewI, ropeCache, pastLenInitial) : kNewI;
-            const doNorm = this.attentionConfig.useQKNorm ?? false;
-            const q = doNorm ? normRMS(ropedQ) : ropedQ;
-            if (doNorm) ropedQ.dispose();
-            const kNew = doNorm ? normRMS(ropedKNew) : ropedKNew;
-            if (doNorm) ropedKNew.dispose();
+            const ropeInterleaved = this.attentionConfig.ropeInterleaved ?? true;
+            const ropedQ = ropeCache ? rope(qI, ropeCache, pastLenInitial, false, ropeInterleaved) : qI;
+            const ropedKNew = ropeCache ? rope(kNewI, ropeCache, pastLenInitial, false, ropeInterleaved) : kNewI;
+            const q = this.qNorm ? (this.qNorm.call(attr, ropedQ) as Tensor) : ropedQ;
+            if (this.qNorm) ropedQ.dispose();
+            const kNew = this.kNorm ? (this.kNorm.call(attr, ropedKNew) as Tensor) : ropedKNew;
+            if (this.kNorm) ropedKNew.dispose();
             if (ropeCache) {
                 qI.dispose();
                 kNewI.dispose();

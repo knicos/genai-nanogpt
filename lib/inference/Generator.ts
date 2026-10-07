@@ -1,6 +1,6 @@
 import type { Conversation, ITokeniser } from '../tokeniser/type';
 import EE from 'eventemitter3';
-import { KVCache } from '../layers/CausalSelfAttention';
+import { KVCache } from '../layers/MHA';
 import {
     concat,
     gather,

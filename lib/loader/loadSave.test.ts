@@ -26,14 +26,13 @@ afterEach(() => {
 describe('save/load zips', () => {
     it('saveModel writes a reference model', async () => {
         const model = createModelInstance({
-            modelType: 'GenAI_NanoGPT_v1',
+            modelType: 'llama',
             vocabSize: 20,
             blockSize: 16,
             nLayer: 1,
             nHead: 1,
             nEmbed: 4,
             mlpFactor: 4,
-            useRope: false,
         });
 
         model.metaData = {
@@ -56,7 +55,7 @@ describe('save/load zips', () => {
         expect(zipFile.file('tokeniser.json')).toBeTruthy();
 
         const config = JSON.parse(await zipFile.file('config.json')!.async('string'));
-        expect(config.model_type).toBe('GenAI_NanoGPT_v1');
+        expect(config.model_type).toBe('llama');
         expect(config.vocab_size).toBe(20);
         expect(config.hidden_size).toBe(4);
 
@@ -81,14 +80,13 @@ describe('save/load zips', () => {
 
     it('saveModel writes only changed weights', async () => {
         const model = createModelInstance({
-            modelType: 'GenAI_NanoGPT_v1',
+            modelType: 'llama',
             vocabSize: 20,
             blockSize: 16,
             nLayer: 1,
             nHead: 1,
             nEmbed: 4,
             mlpFactor: 4,
-            useRope: false,
         });
 
         model.metaData = {
@@ -100,7 +98,7 @@ describe('save/load zips', () => {
         const tokeniser = new CharTokeniser(20);
 
         // Change one weight to simulate training
-        model.weightStore.touchVariables(['block_0_rms1']);
+        model.weightStore.touchVariables(['token_embedding']);
 
         const blob = await saveModel(model, tokeniser, {
             name: 'tiny',
@@ -114,7 +112,7 @@ describe('save/load zips', () => {
         expect(zipFile.file('tokeniser.json')).toBeTruthy();
 
         const config = JSON.parse(await zipFile.file('config.json')!.async('string'));
-        expect(config.model_type).toBe('GenAI_NanoGPT_v1');
+        expect(config.model_type).toBe('llama');
         expect(config.vocab_size).toBe(20);
         expect(config.hidden_size).toBe(4);
 
@@ -134,7 +132,7 @@ describe('save/load zips', () => {
         const weights = await load_safetensors(safetensorsData);
         const keys = Object.keys(weights);
         expect(keys.length).toBe(1);
-        expect(keys[0]).toBe('block_0_rms1');
+        expect(keys[0]).toBe('token_embedding');
 
         model.dispose();
     });

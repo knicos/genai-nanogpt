@@ -11,15 +11,13 @@ export default class RoPECache {
     private ropeNegSin: Tensor | null = null; // [cacheLen, rotaryDim/2]
     private ropeCacheLen = 0;
 
-    constructor(
-        private readonly config: GPTConfig,
-        theta = 10000
-    ) {
+    constructor(private readonly config: GPTConfig) {
         const headDim = this.config.nEmbed / this.config.nHead;
         this.rotaryDim = headDim;
         if (this.rotaryDim % 2 !== 0) {
             throw new Error('rotaryDim must be even');
         }
+        const theta = this.config.ropeTheta ?? 10000;
         this.ropeBase = theta; // Could be a little smaller for shorter sequences
         const i = range(0, this.rotaryDim, 2, 'float32'); // even indices
         const exponent = div(i, scalar(this.rotaryDim, 'float32')); // i/rotaryDim

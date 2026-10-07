@@ -23,12 +23,14 @@ class RopeProgram32 implements WebGPUProgram {
     workgroupSize: [number, number, number] = [64, 1, 1];
     size = true;
     uniforms = 'pastLen: i32';
+    interleaved: boolean;
 
-    constructor(batch: number, heads: number, T: number, C: number) {
-        this.shaderKey = `Rope_${C}`;
+    constructor(batch: number, heads: number, T: number, C: number, interleaved = true) {
+        this.shaderKey = `Rope_${C}_${interleaved ? 'interleaved' : 'split'}`;
         this.outputShape = [batch, heads, T, C];
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
         this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize);
+        this.interleaved = interleaved;
     }
 
     getUserCode() {
@@ -52,19 +54,19 @@ class RopeProgram32 implements WebGPUProgram {
                     d;
 
                 if (d < rotaryDim) {
-                    let idx = (t + uniforms.pastLen) * uniforms.cosShape[1] + d / 2;
+                    let half = rotaryDim / 2;
+                    let idx = (t + uniforms.pastLen) * uniforms.cosShape[1] +
+                        ${this.interleaved ? 'd / 2' : 'd % half'};
                     let cos = cos[idx];
                     let sin = sin[idx];
 
                     let ownX = x[xIdx] * cos;
                     var evenOdd = 0.0;
 
-                    if (d % 2 == 0) {
-                        // even index
-                        evenOdd = -x[xIdx + 1];
+                    if (${this.interleaved ? 'd % 2 == 0' : 'd < half'}) {
+                        evenOdd = -x[${this.interleaved ? 'xIdx + 1' : 'xIdx + half'}];
                     } else {
-                        // odd index
-                        evenOdd = x[xIdx - 1];
+                        evenOdd = x[${this.interleaved ? 'xIdx - 1' : 'xIdx - half'}];
                     }
 
                     outVal = fma(evenOdd, sin, ownX);
@@ -80,7 +82,7 @@ class RopeProgram32 implements WebGPUProgram {
     }
 }
 
-class RopeProgram16 implements WebGPUProgram {
+class RopeProgram16Interleaved implements WebGPUProgram {
     variableNames = ['x', 'sin', 'cos'];
     outputShape: number[];
     shaderKey = 'Rope';
@@ -91,7 +93,7 @@ class RopeProgram16 implements WebGPUProgram {
     uniforms = 'pastLen: i32';
 
     constructor(batch: number, heads: number, T: number, C: number) {
-        this.shaderKey = `Rope_${C}`;
+        this.shaderKey = `Rope_${C}_interleaved_packed`;
         // C / 2 due to packing
         this.outputShape = [batch, heads, T, C / 2];
         this.dispatchLayout = flatDispatchLayout(this.outputShape);
@@ -115,21 +117,14 @@ class RopeProgram16 implements WebGPUProgram {
                     t * uniforms.outShapeStrides[2] +
                     d;
 
-                let idx = (t + uniforms.pastLen) * uniforms.cosShape[1] + d;
-                let cos = cos[idx];
-                let sin = sin[idx];
-
                 let xPair = unpack2x16float(u32(x[xIdx]));
-                let ownX = vec2<f32>(xPair.x * cos, xPair.y * cos);
-
-                let evenOdd = vec2<f32>(
-                    -xPair.y,
-                    xPair.x
-                );
+                let idx = (t + uniforms.pastLen) * uniforms.cosShape[1] + d;
+                let cosVal = cos[idx];
+                let sinVal = sin[idx];
 
                 outVal = vec2<f32>(
-                    fma(evenOdd.x, sin, ownX.x),
-                    fma(evenOdd.y, sin, ownX.y)
+                    fma(-xPair.y, sinVal, xPair.x * cosVal),
+                    fma(xPair.x, sinVal, xPair.y * cosVal)
                 );
 
                 result[index] = i32(pack2x16float(outVal));
@@ -139,12 +134,79 @@ class RopeProgram16 implements WebGPUProgram {
     }
 }
 
+class RopeProgram16Split implements WebGPUProgram {
+    variableNames = ['x', 'sin', 'cos'];
+    outputShape: number[];
+    shaderKey = 'Rope';
+    dispatchLayout: { x: number[] };
+    dispatch: [number, number, number];
+    workPerThread = 2;
+    workgroupSize: [number, number, number] = [64, 1, 1];
+    size = true;
+    uniforms = 'pastLen: i32';
+
+    constructor(batch: number, heads: number, T: number, C: number) {
+        this.shaderKey = `Rope_${C}_split_packed`;
+        // C / 2 due to packing
+        this.outputShape = [batch, heads, T, C / 2];
+        this.dispatchLayout = flatDispatchLayout(this.outputShape);
+        this.dispatch = computeDispatch(this.dispatchLayout, this.outputShape, this.workgroupSize, [
+            this.workPerThread,
+            1,
+            1,
+        ]);
+    }
+
+    getUserCode() {
+        return `
+        ${main('index')} {
+            let halfPacked = uniforms.outShape[3] / 2;
+            for (var i = 0; i < ${this.workPerThread}; i = i + 1) {
+                let flatIndex = index * ${this.workPerThread} + i;
+                if (flatIndex < uniforms.size) {
+                    let coords = getCoordsFromIndex(flatIndex); // [b, h, t, dPacked]
+                    let d = coords[3];
+
+                    if (d < halfPacked) {
+                        let t = coords[2];
+                        let xLow = unpack2x16float(u32(x[flatIndex]));
+                        let xHigh = unpack2x16float(u32(x[flatIndex + halfPacked]));
+
+                        let scalar0 = d * 2;
+                        let scalar1 = scalar0 + 1;
+                        let cacheOffset = (t + uniforms.pastLen) * uniforms.cosShape[1];
+
+                        let cos0 = cos[cacheOffset + scalar0];
+                        let sin0 = sin[cacheOffset + scalar0];
+                        let cos1 = cos[cacheOffset + scalar1];
+                        let sin1 = sin[cacheOffset + scalar1];
+
+                        let outLow = vec2<f32>(
+                            fma(-xHigh.x, sin0, xLow.x * cos0),
+                            fma(-xHigh.y, sin1, xLow.y * cos1)
+                        );
+                        let outHigh = vec2<f32>(
+                            fma(xLow.x, sin0, xHigh.x * cos0),
+                            fma(xLow.y, sin1, xHigh.y * cos1)
+                        );
+
+                        result[flatIndex] = i32(pack2x16float(outLow));
+                        result[flatIndex + halfPacked] = i32(pack2x16float(outHigh));
+                    }
+                }
+            }
+        }
+        `;
+    }
+}
+
 function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
     const { x } = args.inputs as { x: Tensor };
-    const { pastLen, negSin, ropeCache } = args.attrs as unknown as {
+    const { pastLen, negSin, ropeCache, interleaved } = args.attrs as unknown as {
         pastLen: number;
         negSin: boolean;
         ropeCache: RoPECache;
+        interleaved: boolean;
     };
 
     const backend = args.backend as WebGPUBackend;
@@ -173,8 +235,10 @@ function ropeGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: N
     }
 
     const program = packed
-        ? new RopeProgram16(batchSize, heads, seqLength, C)
-        : new RopeProgram32(batchSize, heads, seqLength, C);
+        ? interleaved
+            ? new RopeProgram16Interleaved(batchSize, heads, seqLength, C)
+            : new RopeProgram16Split(batchSize, heads, seqLength, C)
+        : new RopeProgram32(batchSize, heads, seqLength, C, interleaved);
 
     const uniformData = [{ type: 'int32', data: [pastLen] }];
     const dtype = packed ? 'packedF16' : x.dtype;

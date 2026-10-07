@@ -15,6 +15,7 @@ export interface GPTConfigBase {
     mlpFactor: number;
     loraConfig?: Map<string, LoRAConfig>;
     loraName?: string;
+    ropeTheta?: number;
 }
 
 export interface GPTConfigV1 extends GPTConfigBase {
@@ -29,10 +30,20 @@ export interface GPTConfigV2 extends GPTConfigBase {
 
 export interface GPTConfigQwen3 extends GPTConfigBase {
     modelType: 'qwen3';
+    tieEmbeddings?: boolean;
+    rmsNormEpsilon?: number;
+    kvHeads?: number;
+    headDim?: number;
+    mlpSize?: number;
 }
 
 export interface GPTConfigLlama extends GPTConfigBase {
     modelType: 'llama';
+    tieEmbeddings?: boolean;
+    rmsNormEpsilon?: number;
+    kvHeads?: number;
+    headDim?: number;
+    mlpSize?: number;
 }
 
 export type GPTConfig = GPTConfigV1 | GPTConfigV2 | GPTConfigQwen3 | GPTConfigLlama;

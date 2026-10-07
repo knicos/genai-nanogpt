@@ -86,6 +86,35 @@ describe('Rope WebGPU', { timeout: 10000 }, () => {
         expect(error).toBeLessThan(1e-3);
     });
 
+    it('supports split rotary layout (non-interleaved)', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const x = randomNormal([24, 2, 32, 64], 0, 1, 'float32');
+
+        const packed = pack16(x);
+        const unpacked = unpack16(packed);
+
+        const cache = new RoPECache({
+            modelType: 'qwen3',
+            vocabSize: 20,
+            nEmbed: 128,
+            nHead: 2,
+            nLayer: 1,
+            blockSize: 64,
+            mlpFactor: 4,
+        });
+        const packedRope = rope(packed, cache, 4, false, false);
+        const unpackedRope = rope(unpacked, cache, 4, false, false);
+
+        const repackedRope = unpack16(pack16(unpackedRope));
+        const unpackedFromPacked = unpack16(packedRope);
+
+        const unpackedData = await repackedRope.data();
+        const unpackedFromPackedData = await unpackedFromPacked.data();
+
+        const error = arraysClose(unpackedData, unpackedFromPackedData);
+        expect(error).toBeLessThan(1e-3);
+    });
+
     it('has valid gradients', async ({ expect }) => {
         await selectBackend('webgpu');
         const x = randomNormal([100, 2, 64, 64], 0, 1, 'float32');
@@ -147,5 +176,38 @@ describe('Rope WebGPU', { timeout: 10000 }, () => {
 
         const error = arraysClose(gradX16Data, gradX32Data);
         expect(error).toBeLessThan(1e-3);
+    });
+
+    it('has valid gradients for split rotary layout', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const x = randomNormal([32, 2, 32, 64], 0, 1, 'float32');
+
+        const cache = new RoPECache({
+            biasInLayerNorm: false,
+            vocabSize: 20,
+            nEmbed: 128,
+            nHead: 2,
+            nLayer: 1,
+            biasInLinear: false,
+            dropout: 0.0,
+            blockSize: 64,
+            mlpFactor: 4,
+            useRope: true,
+        });
+
+        const packedX = pack16(x);
+
+        const gradX = ropeGradConfig
+            .gradFunc(packedX, [], {
+                ropeCache: cache,
+                interleaved: false,
+            } as unknown as NamedAttrMap)
+            .x();
+        const gradXData = await gradX.data();
+
+        expect(gradXData.length).toBe(packedX.size);
+        expect(gradXData.every((v) => Math.abs(v) < 1e-8)).toBe(false);
+        expect(gradXData.some((v) => isNaN(v))).toBe(false);
+        expect(gradXData.some((v) => !isFinite(v))).toBe(false);
     });
 });
