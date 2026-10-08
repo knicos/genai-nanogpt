@@ -64,7 +64,7 @@ export default class BeamAPI {
         this.ee.emit('status', 'busy');
 
         job.beamer
-            .beam(job.conversation, job.options, (beams) => {
+            .beam((beams) => {
                 this.ee.emit('progress', job.id, beams);
             })
             .then((result) => {
@@ -73,7 +73,7 @@ export default class BeamAPI {
                     this.ee.emit('status', 'ready');
                 }
                 this.ee.emit('done', job.id, result);
-                this._jobs.delete(job.id);
+                //this._jobs.delete(job.id);
 
                 const nextJob = this._queue.shift()!;
                 if (nextJob) {
@@ -95,10 +95,30 @@ export default class BeamAPI {
             });
     }
 
+    public more(id: string) {
+        const job = this._jobs.get(id);
+        if (job) {
+            if (this._busyCount > 0) {
+                this._queue.push(job);
+                return id;
+            }
+
+            this.startJob(job);
+        }
+    }
+
     public create(conversation: Conversation[], options: BeamerOptions): string {
         const id = uuidv4();
         const beamer = new Beamer(this._model, this._tokeniser);
+        beamer.begin(conversation, options);
         const job: BeamJob = { id, beamer, canceled: false, conversation, options };
+
+        // Clear old jobs.
+        for (const [key, oldJob] of this._jobs.entries()) {
+            oldJob.beamer.dispose();
+            this._jobs.delete(key);
+        }
+
         this._jobs.set(id, job);
 
         if (this._busyCount > 0) {

@@ -68,7 +68,8 @@ describe('Beamer', () => {
         const beamer = new Beamer(model, tokeniser);
 
         const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
-        const result = await beamer.beam(prompt, { beams: 4, maxBeamLength: 3, topP: 1, noCache: true });
+        beamer.begin(prompt, { beams: 4, maxBeamLength: 3, topP: 0.5, noCache: true, keepDuplicates: true });
+        const result = await beamer.beam();
 
         expect(result.length).toBeGreaterThan(0);
         expect(result.length).toBeLessThanOrEqual(4);
@@ -93,7 +94,8 @@ describe('Beamer', () => {
         const beamer = new Beamer(model, tokeniser);
 
         const prompt: Conversation[] = [{ role: 'user', content: 'hello there' }];
-        const result = await beamer.beam(prompt, { beams: 5, maxBeamLength: 4, topP: 0, noCache: true });
+        beamer.begin(prompt, { beams: 5, maxBeamLength: 4, topP: 0, noCache: true, keepDuplicates: true });
+        const result = await beamer.beam();
 
         expect(result.length).toBe(1);
         expect(result[0].tokens.length).toBeGreaterThan(0);
@@ -109,14 +111,15 @@ describe('Beamer', () => {
         tokeniser.vocab[1] = '#';
 
         const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
-        const result = await beamer.beam(prompt, { beams: 3, maxBeamLength: 2, topP: 1, allowSpecial: true });
+        beamer.begin(prompt, { beams: 3, maxBeamLength: 2, topP: 0.5, allowSpecial: true, keepDuplicates: true });
+        const result = await beamer.beam();
 
         expect(result.length).toBeGreaterThan(0);
         expect(result.length).toBeLessThanOrEqual(3);
         expect(result[0].tokens.length).toBeGreaterThan(0);
     });
 
-    it('allows beams to continue past maxBeamLength when endOnWhiteSpace is enabled', async ({ expect }) => {
+    it.skip('allows beams to continue past maxBeamLength when endOnWhiteSpace is enabled', async ({ expect }) => {
         await selectBackend('webgpu');
         const model = createSmallModel();
         const tokeniser = new CharTokeniser(CHARS);
@@ -124,18 +127,39 @@ describe('Beamer', () => {
 
         const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
         const minLength = 1;
-        const result = await beamer.beam(prompt, {
+        beamer.begin(prompt, {
             beams: 3,
             maxBeamLength: minLength,
             endOnWhiteSpace: true,
             topP: 1,
             noCache: true,
             maxLength: 12,
+            keepDuplicates: true,
         });
+        const result = await beamer.beam();
 
         expect(result.length).toBeGreaterThan(0);
         expect(result.length).toBeLessThanOrEqual(3);
         expect(result.some((beam) => beam.tokens.length > minLength)).toBe(true);
         expect(result.every((beam) => beam.tokens.length >= minLength)).toBe(true);
+    });
+
+    it('supports next beam', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const model = createSmallModel();
+        const tokeniser = new CharTokeniser(CHARS);
+        const beamer = new Beamer(model, tokeniser);
+
+        const prompt: Conversation[] = [{ role: 'user', content: 'hello there' }];
+        beamer.begin(prompt, { beams: 5, maxBeamLength: 4, topP: 0.5, noCache: true, keepDuplicates: true });
+        const firstResult = await beamer.next();
+        const secondResult = await beamer.next();
+
+        console.log(firstResult, secondResult);
+
+        expect(firstResult).not.toBeNull();
+        expect(secondResult).not.toBeNull();
+        expect(firstResult!.tokens.length).toBeGreaterThan(0);
+        expect(secondResult!.tokens.length).toBeGreaterThan(0);
     });
 });

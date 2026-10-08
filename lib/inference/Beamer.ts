@@ -1,39 +1,57 @@
 import type { Conversation, ITokeniser } from '../tokeniser/type';
 import Model, { ModelForwardAttributes } from '../models/model';
-import { BeamerOptions, IBeam, IGenerateOptions } from './types';
+import { BeamerOptions, IBeam, IGenerateOptions, IGeneratorOutput } from './types';
 import CharTokeniser from '../tokeniser/CharTokeniser';
 import { Tensor, concat, oneHot, scalar, stack, tensor1d, tidy, softmax } from '@tensorflow/tfjs-core';
 import { CHARS, padArray } from './utilities';
 import topP from '@base/utilities/topP';
+import MaxHeap from '../utilities/maxHeap';
 
-interface WorkingBeam extends IBeam {
-    terminated: boolean;
+interface BeamNode {
+    parent?: BeamNode;
     context: Tensor;
     contextLength: number;
-}
-
-interface BeamExpansion {
-    parent: WorkingBeam;
-    token: number;
-    tokenText: string;
+    terminated: boolean;
+    tokens: number[];
     score: number;
-    tokenProb: number;
-    terminatedByToken: boolean;
-    terminatedByWhitespace: boolean;
-    dropLeadingWhitespaceTerminator: boolean;
+    probabilities: number[];
+    text: string;
+    sortedChildren?: { token: number; prob: number }[];
+    nextChild: number;
 }
 
-function topTokenCandidates(probs: number[], maxCandidates: number): { token: number; prob: number }[] {
-    return probs
+interface BeamEntry {
+    idx: number;
+    tokenId: number;
+    tokenText: string;
+    probability: number;
+    terminated: boolean;
+    score: number;
+    reason?: 'token' | 'whitespace' | 'length';
+    parent: BeamNode;
+}
+
+function topTokenCandidates(probs: number[], maxCandidates?: number): { token: number; prob: number }[] {
+    const sorted = probs
         .map((prob, token) => ({ token, prob }))
         .filter((candidate) => candidate.prob > 0)
-        .sort((a, b) => b.prob - a.prob)
-        .slice(0, Math.max(1, maxCandidates));
+        .sort((a, b) => b.prob - a.prob);
+
+    if (maxCandidates !== undefined) {
+        return sorted.slice(0, Math.max(1, maxCandidates));
+    }
+    return sorted;
 }
 
 export default class Beamer {
     private actualTokeniser: ITokeniser;
     private active = false;
+    private options: BeamerOptions | null = null;
+    private conversation: Conversation[] = [];
+    private heap = new MaxHeap<BeamEntry>((node) => node.score);
+    private hasRoot = false;
+    private totalCandidates = 0;
+    private seen = new Set<string>();
 
     constructor(
         private readonly model: Model<ModelForwardAttributes>,
@@ -108,31 +126,48 @@ export default class Beamer {
         return { context: nextContext, contextLength: blockSize };
     }
 
-    private async batchedNextProbabilities(
-        beams: WorkingBeam[],
-        fixedBatchSize: number,
-        options: BeamerOptions
-    ): Promise<number[][]> {
-        if (beams.length === 0) {
-            return [];
+    public cancel(): void {
+        this.active = false;
+    }
+
+    public begin(conversation: Conversation[], options: BeamerOptions): void {
+        if (!options || options.beams < 1 || options.maxBeamLength < 1) {
+            return;
+        }
+        if (this.options) {
+            throw new Error('Beamer has already been initialized.');
+        }
+        this.conversation = conversation;
+        this.options = options;
+        this.initialise(options);
+    }
+
+    private async expand(nodes: BeamNode[], fixedBatchSize: number): Promise<void> {
+        if (nodes.length === 0) {
+            return;
         }
 
-        const filler = beams[0];
-        const batchBeams: WorkingBeam[] = beams.slice();
-        while (batchBeams.length < fixedBatchSize) {
-            batchBeams.push(filler);
+        if (nodes.length > fixedBatchSize) {
+            throw new Error(`Number of nodes (${nodes.length}) exceeds fixed batch size (${fixedBatchSize}).`);
         }
 
-        const idx = stack(batchBeams.map((b) => b.context));
+        const paddedNodes = [...nodes];
+        if (nodes.length < fixedBatchSize) {
+            while (paddedNodes.length < fixedBatchSize) {
+                paddedNodes.push(nodes[nodes.length - 1]);
+            }
+        }
+
+        const idx = stack(paddedNodes.map((b) => b.context));
         const attrs: ModelForwardAttributes = { training: false, mixedPrecision: true };
         const logits = this.model.forward(attrs, idx);
-        const lastSteps = batchBeams.map((b) => Math.max(0, b.contextLength - 1));
+        const lastSteps = paddedNodes.map((b) => Math.max(0, b.contextLength - 1));
         const lastProbs = tidy(() => {
             const selector = oneHot(lastSteps, this.model.config.blockSize).expandDims(2);
             return softmax(logits.mul(selector).sum(1));
         });
 
-        const activeCount = beams.length;
+        const activeCount = nodes.length;
         const activeProbs =
             activeCount < fixedBatchSize
                 ? lastProbs.slice([0, 0], [activeCount, this.model.config.vocabSize])
@@ -146,184 +181,203 @@ export default class Beamer {
         logits.dispose();
         idx.dispose();
 
-        const tP = options.topP ?? 1;
+        const tP = this.options?.topP ?? 1;
 
-        return probsArray.map((rowProbs) => {
-            return topP(rowProbs, tP);
+        const beamProbs = probsArray.map((rowProbs) => {
+            return topTokenCandidates(topP(rowProbs, tP), this.options?.topK);
+        });
+
+        for (let i = 0; i < nodes.length; i++) {
+            nodes[i].sortedChildren = beamProbs[i];
+            this.totalCandidates += beamProbs[i].length - 1;
+        }
+    }
+
+    private pushNextChild(n: BeamNode): void {
+        if (!n.sortedChildren || n.nextChild >= n.sortedChildren.length) {
+            //if (n.sortedChildren) {
+            //    n.sortedChildren = undefined;
+            //}
+            return;
+        }
+        const idx = n.nextChild++;
+        const tokenId = n.sortedChildren[idx].token;
+        const tokenProb = n.sortedChildren[idx].prob;
+
+        const minBeamLength = this.options!.maxBeamLength;
+        const terminatedByToken = this.shouldTerminate(this.options!.allowSpecial ?? false, tokenId);
+        const tokenText = this.actualTokeniser.decode([tokenId]);
+        const reachesMinLength = n.tokens.length + 1 > minBeamLength;
+        const terminatedByWhitespace =
+            this.options!.endOnWhiteSpace === true && reachesMinLength && /\s/.test(tokenText);
+        const terminateByLength = !this.options!.endOnWhiteSpace
+            ? n.tokens.length + 1 >= minBeamLength
+            : n.tokens.length + 1 >= minBeamLength + 10; // sanity check
+
+        this.heap.push({
+            score: n.score * tokenProb,
+            parent: n,
+            idx,
+            tokenId,
+            tokenText,
+            probability: tokenProb,
+            terminated: terminatedByToken || terminatedByWhitespace || terminateByLength,
+            reason: terminatedByToken
+                ? 'token'
+                : terminatedByWhitespace
+                  ? 'whitespace'
+                  : terminateByLength
+                    ? 'length'
+                    : undefined,
         });
     }
 
-    public cancel(): void {
-        this.active = false;
-    }
+    private entryToBeam(e: BeamEntry): IBeam | null {
+        const dropLeadingWhitespaceTerminator =
+            e.reason === 'whitespace' && e.parent.tokens.length > 0 && /^\s/.test(e.tokenText);
 
-    public async beam(
-        conversation: Conversation[],
-        options: BeamerOptions,
-        onStep?: (beams: IBeam[]) => void
-    ): Promise<IBeam[]> {
-        if (!options || options.beams < 1 || options.maxBeamLength < 1) {
-            return [];
+        const output: IGeneratorOutput[] = e.parent.tokens.map((tokenId, idx) => ({
+            token: tokenId,
+            score: e.parent.probabilities[idx],
+            text: this.actualTokeniser.decode([tokenId]),
+            terminated: e.terminated,
+            confidence: null,
+            logits: null,
+            scores: null,
+            hiddenStates: null,
+            attention: null,
+            loss: null,
+            multinomialRand: null,
+        }));
+        output.push({
+            token: e.tokenId,
+            score: e.probability,
+            text: e.tokenText,
+            terminated: e.terminated,
+            confidence: null,
+            logits: null,
+            scores: null,
+            hiddenStates: null,
+            attention: null,
+            loss: null,
+            multinomialRand: null,
+        });
+
+        const beam: IBeam = {
+            tokens: dropLeadingWhitespaceTerminator ? e.parent.tokens.slice() : [...e.parent.tokens, e.tokenId],
+            score: e.score,
+            text: dropLeadingWhitespaceTerminator ? e.parent.text : e.parent.text + e.tokenText,
+            candidates: this.totalCandidates,
+            _output: output,
+        };
+
+        if (!this.options?.keepDuplicates) {
+            if (this.seen.has(beam.text.trim())) {
+                this.totalCandidates--;
+                return null;
+            }
+            this.seen.add(beam.text.trim());
         }
 
-        const beamCount = Math.max(8, options.beams);
+        return beam;
+    }
 
-        this.initialise(options);
+    public async next(): Promise<IBeam | null> {
         this.active = true;
+        const result = await this._next();
+        this.active = false;
+        return result;
+    }
 
-        const promptTokens = await this.tokeniseConversation(conversation);
-        const initialContext = this.createInitialContext(promptTokens);
-        let beams: WorkingBeam[] = [
-            {
+    private async _next(): Promise<IBeam | null> {
+        if (!this.options || !this.conversation) {
+            throw new Error('Beamer not properly initialized with options and conversation.');
+        }
+        const batchSize = 8;
+
+        // Init the heap
+        if (!this.hasRoot) {
+            const tokens = await this.tokeniseConversation(this.conversation);
+            const ctx = this.createInitialContext(tokens);
+            const rootNode: BeamNode = {
                 tokens: [],
-                score: 1,
                 text: '',
+                score: 1,
+                context: ctx.context,
+                contextLength: ctx.contextLength,
                 terminated: false,
-                context: initialContext.context,
-                contextLength: initialContext.contextLength,
-                candidates: 0,
-            },
-        ];
-        const minBeamLength = options.maxBeamLength;
-        const loopLimit =
-            options.endOnWhiteSpace === true
-                ? Math.max(minBeamLength, options.maxLength ?? minBeamLength + this.model.config.blockSize)
-                : minBeamLength;
+                nextChild: 0,
+                sortedChildren: undefined,
+                probabilities: [],
+            };
 
-        let lastStepTime = Date.now();
-        let totalCandidates = 0;
+            this.totalCandidates = 1;
+            await this.expand([rootNode], batchSize);
+            this.pushNextChild(rootNode);
+            this.hasRoot = true;
+        }
 
-        for (let step = 0; step < loopLimit; step++) {
-            if (!this.active) {
-                break;
+        while (this.heap.size && this.active) {
+            // Case 1: top is a finished hypothesis -> exact next-best, yield it.
+            if (this.heap.peek()!.terminated) {
+                const e = this.heap.pop()!;
+                this.pushNextChild(e.parent);
+
+                const beam = this.entryToBeam(e);
+                if (!beam) {
+                    continue;
+                }
+                return beam;
             }
 
-            const expandable = beams.filter((b) => !b.terminated);
-            if (expandable.length === 0) {
-                break;
-            }
+            // Case 2: gather expandable entries from the top, stopping at a complete one.
+            const batch: BeamNode[] = [];
+            while (batch.length < batchSize && this.heap.size && !this.heap.peek()!.terminated) {
+                const e = this.heap.pop()!;
+                this.pushNextChild(e.parent);
 
-            const probsByBeam = await this.batchedNextProbabilities(expandable, beamCount, options);
-
-            const expansions: BeamExpansion[] = [];
-            for (let i = 0; i < expandable.length; i++) {
-                const parent = expandable[i];
-                const probs = probsByBeam[i];
-                const perBeamCandidates = options.topK ? Math.min(options.topK, beamCount) : Math.max(1, beamCount);
-                const candidates = topTokenCandidates(probs, perBeamCandidates);
-
-                for (const candidate of candidates) {
-                    const tokenText = this.actualTokeniser.decode([candidate.token]);
-                    const terminatedByToken = this.shouldTerminate(options.allowSpecial ?? false, candidate.token);
-                    const reachesMinLength = parent.tokens.length + 1 > minBeamLength;
-                    const terminatedByWhitespace =
-                        options.endOnWhiteSpace === true && reachesMinLength && /\s/.test(tokenText);
-                    const dropLeadingWhitespaceTerminator =
-                        terminatedByWhitespace && parent.tokens.length > 0 && /^\s/.test(tokenText);
-
-                    expansions.push({
-                        parent,
-                        token: candidate.token,
-                        tokenText,
-                        score: parent.score * candidate.prob,
-                        tokenProb: candidate.prob,
-                        terminatedByToken,
-                        terminatedByWhitespace,
-                        dropLeadingWhitespaceTerminator,
-                    });
-                }
-            }
-
-            const completed = beams.filter((b) => b.terminated);
-            const next: WorkingBeam[] = completed.slice();
-
-            expansions.sort((a, b) => b.score - a.score);
-            for (const expanded of expansions) {
-                if (next.length >= beamCount) {
-                    break;
-                }
-
-                const terminated = expanded.terminatedByToken || expanded.terminatedByWhitespace;
-                const keepToken = !expanded.dropLeadingWhitespaceTerminator;
-                const nextTokens = keepToken
-                    ? expanded.parent.tokens.concat(expanded.token)
-                    : expanded.parent.tokens.slice();
-                const nextText =
-                    expanded.terminatedByToken || expanded.dropLeadingWhitespaceTerminator
-                        ? expanded.parent.text
-                        : expanded.parent.text + expanded.tokenText;
-
-                const nextContext = keepToken
-                    ? this.appendTokenToContext(expanded.parent.context, expanded.parent.contextLength, expanded.token)
-                    : { context: expanded.parent.context.clone(), contextLength: expanded.parent.contextLength };
-
-                const outputArray = expanded.parent._output?.slice() ?? [];
-                if (keepToken) {
-                    outputArray.push({
-                        token: expanded.token,
-                        score: expanded.tokenProb,
-                        text: expanded.tokenText,
-                        terminated,
-                        confidence: null,
-                        logits: null,
-                        scores: null,
-                        hiddenStates: null,
-                        attention: null,
-                        loss: null,
-                        multinomialRand: null,
-                    });
-                }
-
-                next.push({
-                    tokens: nextTokens,
-                    score: expanded.score,
-                    text: nextText,
-                    terminated,
-                    context: nextContext.context,
-                    contextLength: nextContext.contextLength,
-                    _output: outputArray,
-                    candidates: totalCandidates,
+                batch.push({
+                    text: e.parent.text + e.tokenText,
+                    tokens: [...e.parent.tokens, e.tokenId],
+                    score: e.score,
+                    ...this.appendTokenToContext(e.parent.context, e.parent.contextLength, e.tokenId),
+                    terminated: e.terminated,
+                    nextChild: 0,
+                    sortedChildren: undefined,
+                    probabilities: [...e.parent.probabilities, e.probability],
                 });
             }
 
-            // Record discarded candidates
-            totalCandidates += expansions.length - next.length + completed.length;
-
-            beams.forEach((beam) => beam.context.dispose());
-
-            if (next.length === 0) {
-                break;
-            }
-            beams = next;
-
-            if (onStep && Date.now() - lastStepTime >= 40) {
-                onStep(beams.slice(0, options.beams));
-                lastStepTime = Date.now();
-            }
+            await this.expand(batch, batchSize);
+            for (const n of batch) this.pushNextChild(n);
         }
+        return null;
+    }
 
+    public async beam(onStep?: (beams: IBeam[]) => void): Promise<IBeam[]> {
+        this.active = true;
+        const beams: IBeam[] = [];
+        while (beams.length < (this.options?.beams ?? 8)) {
+            const nextBeam = await this._next();
+            if (!nextBeam) break;
+            beams.push(nextBeam);
+            onStep?.(beams);
+        }
         this.active = false;
-        totalCandidates += beams.length;
 
-        // Remove duplicates
-        const sorted = beams.slice().sort((a, b) => b.score - a.score);
-        const unique: IBeam[] = [];
-        const seen = new Set<string>();
-        for (const beam of sorted) {
-            const key = beam.text.trim();
-            if (!seen.has(key)) {
-                seen.add(key);
-                unique.push(beam);
-            }
-            if (unique.length >= options.beams) {
-                break;
-            }
-        }
-
+        // Patch total candidates
         beams.forEach((beam) => {
-            beam.context.dispose();
-            beam.candidates = totalCandidates;
+            beam.candidates = this.totalCandidates;
         });
-        return unique;
+
+        return beams;
+    }
+
+    public dispose() {
+        this.active = false;
+        this.heap.values.forEach((entry) => {
+            entry.parent.context.dispose();
+        });
+        this.heap.clear();
     }
 }

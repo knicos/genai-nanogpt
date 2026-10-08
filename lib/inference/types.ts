@@ -65,6 +65,7 @@ export interface BeamerOptions extends IGenerateOptions {
     maxBeamLength: number;
     beams: number;
     endOnWhiteSpace?: boolean;
+    keepDuplicates?: boolean;
 }
 
 export interface IBeam {
