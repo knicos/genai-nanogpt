@@ -21,18 +21,29 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
     scaleB = false;
     activation?: 'gelu' | 'relu2' | 'relu' | 'silu';
     causalMask = false;
+    hasMask = false;
     outputComponent?: number | undefined;
     variableComponents?: number[];
     outputIndexSnippet?: string;
     outputStrideSnippet?: string;
 
-    constructor(batch: number, O1: number, O2: number, I1: number, I2: number, transposeA = false, transposeB = false) {
+    constructor(
+        batch: number,
+        O1: number,
+        O2: number,
+        I1: number,
+        I2: number,
+        transposeA = false,
+        transposeB = false,
+        hasMask = false
+    ) {
+        this.hasMask = hasMask;
         this.transposeA = transposeA;
         this.transposeB = transposeB;
         this.variableComponents = [2, 2];
         this.outputComponent = 2;
 
-        this.shaderKey = `MatMul16TB_${O1}_${O2}_${I1}_${I2}_${transposeA ? 'TA' : ''}${transposeB ? 'TB' : ''}`;
+        this.shaderKey = `MatMul16TB_${O1}_${O2}_${I1}_${I2}_${transposeA ? 'TA' : ''}${transposeB ? 'TB' : ''}${hasMask ? 'HM' : ''}`;
 
         if (transposeA) {
             this.outputShape = [batch, I1, I2 / 2];
@@ -82,6 +93,11 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
 
         this.outputIndexSnippet = `var idx0 = getOutputIndexFromCoords(vec3<i32>(batch, gRow, gColPacked));`;
         this.outputStrideSnippet = `idx0 = idx0 + uniforms.outShapeStrides[1];  // Next row`;
+
+        if (this.hasMask) {
+            this.variableComponents.push(1);
+            this.variableNames.push('mask');
+        }
     }
 
     private addUniform(u: string) {
@@ -475,8 +491,22 @@ export default class MatMul16ProgramGeneric implements WebGPUProgram {
                     let r = gRow + i;
                     let cBase = gColPacked * 2;
                     let cVec = vec4<i32>(cBase, cBase + 1, cBase + 2, cBase + 3);
-                    let mask = cVec > vec4<i32>(r + uniforms.pastLen);
-                    acc[i] = select(acc[i], vec4<f32>(-uniforms.INFINITY), mask);
+                    let positionMask = cVec > vec4<i32>(r + uniforms.pastLen);
+                    ${
+                        this.hasMask
+                            ? `
+                    let additionalMask = vec4<bool>(
+                        positionMask.x || mask[cVec.x] == 1,
+                        positionMask.y || mask[cVec.y] == 1,
+                        positionMask.z || mask[cVec.z] == 1,
+                        positionMask.w || mask[cVec.w] == 1
+                    );
+                    acc[i] = select(acc[i], vec4<f32>(-uniforms.INFINITY), additionalMask);
+                    `
+                            : `
+                    acc[i] = select(acc[i], vec4<f32>(-uniforms.INFINITY), positionMask);
+                    `
+                    }
                     `
                             : ''
                     }

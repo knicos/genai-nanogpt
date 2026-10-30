@@ -20,7 +20,8 @@ export function matMul16(
         perm?: number[];
         causalMask?: boolean;
         pastLen?: number;
-    } = {}
+    } = {},
+    mask?: Tensor
 ): Tensor {
     const isPackedA = isPackedTensor(A);
     const isPackedB = isPackedTensor(B);
@@ -29,7 +30,11 @@ export function matMul16(
     const pA = !packed || isPackedA ? A : pack16(A);
     const pB = !packed || isPackedB ? B : pack16(B);
 
-    const t = engine().runKernel('MatMul16', { A: pA, B: pB }, { transposeA, transposeB, ...attrs }) as Tensor;
+    const t = engine().runKernel('MatMul16', mask ? { A: pA, B: pB, mask } : { A: pA, B: pB }, {
+        transposeA,
+        transposeB,
+        ...attrs,
+    }) as Tensor;
 
     if (packed && !isPackedA) {
         pA.dispose();

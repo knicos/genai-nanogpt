@@ -34,8 +34,8 @@ class RopeProgram implements GPGPUProgram {
 
             if (d < rotaryDim) {
                 int pairIdx = d / 2;
-                float cos = getCos(t + pastLen, pairIdx, 0);
-                float sin = getSin(t + pastLen, pairIdx, 0);
+                float cos = getCos(t + pastLen + b, pairIdx, 0);
+                float sin = getSin(t + pastLen + b, pairIdx, 0);
 
                 if (d % 2 == 0) {
                     // even index

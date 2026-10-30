@@ -13,7 +13,7 @@ import { matMul16 } from '../matMul16';
 import AttentionMaskProgram32 from './attentionMask32_program';
 
 function attentionMaskGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
-    const { q, k } = args.inputs as { q: Tensor; k: Tensor };
+    const { q, k, mask } = args.inputs as { q: Tensor; k: Tensor; mask?: Tensor };
     const { divisor, pastLen } = args.attrs as { divisor: number; pastLen: number };
 
     const backend = args.backend as WebGPUBackend;
@@ -22,7 +22,7 @@ function attentionMaskGPU(args: { inputs: NamedTensorInfoMap; backend: unknown; 
 
     if (packed) {
         // Use fused matMul16 with causal mask
-        return matMul16(q, k, false, true, { causalMask: true, pastLen, scale: divisor });
+        return matMul16(q, k, false, true, { causalMask: true, pastLen, scale: divisor }, mask);
     }
 
     // TODO: Implement fused matMul for unpacked tensors as well

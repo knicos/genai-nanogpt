@@ -29,7 +29,7 @@ type ProgramUniform = {
 }[];
 
 function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs?: NamedAttrMap }): TensorInfo {
-    const { A, B } = args.inputs as { A: Tensor; B: Tensor };
+    const { A, B, mask } = args.inputs as { A: Tensor; B: Tensor; mask?: Tensor };
     const { transposeA, transposeB, scale, activation, scaleA, scaleB, forceOutputShape, perm, causalMask, pastLen } =
         args.attrs as {
             transposeA: boolean;
@@ -141,7 +141,7 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
     const Areshaped = reshape16(A, [batchDimA, A.shape[aRank - 2]!, A.shape[aRank - 1]!]);
     const BReshaped = reshape16(B, [batchDimB, B.shape[bRank - 2]!, B.shape[bRank - 1]!]);
 
-    const program = new MatMul16ProgramGeneric(batchSize, O1, O2, I1, I2, transposeA, transposeB);
+    const program = new MatMul16ProgramGeneric(batchSize, O1, O2, I1, I2, transposeA, transposeB, !!mask);
 
     const uniforms: ProgramUniform = [];
 
@@ -180,7 +180,7 @@ function matMul16GPU(args: { inputs: NamedTensorInfoMap; backend: unknown; attrs
 
     const result = backend.runWebGPUProgram(
         program,
-        [Areshaped, BReshaped],
+        mask ? [Areshaped, BReshaped, mask] : [Areshaped, BReshaped],
         'packedF16',
         uniforms.length > 0 ? uniforms : undefined
     );

@@ -6,6 +6,7 @@ export interface IGeneratorOutput {
     text: string;
     confidence: number | null;
     score: number | null;
+    rescore?: number;
     logits: number[] | null;
     scores: number[] | null;
     hiddenStates: number[][] | null;
@@ -52,6 +53,7 @@ export interface IGenerateOptions {
     chunkSize?: number; /** Number of tokens to generate before returning a partial response. */
     background?: boolean; /** Run the generation in the background and return immediately. */
     debug?: boolean;
+    rescore?: boolean; /** rescore last assistant response. */
     _onChunk?: (output: IGeneratorOutput) => void | Promise<void>;
 }
 
@@ -74,4 +76,9 @@ export interface IBeam {
     text: string;
     candidates: number;
     _output?: IGeneratorOutput[];
+}
+
+export interface IReScorerOptions extends IGenerateOptions {
+    offset?: number;
+    maskedTokens?: number[]; /** Optional masked token indices for re-scoring. */
 }

@@ -1,18 +1,15 @@
 import { Tensor } from '@tensorflow/tfjs-core';
-import type { ForwardAttributes } from '../layers/BaseLayer';
-import type { AttentionScores, KVCache } from '../layers/MHA';
 import BaseLayer from '../layers/BaseLayer';
 import { estimateParameterCount } from '../utilities/parameters';
 import { TransformersMetadata } from '@base/loader/types';
 import { GPTConfig, LoRAConfig } from './config';
 import LoRA from '@base/layers/LoRA';
+import { BlockAttributes } from '@base/layers/TransformerBlock';
+import { KVCache } from '@base/layers/MHA';
 
-export interface ModelForwardAttributes extends ForwardAttributes {
-    cache?: KVCache[];
-    attentionScores?: AttentionScores;
-    seed?: number;
+export interface ModelForwardAttributes extends BlockAttributes {
     skipLogits?: boolean; // Whether to output embeddings instead of logits
-    ropePositionOffset?: number; // Optional offset for RoPE position encoding
+    cache?: KVCache[]; // Optional past key/value cache for incremental decoding
 }
 
 export interface TrainingState {

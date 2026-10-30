@@ -33,7 +33,7 @@
         "@types/papaparse": "^5.3.16",
         "@types/picomatch": "^4.0.2",
         "@types/yargs": "^17.0.33",
-        "@vitest/coverage-v8": "^4.1.9",
+        "@vitest/coverage-v8": "^5.0.5",
         "chalk": "^5.4.1",
         "dayjs": "^1.11.13",
         "eslint": "^10.8.0",
@@ -45,7 +45,7 @@
         "typescript-eslint": "^8.61.1",
         "vite": "^8.0.16",
         "vite-plugin-dts": "^5.0.2",
-        "vitest": "^4.1.9",
+        "vitest": "^5.0.5",
         "webgpu": "^0.4.0",
         "yargs": "^18.0.0"
     },

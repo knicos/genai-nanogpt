@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TokenStore, createTokenStore, deleteTokenStore, getTokenStore } from './TokenStore';
 
 // Helpers for tests
@@ -238,17 +238,16 @@ describe('TokenStore (OPFS-backed, mocked)', () => {
 
     beforeEach(() => {
         opfs = makeOpfsMock();
-        globalThis.navigator = {
+        vi.stubGlobal('navigator', {
             storage: {
                 getDirectory: async () => opfs.root as unknown as FileSystemDirectoryHandle,
             } as unknown as StorageManager,
-        } as unknown as Navigator;
+        } as unknown as Navigator);
     });
 
     afterEach(async () => {
         // cleanup
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        delete (globalThis as any).navigator;
+        vi.unstubAllGlobals();
         await deleteTokenStore(storeId);
     });
 
@@ -398,16 +397,15 @@ describe('TokenStore registry helpers', () => {
 
     beforeEach(() => {
         opfs = makeOpfsMock();
-        globalThis.navigator = {
+        vi.stubGlobal('navigator', {
             storage: {
                 getDirectory: async () => opfs.root as unknown as FileSystemDirectoryHandle,
             } as unknown as StorageManager,
-        } as unknown as Navigator;
+        } as unknown as Navigator);
     });
 
     afterEach(async () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        delete (globalThis as any).navigator;
+        vi.unstubAllGlobals();
         await deleteTokenStore(storeId);
     });
 

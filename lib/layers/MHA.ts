@@ -27,11 +27,12 @@ export interface AttentionScores {
     attentionOut?: Tensor[]; // [H, T, T] attention weights if requested
 }
 
-interface AttentionForwardAttributes extends ForwardAttributes {
+export interface AttentionForwardAttributes extends ForwardAttributes {
     attentionScores?: AttentionScores;
     pastKV?: KVCache; // Optional past key/value cache for incremental decoding
     seed?: number; // Optional seed for dropout randomness
     ropePositionOffset?: number; // Optional offset for RoPE position encoding
+    mask?: Tensor;
 }
 
 export interface MHAConfig extends RMSNormConfig {
@@ -90,8 +91,8 @@ export default class MHA extends BaseLayer<AttentionForwardAttributes> {
         }
     }
 
-    private getAttentionScores(q: Tensor, k: Tensor, pastLen?: number): Tensor {
-        const maskedAtt = attentionMask(q, k, this.divisor, pastLen);
+    private getAttentionScores(q: Tensor, k: Tensor, pastLen?: number, mask?: Tensor): Tensor {
+        const maskedAtt = attentionMask(q, k, this.divisor, pastLen, mask);
         const s = softmax16(maskedAtt);
         maskedAtt.dispose();
         return s;
@@ -157,8 +158,8 @@ export default class MHA extends BaseLayer<AttentionForwardAttributes> {
     forward(attr: AttentionForwardAttributes, x: Tensor): Tensor {
         return tidy(() => {
             this.startMemory();
-            const [qI, kNewI, vNew] = this.getQKV(x); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
 
+            const [qI, kNewI, vNew] = this.getQKV(x); // q: [B,nh,T_cur,hs], kNew/vNew: [B,nh,T_cur,hs]
             // Apply RoPE to current chunk before concatenating with past
             // The rope operator ensures the cache is large enough
             const pastLenInitial = attr.pastKV ? attr.pastKV.cumulativeLength : attr.ropePositionOffset || 0;
@@ -185,10 +186,10 @@ export default class MHA extends BaseLayer<AttentionForwardAttributes> {
             // Attention scores: mask for full forward or multi-token chunk; skip for single-token incremental
             let attScores: Tensor;
             if (pastLen > 0) {
-                attScores = this.getAttentionScores(q, kTotal, pastLen);
+                attScores = this.getAttentionScores(q, kTotal, pastLen, attr.mask);
             } else {
                 // No past: regular causal mask over a square (training/full forward)
-                attScores = this.getAttentionScores(q, kTotal);
+                attScores = this.getAttentionScores(q, kTotal, undefined, attr.mask);
             }
             q.dispose();
             if (!attr.pastKV) {

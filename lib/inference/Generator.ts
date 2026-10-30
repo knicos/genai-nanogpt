@@ -7,6 +7,7 @@ import {
     keep,
     multinomial,
     pad,
+    scalar,
     softmax,
     Tensor,
     Tensor2D,
@@ -58,7 +59,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
     private actualTokeniser: ITokeniser;
     private lastToken = -1;
     private lastLoss: number | null = null;
-    private rawOutput: IGeneratorOutput[] = [];
+    private rawOutput: IGeneratorOutputInternal[] = [];
     private jobQueue: JobItem[] = [];
     private processingJob = false;
     private startTime: number | null = null;
@@ -86,7 +87,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         idx: Tensor,
         cache?: KVCache[],
         options?: IGenerateOptions
-    ): Promise<IGeneratorOutputInternal> {
+    ): Promise<IGeneratorOutputInternal | null> {
         const temperature = options?.temperature ?? 1.0;
         const tK = options?.topK;
         const tP = options?.topP;
@@ -101,6 +102,7 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                 : undefined,
             cache,
             outputEmbeddings: !!options?.outputHiddenStates,
+            mixedPrecision: false,
         };
 
         const [logits, loss] = tidy(() => {
@@ -164,12 +166,27 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         });
 
         let nextToken: Tensor;
+        let nextTokenValue: number | undefined;
         let probabilities: number[][] | undefined;
         let embeddings: { name: string; tensor: number[][] }[] | undefined;
 
         const rand = Math.random();
 
-        if (tP) {
+        const isRescore = options?.rescore ?? false;
+
+        if (isRescore) {
+            const probs = softmax(logits);
+            const probsArray = (await probs.array()) as number[][];
+            probs.dispose();
+
+            const currentOut = this.rawOutput[this.tokenCount];
+            if (!currentOut) {
+                return null;
+            }
+            probabilities = probsArray;
+            nextTokenValue = currentOut.token;
+            nextToken = scalar(currentOut.token, 'int32');
+        } else if (tP) {
             // Top-p (nucleus) sampling
             const probs = softmax(logits);
             const probsArray = (await probs.array()) as number[][];
@@ -178,18 +195,26 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             // Do topP on CPU.
             const renormProbs = topP(probsArray, tP);
 
-            if (options?.outputScores || options?.outputConfidence) {
+            if (options?.outputScores || options?.outputConfidence || options?.outputScore) {
                 probabilities = probsArray;
             }
 
             // Do the multinomial on the CPU
-            nextToken = multinomialCPU(renormProbs, rand);
+            nextTokenValue = multinomialCPU(renormProbs, rand);
+            nextToken = scalar(nextTokenValue, 'int32');
         } else if (tK) {
             const { values: topKValues, indices: topKIndices } = topk(logits, tK);
             // FIXME: Broken in Tensorflow.js for WebGPU backend
             //console.warn('Using broken multinomial');
-            const sampledIdx = multinomial(topKValues, 1);
+            const sampledIdx = tK === 1 ? scalar(0, 'int32') : multinomial(topKValues, 1);
             nextToken = gather(topKIndices, sampledIdx, 1);
+
+            if (options?.outputScores || options?.outputConfidence || options?.outputScore) {
+                const probs = softmax(logits);
+                const probsArray = (await probs.array()) as number[][];
+                probs.dispose();
+                probabilities = probsArray;
+            }
 
             topKValues.dispose();
             topKIndices.dispose();
@@ -245,29 +270,42 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
         nextToken.dispose();
         nextToken = reshaped;
 
-        const tokenNumber = ((await nextToken.array()) as number[][])[0][0];
+        const tokenNumber =
+            nextTokenValue !== undefined ? nextTokenValue : ((await nextToken.array()) as number[][])[0][0];
         const tokenText = this.actualTokeniser.decode([tokenNumber]);
         this.lastToken = tokenNumber;
         const terminated = this.shouldTerminate(options?.allowSpecial ?? false, tokenNumber);
 
-        const output: IGeneratorOutputInternal = {
-            outputTensor: nextToken,
-            token: tokenNumber,
-            text: tokenText,
-            confidence: options?.outputConfidence && probabilities ? getTokenConfidence(probabilities[0]) : null,
-            score: options?.outputScore && probabilities ? probabilities[0][tokenNumber] : null,
-            logits: options?.outputLogits ? ((await logits.array()) as number[][])[0] : null,
-            scores: options?.outputScores && probabilities ? probabilities[0] : null,
-            hiddenStates: embeddings ? embeddings.map((e) => e.tensor[0]) : null,
-            attention: options?.outputAttention
-                ? ((await Promise.all(
-                      attrs.attentionScores?.attentionOut?.map((a) => a.array()) ?? []
-                  )) as number[][][][])
-                : null,
-            loss: this.lastLoss,
-            multinomialRand: rand,
-            terminated,
-        };
+        let output: IGeneratorOutputInternal;
+
+        if (!isRescore) {
+            output = {
+                outputTensor: nextToken,
+                token: tokenNumber,
+                text: tokenText,
+                confidence: options?.outputConfidence && probabilities ? getTokenConfidence(probabilities[0]) : null,
+                score: options?.outputScore && probabilities ? probabilities[0][tokenNumber] : null,
+                logits: options?.outputLogits ? ((await logits.array()) as number[][])[0] : null,
+                scores: options?.outputScores && probabilities ? probabilities[0] : null,
+                hiddenStates: embeddings ? embeddings.map((e) => e.tensor[0]) : null,
+                attention: options?.outputAttention
+                    ? ((await Promise.all(
+                          attrs.attentionScores?.attentionOut?.map((a) => a.array()) ?? []
+                      )) as number[][][][])
+                    : null,
+                loss: this.lastLoss,
+                multinomialRand: rand,
+                terminated,
+            };
+            this.rawOutput.push(output);
+        } else {
+            output = this.rawOutput[this.tokenCount];
+            output.outputTensor = nextToken;
+            output.rescore = probabilities ? probabilities[0][tokenNumber] : undefined;
+            if (!output) {
+                throw new Error(`No raw output found for token index ${this.tokenCount}`);
+            }
+        }
 
         logits.dispose();
 
@@ -277,19 +315,29 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
             output.loss = lossValue;
         }
 
-        this.rawOutput.push(output);
-        if (!options?.chunkSize || this.tokenCount++ % options.chunkSize === 0) {
+        if (!options?.chunkSize || this.tokenCount % options.chunkSize === 0) {
             this.emit('tokens', output);
             if (options?._onChunk) {
                 await options._onChunk(output);
             }
         }
+        this.tokenCount++;
         return output;
     }
 
     /** Generate multiple tokens in a loop and produce text */
     private async _generate(options?: IGenerateOptions, hasPrompt?: boolean): Promise<GeneratorConversation[]> {
         let appended = false;
+
+        if (options?.rescore) {
+            if (this.outputConversation.length > 0) {
+                const last = this.outputConversation.pop();
+                if (!last || !last._output) {
+                    throw new Error(`No raw output found for the last conversation entry`);
+                }
+                this.rawOutput = last?._output as IGeneratorOutputInternal[];
+            }
+        }
 
         // Begin a new assistant response in conversation
         if (
@@ -359,6 +407,13 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                 usePadding: !this.cache,
             });
 
+            const currentConversation = this.outputConversation[this.outputConversation.length - 1];
+
+            if (!output) {
+                currentConversation._completed = true;
+                break;
+            }
+
             if (this.cache) {
                 inputTensor.dispose();
                 inputTensor = output.outputTensor;
@@ -367,8 +422,6 @@ export default class Generator extends EE<'start' | 'stop' | 'tokens' | 'reset'>
                 inputTensor = concat([inputTensor, output.outputTensor], 1);
                 oldInput.dispose();
             }
-
-            const currentConversation = this.outputConversation[this.outputConversation.length - 1];
 
             if (!this.cache) {
                 output.outputTensor.dispose();

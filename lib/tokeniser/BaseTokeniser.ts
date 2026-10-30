@@ -91,6 +91,9 @@ export default abstract class BaseTokeniser extends EE<'trainStatus'> implements
     }
 
     encodeAsSequence(conversation: Conversation[], completion?: boolean): number[] {
+        if (!conversation || conversation.length === 0) {
+            return completion ? [this.bosToken] : [];
+        }
         const tokens = conversation.flatMap((fragment) => {
             const encodedContent = this.encode(fragment.content);
             return encodedContent;

@@ -31,7 +31,7 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            '@base': resolve(__dirname, './lib'),
+            '@base': resolve(import.meta.dirname, './lib'),
         },
     },
     build: {
@@ -58,7 +58,7 @@ export default defineConfig({
             ),
         },
         lib: {
-            entry: resolve(__dirname, 'lib/main.ts'),
+            entry: resolve(import.meta.dirname, 'lib/main.ts'),
             formats: ['es'],
         },
     },

@@ -1,17 +1,12 @@
-import CausalSelfAttention, { AttentionScores, MHAConfig, KVCache } from './MHA';
+import CausalSelfAttention, { MHAConfig, AttentionForwardAttributes } from './MHA';
 import MLP, { MLPConfig } from './MLP';
 import RMSNorm, { RMSNormConfig } from './RMSNorm';
-import BaseLayer, { ForwardAttributes } from './BaseLayer';
+import BaseLayer from './BaseLayer';
 import { keep, Tensor, tidy } from '@tensorflow/tfjs-core';
 import { GPTConfig } from '@base/models/config';
 import { add16 } from '@base/ops/add16';
 
-interface BlockAttributes extends ForwardAttributes {
-    pastKV?: KVCache;
-    seed?: number;
-    attentionScores?: AttentionScores;
-    ropePositionOffset?: number;
-}
+export type BlockAttributes = AttentionForwardAttributes;
 
 export type TransformerBlockConfig = MLPConfig & RMSNormConfig & MHAConfig;
 

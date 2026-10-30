@@ -55,7 +55,7 @@ class RopeProgram32 implements WebGPUProgram {
 
                 if (d < rotaryDim) {
                     let half = rotaryDim / 2;
-                    let idx = (t + uniforms.pastLen) * uniforms.cosShape[1] +
+                    let idx = (t + uniforms.pastLen + b) * uniforms.cosShape[1] +
                         ${this.interleaved ? 'd / 2' : 'd % half'};
                     let cos = cos[idx];
                     let sin = sin[idx];
@@ -118,7 +118,7 @@ class RopeProgram16Interleaved implements WebGPUProgram {
                     d;
 
                 let xPair = unpack2x16float(u32(x[xIdx]));
-                let idx = (t + uniforms.pastLen) * uniforms.cosShape[1] + d;
+                let idx = (t + uniforms.pastLen + b) * uniforms.cosShape[1] + d;
                 let cosVal = cos[idx];
                 let sinVal = sin[idx];
 
@@ -174,7 +174,7 @@ class RopeProgram16Split implements WebGPUProgram {
 
                         let scalar0 = d * 2;
                         let scalar1 = scalar0 + 1;
-                        let cacheOffset = (t + uniforms.pastLen) * uniforms.cosShape[1];
+                        let cacheOffset = (t + uniforms.pastLen + coords[0]) * uniforms.cosShape[1];
 
                         let cos0 = cos[cacheOffset + scalar0];
                         let sin0 = sin[cacheOffset + scalar0];

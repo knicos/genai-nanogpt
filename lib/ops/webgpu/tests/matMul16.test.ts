@@ -9,7 +9,18 @@ const navigator = { gpu: create([]) };
 Object.assign(globalThis.navigator, navigator);
 
 import { selectBackend } from '@base/backend';
-import { getGradient, grads, matMul, mul, randomNormal, reshape, scalar, Tensor, transpose } from '@tensorflow/tfjs';
+import {
+    getGradient,
+    grads,
+    matMul,
+    mul,
+    randomNormal,
+    reshape,
+    scalar,
+    tensor1d,
+    Tensor,
+    transpose,
+} from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-core/dist/register_all_gradients';
 import { matMul16, matMul16Gelu, matMul16Scaled } from '../../matMul16';
 import { matMul16GradConfig } from '../../grads/matMul16';
@@ -715,6 +726,45 @@ describe('MatMul 16-bit', { timeout: 30000 }, () => {
 
             expect(wasAllMasked).toBe(true);
             expect(wasCorrect).toBe(true);
+        });
+
+        it('supports additional mask with causal mask', async ({ expect }) => {
+            await selectBackend('webgpu');
+            const A = randomNormal([1, 1, 32, 32], 0, 1, 'float32');
+            const B = randomNormal([1, 1, 32, 32], 0, 1, 'float32');
+            const mask = tensor1d(
+                Array(32)
+                    .fill(0)
+                    .map((v, i) => (i === 0 || i === 16 ? 1 : v)),
+                'int32'
+            );
+
+            const packedA = pack16(A);
+            const packedB = pack16(B);
+
+            const packedMatMul = matMul16(packedA, packedB, false, false, { causalMask: true, pastLen: 0 }, mask);
+            const unpackedMatMul = unpack16(packedMatMul);
+            const realMatMul = matMul(unpack16(packedA), unpack16(packedB));
+            const repackedReal = unpack16(pack16(realMatMul));
+
+            const repackedRealData = await repackedReal.data();
+            const unpackedMatMulData = await unpackedMatMul.data();
+            const maskData = await mask.data();
+
+            console.log('MASKDATA', maskData);
+            console.log('UNPACKED', unpackedMatMulData);
+
+            for (let i = 0; i < 32; i++) {
+                for (let j = 0; j < 32; j++) {
+                    const index = i * 32 + j;
+                    const shouldMask = j > i || maskData[j] === 1;
+                    if (shouldMask) {
+                        expect(unpackedMatMulData[index]).toBe(-Infinity);
+                    } else {
+                        expect(Math.abs(unpackedMatMulData[index] - repackedRealData[index])).toBeLessThan(1e-3);
+                    }
+                }
+            }
         });
 
         it('supports causal mask with non-zero past length', async ({ expect }) => {

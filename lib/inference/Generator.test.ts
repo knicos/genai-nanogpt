@@ -383,4 +383,66 @@ describe('Generator', () => {
         const results = await Promise.all(promises);
         expect(results).toHaveLength(3);
     });
+
+    it('can rescore a previous generation', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const model = new NanoGPT({
+            vocabSize: 20,
+            nEmbed: 64,
+            nLayer: 1,
+            nHead: 2,
+            blockSize: 32,
+        });
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const prompt: Conversation[] = [{ role: 'user', content: 'abcde' }];
+        const output = await generator.generate(prompt, { maxLength: 50, outputScore: true, topP: 0.9 });
+
+        const rescorer = new Generator(model, tokeniser);
+        const rescored = await rescorer.generate(output, { rescore: true });
+
+        const lastMessage = rescored[rescored.length - 1];
+        expect(lastMessage).toBeDefined();
+        expect(lastMessage.role).toBe('assistant');
+        expect(lastMessage.content.length).toBe(output[output.length - 1].content.length);
+        expect(lastMessage._output).toBeDefined();
+        expect(lastMessage._output?.every((item) => item.rescore !== undefined)).toBe(true);
+        expect(lastMessage._output?.every((item) => Math.abs((item.rescore ?? 0) - (item.score ?? 1)) < 1e-6)).toBe(
+            true
+        );
+    });
+
+    it('can rescore a text conversation', async ({ expect }) => {
+        await selectBackend('webgpu');
+        const model = new NanoGPT({
+            vocabSize: 20,
+            nEmbed: 64,
+            nLayer: 1,
+            nHead: 2,
+            blockSize: 32,
+        });
+        const tokeniser = new CharTokeniser(CHARS);
+        const generator = new Generator(model, tokeniser);
+
+        const output = await generator.generate({
+            maxLength: 50,
+            outputScore: true,
+            topP: 0.9,
+            nonConversational: true,
+        });
+
+        const rescorer = new Generator(model, tokeniser);
+        const rescored = await rescorer.generate(output, { rescore: true, nonConversational: true });
+
+        const lastMessage = rescored[rescored.length - 1];
+        expect(lastMessage).toBeDefined();
+        expect(lastMessage.role).toBe('text');
+        expect(lastMessage.content.length).toBe(output[output.length - 1].content.length);
+        expect(lastMessage._output).toBeDefined();
+        expect(lastMessage._output?.every((item) => item.rescore !== undefined)).toBe(true);
+        expect(lastMessage._output?.every((item) => Math.abs((item.rescore ?? 0) - (item.score ?? 1)) < 1e-6)).toBe(
+            true
+        );
+    });
 });
